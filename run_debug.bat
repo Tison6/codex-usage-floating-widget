@@ -1,15 +1,19 @@
 @echo off
 chcp 65001 > nul
 cd /d "%~dp0"
-echo [桌面悬浮插件] 正在启动...
+echo ========================================================
+echo [codex-usage-floating-widget] Starting in Console Debug Mode
+echo ========================================================
+echo.
 
-if exist "C:\Python313\python.exe" (
-    "C:\Python313\python.exe" "main.py"
-    goto :eof
-)
-if exist "C:\ProgramData\Anaconda3\python.exe" (
-    "C:\ProgramData\Anaconda3\python.exe" "main.py"
-    goto :eof
-)
 python "main.py"
-if errorlevel 1 pause
+if errorlevel 1 (
+    echo.
+    echo ========================================================
+    echo [Error] Startup failed.
+    echo If dependencies are missing, run:
+    echo     pip install -r requirements.txt
+    echo ========================================================
+    echo.
+    pause
+)

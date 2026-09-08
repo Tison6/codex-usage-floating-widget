@@ -346,12 +346,14 @@ class FloatingWidget(QWidget):
         self.battery_view.update_devices(devices)
         
         if devices:
-            # Priority 1: If DJI Mic is connected, prioritize displaying DJI Mic
-            dji_dev = next((d for d in devices if "dji" in d.get("name", "").lower() or "mic" in d.get("name", "").lower()), None)
+            # Priority 1: Vibe Coding with DJI Mic Mini / DJI Mic (always pinned to front)
+            dji_dev = next((d for d in devices if "dji" in d.get("name", "").lower()), None)
+            if not dji_dev:
+                dji_dev = next((d for d in devices if "mic" in d.get("name", "").lower()), None)
             if dji_dev:
                 target_dev = dji_dev
             else:
-                # Priority 2: Otherwise pick the connected device with lowest battery
+                # Priority 2: Fallback to the connected device with the lowest battery
                 target_dev = min(devices, key=lambda x: x.get("battery", 100))
                 
             icon = target_dev.get("icon", "📶")

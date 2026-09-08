@@ -1,108 +1,237 @@
-# ⚡ Windows 桌面悬浮小组件 (Desktop Floating Widget)
+<div align="center">
 
-一款专为 Windows 打造的轻量、暗黑毛玻璃质感、现代化桌面悬浮小组件。  
-集成了**蓝牙外设电量监控（支持大疆麦克风优先策略）**与 **ChatGPT Plus / Codex 限额用量分析（7天燃烧折线图 + 原生工作状态指示灯）**。
+# ⚡ Codex Usage Floating Widget
+### A Vibe-Coding Companion for Windows: Real-Time Bluetooth Battery & ChatGPT/Codex Quota Radar
 
----
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
+[![Framework](https://img.shields.io/badge/UI-PyQt5-41CD52.svg)](https://riverbankcomputing.com/software/pyqt/)
 
-## ✨ 核心特性
+[**简体中文**](#-中文文档) | [**English**](#-english-documentation)
 
-### 1. 🔋 实时蓝牙设备电量监控
-- **底层硬件直连**：通过 Python 原生 `ctypes` 调用 Windows `SetupAPI` 与 `CfgMgr32`，单次扫描耗时 `< 15ms`，日常空闲 CPU 占用 `0%`。
-- **智能设备匹配**：支持罗技（MX Master/Anywhere）、Lofree/Keychron 机械键盘、索尼（WH-1000XM/LinkBuds）、大疆麦克风（DJI Mic）、无线耳机等常见蓝牙外设。
-- **智能优先策略**：
-  - **大疆麦克风优先**：当检测到连接了大疆麦克风时，胶囊面板优先固定展示麦克风电量；
-  - **最低电量回退**：若麦克风未连接，则自动挑选当前在线设备中电量最低的那台进行预警展示。
-- **健康分级变色**：电量根据剩余百分比自动分级变色（🟢 充足 >50% / 🟡 适中 20%~50% / 🔴 紧张 <20%）。
+<br/>
 
-### 2. 🤖 ChatGPT Plus / Codex 限额与会话状态监控
-- **零配置凭据绑定**：自动读取本地 `~/.codex/auth.json` 鉴权凭证，与 Codex CLI / ChatGPT 桌面端实时无缝联动。
-- **纯净双显胶囊**：迷你模式下紧凑呈现 5H 滚动限额与 7天周限额（例如 `[ 🎙️ 50% | 🤖 100% · 84% 🟢 ]`），各自独立动态变色。
-- **7天消耗速率折线图（Sparkline Grid）**：
-  - 规范的坐标边框与 X 轴 7 等分天数竖线（`1d` / `3d` / `5d` / `7d`）；
-  - Y 轴每 10% 细线与 50% 基准虚线；
-  - 副对角线理想匀速基准线（从 100% 匀速降至 0%）；
-  - 动态计算预计耗尽时间与精确到分钟的重置倒计时（`MM-DD HH:MM`）。
-- **原生 Session Rollout 事件流状态追踪**：
-  - 抛弃易抖动的 CPU 采样，直接监听 `~/.codex/sessions/` 活跃会话 JSONL 事件流；
-  - 提问生成时稳定保持活力橙旋转（🟠 运行处理中，不抖动不跳绿）；
-  - 回复完成后瞬间切回常驻翠绿微光（🟢 空闲就绪）。
+<p align="center">
+  <img src="assets/capsule-view.png" alt="Mini Capsule Mode" style="max-height: 40px; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.4);" />
+</p>
+<p align="center">
+  <em>Mini Capsule Mode (Click anywhere to expand / 点击任意区域秒级展开)</em>
+</p>
 
-### 3. 🪟 沉浸式桌面交互美学
-- **暗黑毛玻璃质感**：半透明圆角卡片、微光边框与平滑阴影。
-- **极简自然交互**：
-  - **点窗即开**：点击迷你胶囊任意位置即可秒级展开完整卡片；
-  - **失焦自动收起**：点击桌面其他应用窗口时，卡片自动优雅折叠回迷你胶囊；
-  - **物理拖拽与吸附**：按住即可自由拖动，靠近屏幕边缘 25px 自动磁吸贴边。
-- **任务栏隐藏与系统托盘**：使用 `Qt.Tool` 属性隐藏 Windows 任务栏占位与 Alt+Tab 干扰，右键托盘支持开机自启动与快速退出。
+<p align="center">
+  <img src="assets/expanded-view.png" alt="Expanded Detailed Card" width="280" style="border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);" />
+</p>
+<p align="center">
+  <em>Expanded Card Mode with 7-Day Sparkline & Real-Time Peripheral Battery<br/>展开卡片视图：外设电量列表 + 7天限额消耗基准曲线</em>
+</p>
+
+</div>
 
 ---
 
-## 🚀 快速开始
+<a name="中文文档"></a>
+## 🇨🇳 中文文档
 
-### 1. 环境准备
-确保已安装 Python 3.8+（推荐 Python 3.10 ~ 3.13）：
+### 💡 为什么需要它？(The Vibe Coding Story)
+在使用 **大疆麦克风（DJI Mic Mini / DJI Mic）** 进行 **语音编程（Vibe Coding）**、灵感口述或高强度与 ChatGPT / OpenAI Codex 协同编写代码时，开发者最常遇到的两个痛点：
+1. **录音设备电量焦虑**：全神贯注编程时，麦克风突然没电断联，打断开发心流；
+2. **AI 限额盲盒**：不知道 5 小时滚动限额或周限额何时耗尽，缺少平稳的消耗节奏指引。
+
+**`codex-usage-floating-widget`** 正是为此而生的一款轻量、优雅、暗黑毛玻璃质感的 Windows 桌面小组件。
+
+---
+
+### ✨ 核心亮点
+
+#### 1. 🎙️ 为 Vibe Coding 打造的外设电量雷达
+- **大疆麦克风专属优先级（DJI Mic Mini Priority）**：
+  - 检测到 DJI Mic Mini / DJI Mic 连接时，**自动固定置顶在胶囊最前端**，电量随时在视线边缘一览无余；
+  - 若未连接麦克风，则智能回退为**展示当前所有在线外设中电量最低的设备**；
+- **底层硬件直连，零资源消耗**：
+  - 基于 Python 原生 `ctypes` 调用 Windows `SetupAPI` 与 `CfgMgr32` 读取硬件电量属性，单次扫描耗时 `< 15ms`，空闲时 CPU 占用稳定为 `0%`；
+  - 广泛支持 DJI Mic 系列、机械键盘（Flow84、Keychron、Lofree）、无线鼠标（罗技 MX Master / Anywhere 系列）、索尼降噪耳机等。
+
+#### 2. 🤖 ChatGPT Plus / Codex 额度与状态监测
+- **零配置凭据同步**：
+  - 自动读取本地 `%USERPROFILE%\.codex\auth.json` 鉴权凭证，与 Codex CLI / ChatGPT 桌面端无缝联动，免除手动配置 Token；
+- **纯净双显胶囊（Dual-Quota Capsule）**：
+  - 胶囊模式以最精炼的点分数字格式呈现：`[ 🎙️ 50% | 🤖 100% · 84% 🟢 ]`；
+  - 左侧为 5 小时滚动限额剩余，右侧为周限额剩余，两个数字**独立根据健康度动态变色**（绿色充足 / 橙色适中 / 红色预警）；
+- **7天消耗速率坐标折线图（Sparkline Grid）**：
+  - 规范的坐标边框与 X 轴 7 等分天数网格（`1d` / `3d` / `5d` / `7d`）；
+  - Y 轴每 10% 水平细线与 50% 半程基准虚线；
+  - **副对角线理想匀速消耗基准（100% 降至 0%）**，直观对比当前实际消耗是否超速；
+  - 动态计算预计耗尽时间与精确到分钟的周期重置倒计时（`MM-DD HH:MM`）；
+- **原生 Session Rollout 事件流状态追踪（告别指示灯反复横跳）**：
+  - 直接监听本地 `~/.codex/sessions/` 活跃会话 JSONL 事件流（`task_started`、`reasoning`、`custom_tool_call`、`task_complete`）；
+  - 模型深度思考与流式输出期间稳定保持活力橙旋转（🟠 运行中），生成完毕瞬间切回翠绿微光（🟢 就绪），100% 免疫 CPU 采样噪点。
+
+#### 3. 🪟 自然沉浸的桌面交互美学
+- **暗黑毛玻璃质感**：高透半透明卡片、微光边框与动态深度阴影；
+- **点窗即开**：点击迷你胶囊任意位置即可瞬间展开完整卡片；
+- **失焦自动收起**：点击桌面其他任意窗口，卡片自动折叠收起为迷你胶囊；
+- **边缘智能吸附**：鼠标拖拽至屏幕边缘 25px 范围内自动磁吸贴边；
+- **任务栏免打扰**：采用 `Qt.Tool` 属性，不占用 Windows 任务栏位置，不干扰 `Alt+Tab`。
+
+---
+
+### 🚀 快速使用
+
+#### 1. 环境准备
+确保您的电脑安装了 Python 3.8+（支持 Python 3.10 ~ 3.13）：
 
 ```bash
-git clone https://github.com/your-username/desktop-floating-widget.git
-cd desktop-floating-widget
+git clone https://github.com/your-username/codex-usage-floating-widget.git
+cd codex-usage-floating-widget
 pip install -r requirements.txt
 ```
 
-### 2. 启动运行
-- **命令行启动**：
+#### 2. 运行启动
+- **日常便捷启动（静默无黑框）**：
+  双击运行 **`run_silent.vbs`** 或 **`run.bat`**；
+- **终端启动（查看调试日志）**：
+  双击 **`run_debug.bat`** 或运行命令：
   ```bash
   python main.py
   ```
-- **Windows 便捷启动**：
-  - 双击 `run_silent.vbs`：后台静默启动（无 CMD 黑框）；
-  - 双击 `run.bat`：控制台快速启动。
 
 ---
 
-## ⚙️ 快捷操作与右键菜单
+### ⚙️ 快捷操作与右键菜单
 
-在悬浮小组件或系统托盘图标上点击**鼠标右键**，可调出控制菜单：
-- **💊 切换迷你 / 展开模式**
+在小组件或系统托盘图标上点击**鼠标右键**：
+- **💊 切换迷你胶囊 / 展开面板**
 - **📏 窗口缩放尺寸**（紧凑 85% / 标准 100% / 放大 115%）
 - **📌 窗口置顶（Always on Top）**
 - **🔒 锁定窗口位置（防止误触移动）**
-- **🔄 立即刷新数据**
-- **⚙️ 偏好设置...**（调节透明度、扫描频率、凭证路径、开机自启）
-- **🗕 隐藏到系统托盘**
-- **✕ 退出程序**
+- **🔄 立即刷新用量与外设数据**
+- **⚙️ 偏好设置...**（调整刷新频率、透明度、开机自启）
+- **🗕 隐藏到托盘 / ✕ 退出程序**
 
 ---
 
-## 📁 目录架构
+<a name="english-documentation"></a>
+## 🌐 English Documentation
+
+### 💡 Why This Widget?
+When pairing wireless microphones like the **DJI Mic Mini** or **DJI Mic 2** for **Vibe Coding** (voice-driven programming) alongside ChatGPT / OpenAI Codex, developers encounter two recurring pain points:
+1. **Microphone Battery Anxiety**: Mid-sentence dictation is abruptly broken by an empty battery.
+2. **Opaque Rate Limits**: Unclear remaining 5-hour rolling limits and 7-day weekly quotas.
+
+**`codex-usage-floating-widget`** provides an elegant, translucent glassmorphism widget pinned cleanly on your desktop to solve both problems simultaneously.
+
+---
+
+### ✨ Key Features
+
+#### 1. 🎙️ Vibe-Coding Peripheral Radar (DJI Mic Mini First)
+- **Pinned Priority**: When a DJI Mic Mini / DJI Mic is connected, its battery percentage is **strictly pinned to the front** of the mini capsule;
+- **Lowest-Battery Smart Fallback**: If no mic is connected, the widget automatically monitors whichever connected peripheral has the lowest remaining battery;
+- **Native Hardware Access**: Directly calls Windows `SetupAPI` and `CfgMgr32` via Python `ctypes` (`< 15ms` per scan, `0%` idle CPU usage);
+- **Multi-Device Support**: DJI Mics, mechanical keyboards (Keychron, NuPhy, Lofree Flow), wireless mice (Logitech MX Master), Sony headsets, etc.
+
+#### 2. 🤖 ChatGPT Plus / Codex Quota & State Tracker
+- **Zero-Config Credential Sync**: Automatically reads local `%USERPROFILE%\.codex\auth.json` to stay in sync with Codex CLI and ChatGPT Desktop;
+- **Dual-Quota Capsule**: Displays both limits in an ultra-compact dot-separated format: `[ 🎙️ 50% | 🤖 100% · 84% 🟢 ]`;
+- **Individual Dynamic Colors**: Quotas dynamically shift color according to health status (>50% Green, 20%~50% Amber, <20% Red);
+- **7-Day Sparkline Grid & Ideal Baseline**:
+  - Full coordinate frame with 7-day vertical ticks (`1d`, `3d`, `5d`, `7d`);
+  - 10% horizontal grid lines with a 50% halfway dashed guide;
+  - Ideal pace diagonal benchmark (100% $\to$ 0% across 7 days);
+  - Exact minute-level countdowns (`MM-DD HH:MM`) and exhaustion predictions;
+- **Native Session Rollout Event Monitor**:
+  - Direct atomic monitoring of `~/.codex/sessions/*.jsonl` event streams (`task_started`, `reasoning`, `custom_tool_call`, `task_complete`);
+  - Smooth orange spinning indicator (🟠) during deep thinking and streaming, snapping immediately back to emerald green (🟢) when idle—completely free of CPU-jitter false triggers.
+
+#### 3. 🪟 Fluid Desktop Interaction
+- **Dark Translucent Aesthetic**: Subtle frosted acrylic glassmorphism with dynamic drop shadow;
+- **Click-to-Expand**: Click anywhere on the mini capsule to open the full dashboard;
+- **Auto-Collapse on Focus Loss**: Clicking another application automatically folds the card back into the capsule;
+- **Magnetic Edge Snapping**: Draggable anywhere, snapping smoothly within 25px of screen boundaries;
+- **Taskbar-Free**: Configured with `Qt.Tool` to avoid cluttering your taskbar or Alt+Tab switcher.
+
+---
+
+### 🚀 Getting Started
+
+#### Prerequisites
+- Windows 10 or Windows 11
+- Python 3.8+ (Python 3.10 ~ 3.13 recommended)
+
+```bash
+git clone https://github.com/your-username/codex-usage-floating-widget.git
+cd codex-usage-floating-widget
+pip install -r requirements.txt
+```
+
+#### Launching
+- **Silent Background Launch**: Double-click `run_silent.vbs` or `run.bat`;
+- **Console Debug Mode**: Run `run_debug.bat` or execute:
+  ```bash
+  python main.py
+  ```
+
+---
+
+### 📁 Project Architecture
 
 ```
-desktop-floating-widget/
-├── main.py                  # 程序主入口
-├── config.example.json      # 默认配置文件模板
-├── requirements.txt         # Python 依赖清单
-├── run_silent.vbs           # Windows 静默启动脚本
-├── run.bat                  # 便捷启动脚本
-├── LICENSE                  # 开源许可证 (MIT)
+codex-usage-floating-widget/
+├── main.py                  # Application entry point
+├── config.example.json      # Default configuration template
+├── requirements.txt         # Python dependencies
+├── run_silent.vbs           # Silent background VBS launcher
+├── run.bat                  # Portable Windows batch launcher
+├── run_debug.bat            # Console debug launcher with error prompts
+├── LICENSE                  # MIT License
+├── assets/                  # Screenshot previews for GitHub
+│   ├── capsule-view.png
+│   └── expanded-view.png
 ├── core/
-│   ├── bt_scanner.py        # Windows SetupAPI 蓝牙设备与电量探测引擎
-│   ├── codex_client.py      # ChatGPT/Codex /wham/usage 额度查询与凭据解析
-│   ├── codex_activity_tracker.py # Session Rollout 事件流实时工作状态监测
-│   ├── config_manager.py    # 注册表与配置文件管理
-│   └── quota_tracker.py     # 7天周期用量持久化与耗尽分析
+│   ├── bt_scanner.py        # Windows SetupAPI Bluetooth battery engine
+│   ├── codex_client.py      # ChatGPT /wham/usage rate limit parser
+│   ├── codex_activity_tracker.py # Session rollout event state monitor
+│   ├── config_manager.py    # Local registry & config management
+│   └── quota_tracker.py     # 7-day quota analytics & burn prediction
 └── ui/
-    ├── floating_widget.py   # 悬浮窗主窗口 (毛玻璃、拖动吸附、失焦自动收起)
-    ├── battery_view.py      # 蓝牙外设列表展示组件
-    ├── codex_view.py        # 额度卡片与时间倒计时组件
-    ├── sparkline_widget.py  # 7天坐标网格与理想基准折线图
-    ├── status_light.py      # 呼吸灯与旋转指示灯
-    ├── settings_dialog.py   # 偏好设置对话框
-    ├── tray_manager.py      # Windows 系统托盘管理
-    └── styles.py            # QSS 样式表与暗黑主题
+    ├── floating_widget.py   # Main frameless widget (snapping, auto-collapse)
+    ├── battery_view.py      # Bluetooth peripheral list view
+    ├── codex_view.py        # AI quota card & countdown view
+    ├── sparkline_widget.py  # 7-day coordinate grid & baseline chart
+    ├── status_light.py      # Dual-state glowing & rotating light
+    ├── settings_dialog.py   # Preference settings modal
+    ├── tray_manager.py      # Windows system tray integration
+    └── styles.py            # QSS dark glassmorphism stylesheet
 ```
 
 ---
 
-## 📄 开源许可证
+### ❓ FAQ for External Users / 常见问题排查
 
-本项目基于 [MIT License](LICENSE) 开源。
+<details>
+<summary><b>Q1: ChatGPT 额度提示“未认证”或获取失败？ / "Unauthorized" or quota fetch failed?</b></summary>
+<br/>
+本项目通过读取本地 OpenAI Codex CLI 或桌面客户端的本地认证文件获取额度数据。请确保已在终端运行过 <code>codex</code> 命令并完成登录，或检查 <code>~/.codex/auth.json</code> 文件是否存在。
+<br/><i>This tool queries your quota using the local session token managed by the Codex CLI / Desktop app. Ensure you have logged in via the Codex CLI at least once so that <code>~/.codex/auth.json</code> exists.</i>
+</details>
+
+<details>
+<summary><b>Q2: 蓝牙设备已连接但没有显示电量？ / Bluetooth device connected but no battery shown?</b></summary>
+<br/>
+Windows 原生仅支持具备“电池服务（Battery Service GATT Profile）”或上报标准 PnP 电池属性的蓝牙设备。部分使用专有 2.4GHz 接收器（非蓝牙模式）的键鼠可能不向 Windows 系统上报电池指标。
+<br/><i>Windows can only query battery levels for devices supporting the standard Bluetooth Battery Service (GATT Profile). Devices connected via proprietary 2.4GHz USB dongles typically do not report battery stats to the OS.</i>
+</details>
+
+<details>
+<summary><b>Q3: 双击没有反应？ / Nothing happens after double-clicking?</b></summary>
+<br/>
+请先双击运行 <code>run_debug.bat</code> 查看控制台输出。若缺少依赖包，请在终端执行 <code>pip install -r requirements.txt</code>。
+<br/><i>Run <code>run_debug.bat</code> to inspect terminal error messages. If dependencies are missing, run <code>pip install -r requirements.txt</code>.</i>
+</details>
+
+---
+
+### 📄 License
+
+This project is open-sourced under the [MIT License](LICENSE).
