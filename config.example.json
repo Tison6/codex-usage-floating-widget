@@ -1,0 +1,16 @@
+{
+  "window_pos": [100, 100],
+  "is_mini_mode": true,
+  "always_on_top": true,
+  "lock_position": false,
+  "auto_snap": true,
+  "opacity": 0.95,
+  "theme": "dark",
+  "bt_interval_sec": 10,
+  "codex_interval_sec": 60,
+  "auth_file_path": "~/.codex/auth.json",
+  "autostart": false,
+  "scale": 1.0,
+  "only_connected": true,
+  "mini_quota_mode": 0
+}

@@ -1,0 +1,19 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# User runtime data & persistent local states
+data/quota_history.json
+config.json
+
+# Logs & Temporary files
+*.log
+*.tmp
+*.bak
+
+# IDE / Editor configurations
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
