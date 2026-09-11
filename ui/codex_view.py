@@ -82,7 +82,7 @@ class CodexQuotaView(QWidget):
         self.fh_pbar.setRange(0, 100)
         self.fh_pbar.setValue(0)
         
-        self.fh_reset_lbl = QLabel("重置倒计时: --", self.five_hour_container)
+        self.fh_reset_lbl = QLabel("倒计时: --", self.five_hour_container)
         self.fh_reset_lbl.setStyleSheet("font-size: 9px; color: #9CA3AF; font-weight: 400;")
         
         fh_layout.addLayout(fh_top)
@@ -121,14 +121,14 @@ class CodexQuotaView(QWidget):
         self.sparkline = QuotaSparklineWidget(self.weekly_container)
         wk_layout.addWidget(self.sparkline)
         
-        # Exhaustion & Reset Countdown (Exact same 9px font as 重置倒计时)
-        self.exhaust_lbl = QLabel("预计分析中...", self.weekly_container)
-        self.exhaust_lbl.setStyleSheet("font-size: 9px; color: #9CA3AF; font-weight: 400;")
-        wk_layout.addWidget(self.exhaust_lbl)
-        
-        self.reset_lbl = QLabel("周期重置: --", self.weekly_container)
+        # Reset Countdown (Upper Line) & Exhaustion (Lower Line, Bold)
+        self.reset_lbl = QLabel("倒计时: --", self.weekly_container)
         self.reset_lbl.setStyleSheet("font-size: 9px; color: #9CA3AF; font-weight: 400;")
         wk_layout.addWidget(self.reset_lbl)
+        
+        self.exhaust_lbl = QLabel("预计分析中...", self.weekly_container)
+        self.exhaust_lbl.setStyleSheet("font-size: 9px; color: #F3F4F6; font-weight: 700;")
+        wk_layout.addWidget(self.exhaust_lbl)
         
         self.card_layout.addWidget(self.weekly_container)
         
@@ -180,6 +180,16 @@ class CodexQuotaView(QWidget):
             fh_remain = five_h.get("remaining_percent", 100)
             fh_cd = five_h.get("reset_countdown", "")
             fh_color = five_h.get("bar_color", "#10B981")
+            fh_reset_at = five_h.get("reset_at")
+            
+            fh_exact_dt = ""
+            if fh_reset_at:
+                try:
+                    fh_exact_dt = datetime.fromtimestamp(fh_reset_at).strftime("%m-%d %H:%M")
+                except Exception:
+                    pass
+            elif five_h.get("reset_at_str"):
+                fh_exact_dt = five_h.get("reset_at_str")
             
             self.fh_stat_lbl.setText(f"剩 {fh_remain}%")
             self.fh_stat_lbl.setStyleSheet(f"font-size: 10px; font-weight: 700; color: {fh_color}; font-family: 'Consolas', monospace;")
@@ -194,7 +204,10 @@ class CodexQuotaView(QWidget):
                     border-radius: 2px;
                 }}
             """)
-            self.fh_reset_lbl.setText(f"重置倒计时: {fh_cd}")
+            fh_str = f"倒计时: {fh_cd}"
+            if fh_exact_dt:
+                fh_str += f" ({fh_exact_dt})"
+            self.fh_reset_lbl.setText(fh_str)
         else:
             self.five_hour_container.hide()
         
@@ -231,8 +244,10 @@ class CodexQuotaView(QWidget):
                     exact_dt_str = datetime.fromtimestamp(reset_at).strftime("%m-%d %H:%M")
                 except Exception:
                     pass
+            elif weekly.get("reset_at_str"):
+                exact_dt_str = weekly.get("reset_at_str")
                     
-            r_str = f"周期重置: {countdown}"
+            r_str = f"倒计时: {countdown}"
             if exact_dt_str:
                 r_str += f" ({exact_dt_str})"
             self.reset_lbl.setText(r_str)

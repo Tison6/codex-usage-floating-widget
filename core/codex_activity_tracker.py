@@ -1,110 +1,158 @@
 """
 Mature Real-Time Activity Monitor for OpenAI Codex / ChatGPT Codex.
-Tracks active generation and tool execution by reading native session rollout event logs
-and process trees rather than volatile CPU sampling, eliminating status jitter ("反复横跳").
+Tracks active turn lifecycle (task_started -> task_complete / turn_aborted)
+across user threads from state_5.sqlite and session logs, eliminating status jitter ("反复横跳").
 """
 
 import os
 import glob
 import json
 import time
-from typing import Optional, Tuple
-import psutil
+import sqlite3
+from typing import Optional, Tuple, List, Dict, Any
 
 
 class CodexActivityTracker:
-    """Accurate state monitor for Codex desktop/CLI."""
+    """
+    Accurate, jitter-free state monitor for Codex desktop/CLI/VSCode.
+    Uses native turn lifecycle state matching with mtime-delta caching.
+    """
 
     def __init__(self, codex_home: Optional[str] = None):
         self.codex_home = codex_home or os.path.expanduser("~/.codex")
         self.sessions_dir = os.path.join(self.codex_home, "sessions")
-        self._cached_rollout_file: Optional[str] = None
-        self._last_scan_time: float = 0
-        self._is_running_state: bool = False
+        self.db_path = os.path.join(self.codex_home, "state_5.sqlite")
+        
+        self._cached_candidates: List[str] = []
+        self._last_candidate_scan: float = 0
+        self._file_cache: Dict[str, Tuple[float, int, bool, str]] = {}
         self._last_active_timestamp: float = 0
 
-    def get_latest_rollout_file(self) -> Optional[str]:
-        """Find the active/latest session rollout jsonl file."""
+    def get_candidate_rollouts(self) -> List[str]:
+        """
+        Collect active candidate rollout paths from state_5.sqlite and session directories.
+        Results are cached for 2.0s to minimize disk I/O.
+        """
         now = time.time()
-        if self._cached_rollout_file and (now - self._last_scan_time < 2.5):
-            return self._cached_rollout_file
+        if self._cached_candidates and (now - self._last_candidate_scan < 2.0):
+            return self._cached_candidates
 
-        self._last_scan_time = now
+        self._last_candidate_scan = now
+        candidates: List[str] = []
+
+        # 1. State DB: latest user interactive threads (exclude subagents and maintenance)
+        if os.path.exists(self.db_path):
+            try:
+                conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True, timeout=1.0)
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT rollout_path FROM threads 
+                    WHERE source NOT LIKE '%subagent%'
+                    ORDER BY updated_at DESC LIMIT 3
+                """)
+                for (rpath,) in cur.fetchall():
+                    if rpath:
+                        clean = rpath.replace(r"\\?\ ", "").replace(r"\\?\/", "").replace(r"\\?\\", "")
+                        clean = os.path.expanduser(clean)
+                        if os.path.exists(clean) and clean not in candidates:
+                            candidates.append(clean)
+                conn.close()
+            except Exception:
+                pass
+
+        # 2. Today's sessions directory (handles new sessions not yet committed to DB or CLI runs)
+        if os.path.exists(self.sessions_dir):
+            today_files = glob.glob(f"{self.sessions_dir}/*/*/*/*.jsonl")
+            if today_files:
+                today_files.sort(key=os.path.getmtime, reverse=True)
+                for f in today_files[:3]:
+                    if f not in candidates:
+                        candidates.append(f)
+
+        self._cached_candidates = candidates
+        return candidates
+
+    def check_file_running(self, path: str) -> Tuple[bool, str]:
+        """
+        Inspect turn lifecycle of a specific rollout file.
+        Scans backward from the tail:
+        - If first lifecycle event is task_complete / task_failed / turn_aborted -> Idle (False).
+        - If first lifecycle event is task_started without completion within 90s -> Running (True).
+        """
+        now = time.time()
+        try:
+            mtime = os.path.getmtime(path)
+            size = os.path.getsize(path)
+        except OSError:
+            return False, "os_error"
+
+        age = now - mtime
+        if age > 90.0:
+            return False, f"idle_timeout_{age:.0f}s"
+
+        # Check memory cache: if mtime and size did not change, return previous evaluation
+        cached = self._file_cache.get(path)
+        if cached and cached[0] == mtime and cached[1] == size:
+            return cached[2], cached[3]
+
+        # Read up to 4MB from tail
+        read_size = min(size, 4 * 1024 * 1024)
+        try:
+            with open(path, "rb") as f:
+                f.seek(size - read_size)
+                data = f.read().decode("utf-8", errors="ignore")
+        except Exception as e:
+            return False, f"read_error_{e}"
+
+        lines = [l.strip() for l in data.split("\n") if l.strip()]
         
-        if not os.path.exists(self.sessions_dir):
-            return None
+        last_active_event = None
+        for l in reversed(lines):
+            try:
+                o = json.loads(l)
+                p = o.get("payload", {})
+                pt = p.get("type") if isinstance(p, dict) else ""
+                
+                # Terminal lifecycle events mean turn finished
+                if pt in ("task_complete", "task_failed", "turn_aborted", "turn_complete"):
+                    res = (False, f"completed_{pt}")
+                    self._file_cache[path] = (mtime, size, res[0], res[1])
+                    return res
+                    
+                # task_started without subsequent terminal event means active turn
+                if pt == "task_started":
+                    res = (True, "task_started_active")
+                    self._file_cache[path] = (mtime, size, res[0], res[1])
+                    return res
+                    
+                if not last_active_event and pt in ("custom_tool_call", "reasoning", "custom_tool_call_output", "item_started"):
+                    last_active_event = pt
+            except Exception:
+                continue
 
-        # Fast search: check today's folder first
-        today_files = glob.glob(f"{self.sessions_dir}/*/*/*/*.jsonl")
-        if today_files:
-            today_files.sort(key=os.path.getmtime, reverse=True)
-            self._cached_rollout_file = today_files[0]
-            return self._cached_rollout_file
+        # Fallback for sub-agent or streaming writes without explicit task_started
+        if last_active_event and age < 8.0:
+            res = (True, f"active_{last_active_event}")
+            self._file_cache[path] = (mtime, size, res[0], res[1])
+            return res
 
-        # Fallback search
-        all_files = glob.glob(f"{self.sessions_dir}/**/*.jsonl", recursive=True)
-        if all_files:
-            all_files.sort(key=os.path.getmtime, reverse=True)
-            self._cached_rollout_file = all_files[0]
-            return self._cached_rollout_file
-
-        return None
+        res = (False, "idle_no_active_turn")
+        self._file_cache[path] = (mtime, size, res[0], res[1])
+        return res
 
     def check_is_running(self) -> Tuple[bool, str]:
         """
-        Determine if Codex is actively reasoning, calling tools, or generating output.
+        Determine if Codex is actively running.
         Returns (is_running, reason).
         """
-        rollout = self.get_latest_rollout_file()
-        now = time.time()
+        candidates = self.get_candidate_rollouts()
+        if not candidates:
+            return False, "no_candidates"
 
-        if not rollout or not os.path.exists(rollout):
-            return False, "no_session"
+        for f in candidates:
+            is_run, reason = self.check_file_running(f)
+            if is_run:
+                self._last_active_timestamp = time.time()
+                return True, f"{os.path.basename(f)}:{reason}"
 
-        try:
-            mtime = os.path.getmtime(rollout)
-            age = now - mtime
-
-            # If rollout has not been modified in > 8s, treat as idle
-            if age > 8.0:
-                return False, "idle_timeout"
-
-            # Read the tail 3KB to extract the latest event
-            with open(rollout, "rb") as f:
-                f.seek(0, os.SEEK_END)
-                size = f.tell()
-                seek_pos = max(0, size - 3072)
-                f.seek(seek_pos)
-                tail_bytes = f.read()
-
-            lines = [l.strip() for l in tail_bytes.decode("utf-8", errors="ignore").split("\n") if l.strip()]
-            
-            last_payload_type = None
-            for line in reversed(lines):
-                try:
-                    obj = json.loads(line)
-                    payload = obj.get("payload", {})
-                    if isinstance(payload, dict):
-                        last_payload_type = payload.get("type")
-                        if last_payload_type:
-                            break
-                except Exception:
-                    continue
-
-            # If turn explicitly finished -> Idle
-            if last_payload_type in ("task_complete", "task_failed", "turn_complete"):
-                return False, f"complete_{last_payload_type}"
-
-            # If an active event occurred recently (within 4.5s) -> Running
-            if age < 4.5:
-                self._last_active_timestamp = now
-                return True, f"active_{last_payload_type}"
-
-            # If tool execution or reasoning is ongoing within 7s -> Running
-            if last_payload_type in ("custom_tool_call", "reasoning", "task_started") and age < 7.0:
-                return True, f"in_progress_{last_payload_type}"
-
-            return False, "idle"
-
-        except Exception as e:
-            return False, f"error_{e}"
+        return False, "all_idle"
