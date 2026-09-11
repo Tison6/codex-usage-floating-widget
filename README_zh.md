@@ -13,14 +13,14 @@
 <br/>
 
 <p align="center">
-  <img src="assets/capsule-view.png" alt="Mini Capsule Mode" style="max-height: 40px; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.4);" />
+  <img src="assets/capsule-view.png" alt="Mini Capsule Mode" width="260" />
 </p>
 <p align="center">
   <em>迷你胶囊模式（点击任意区域秒级展开）</em>
 </p>
 
 <p align="center">
-  <img src="assets/expanded-view.png" alt="Expanded Detailed Card" width="280" style="border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);" />
+  <img src="assets/expanded-view.png" alt="Expanded Detailed Card" width="280" />
 </p>
 <p align="center">
   <em>展开卡片视图：外设电量列表 + 7天限额消耗基准曲线 + 倒计时与耗尽预警</em>
@@ -53,7 +53,7 @@
 - **零配置凭据同步**：
   - 自动读取本地 `%USERPROFILE%\.codex\auth.json` 鉴权凭证，与 Codex CLI / ChatGPT 桌面端无缝联动，免除手动输入 Token；
 - **纯净双显胶囊（Dual-Quota Capsule）**：
-  - 胶囊模式以最精炼的点分数字格式呈现：`[ 🎙️ 50% | 🤖 100% · 84% 🟢 ]`；
+  - 胶囊模式以最精炼的点分数字格式呈现：`[ 🎙️ 90% | 🤖 16% · 23% 🟢 ]`；
   - 左侧为 5 小时滚动限额剩余，右侧为周限额剩余，两个数字**独立根据健康度动态变色**（🟢 充足 / 🟠 适中 / 🔴 预警）；
 - **7天消耗速率坐标折线图（Sparkline Grid）与耗尽预测**：
   - 规范的坐标边框与 X 轴 7 等分天数网格（`1d` / `3d` / `5d` / `7d`）；

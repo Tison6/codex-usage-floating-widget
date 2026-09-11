@@ -13,14 +13,14 @@ English | [简体中文](README_zh.md)
 <br/>
 
 <p align="center">
-  <img src="assets/capsule-view.png" alt="Mini Capsule Mode" style="max-height: 40px; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.4);" />
+  <img src="assets/capsule-view.png" alt="Mini Capsule Mode" width="260" />
 </p>
 <p align="center">
   <em>Mini Capsule Mode (Click anywhere to expand seamlessly)</em>
 </p>
 
 <p align="center">
-  <img src="assets/expanded-view.png" alt="Expanded Detailed Card" width="280" style="border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5);" />
+  <img src="assets/expanded-view.png" alt="Expanded Detailed Card" width="280" />
 </p>
 <p align="center">
   <em>Expanded Card Mode with 7-Day Sparkline, Rate-Limit Burn Benchmarks & Real-Time Peripheral Battery</em>
@@ -54,7 +54,7 @@ When pairing wireless microphones like the **DJI Mic Mini** or **DJI Mic** for *
 - **Zero-Config Token Sync**:
   - Reads `%USERPROFILE%\.codex\auth.json` directly. Stays synchronized with your Codex CLI / ChatGPT Desktop session without manually inputting API tokens;
 - **Dual-Quota Capsule Mode**:
-  - Compact dot-separated format: `[ 🎙️ 50% | 🤖 100% · 84% 🟢 ]`;
+  - Compact dot-separated format: `[ 🎙️ 90% | 🤖 16% · 23% 🟢 ]`;
   - Left number is 5-hour rolling limit remaining; right number is weekly quota remaining;
   - Both numbers dynamically and independently shift color based on consumption health (🟢 >50% healthy, 🟠 20%~50% caution, 🔴 <20% critical);
 - **7-Day Sparkline Grid & Ideal Burn Baseline**:
