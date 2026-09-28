@@ -16,9 +16,10 @@ from PyQt5.QtGui import QPixmap, QColor, QFont, QCursor
 class PelicanViewerDialog(QDialog):
     """Modern dark-themed popup dialog for inspecting the latest 5 Pelican test images."""
 
-    def __init__(self, pelican_items: List[Dict[str, Any]], parent=None):
+    def __init__(self, pelican_items: List[Dict[str, Any]], operator_code: str = "", parent=None):
         super().__init__(parent)
         self.pelican_items = pelican_items or []
+        self.operator_code = operator_code or (self.pelican_items[0].get("model_code", "同运营商") if self.pelican_items else "同运营商")
         self.current_idx = 0
         self.thumb_buttons: List[QPushButton] = []
         
@@ -61,8 +62,7 @@ class PelicanViewerDialog(QDialog):
 
         # 1. Header Bar
         header = QHBoxLayout()
-        op_name = self.pelican_items[0].get("model_code", "同运营商") if self.pelican_items else "同运营商"
-        title_lbl = QLabel(f"📷 鹈鹕 (Pelican) 实测图 - 【运营商: {op_name}】历史 5 次检测")
+        title_lbl = QLabel(f"📷 鹈鹕 (Pelican) 实测图 - 【运营商: {self.operator_code}】历史检测")
         title_lbl.setStyleSheet("font-size: 13px; font-weight: 700; color: #F1F5F9;")
         
         btn_close = QPushButton("✕")

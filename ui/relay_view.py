@@ -1,7 +1,7 @@
 """
 Relay Station View Widget.
-Renders tabbed cards for Square API and AIHub monitoring in the expanded widget.
-Designed for two-column side-by-side presentation.
+Renders real-time monitored tables for Square API and AIHub.
+Supports interactive group/model filtering and per-provider Pelican test image thumbnails.
 """
 
 from typing import Dict, Any, List, Optional
@@ -9,85 +9,82 @@ import os
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFrame, QStackedWidget, QSizePolicy, QGridLayout
+    QFrame, QStackedWidget, QScrollArea, QGridLayout, QSizePolicy
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QRectF, QSize
-from PyQt5.QtGui import QPainter, QColor, QFont, QCursor, QBrush, QPixmap
+from PyQt5.QtCore import Qt, pyqtSignal, QSize
+from PyQt5.QtGui import QPixmap, QColor, QFont, QCursor
 
 
-class SuccessRateBarWidget(QWidget):
-    """
-    Renders benchmark success rate sparkline matching user screenshot:
-    Vertical rounded pill bars followed by percentage text (e.g. 100.0% or 98.6%).
-    """
+SCROLL_STYLE = """
+    QScrollArea {
+        background: transparent;
+        border: none;
+    }
+    QScrollArea > QWidget > QWidget {
+        background: transparent;
+    }
+    QScrollBar:vertical {
+        border: none;
+        background: rgba(255, 255, 255, 0.03);
+        width: 4px;
+        margin: 0px;
+        border-radius: 2px;
+    }
+    QScrollBar::handle:vertical {
+        background: rgba(255, 255, 255, 0.18);
+        border-radius: 2px;
+        min-height: 20px;
+    }
+    QScrollBar::handle:vertical:hover {
+        background: rgba(59, 130, 246, 0.5);
+    }
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+        height: 0px;
+    }
+"""
 
-    def __init__(self, count: int = 16, success_rate: float = 100.0, parent=None):
+
+class ClickableThumbnail(QLabel):
+    """Mini clickable thumbnail image representing a provider's detection artifact."""
+    clicked = pyqtSignal(list, str)  # (operator_images, operator_code)
+
+    def __init__(self, provider_item: Dict[str, Any], parent=None):
         super().__init__(parent)
-        self.bar_count = max(4, min(count, 16))
-        self.rate = success_rate
-        self.setFixedHeight(14)
-        self.setFixedWidth(75)
-        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-
-        bar_w = 0.95
-        bar_h = 8.5
-        gap = 0.7
-        y = (self.height() - bar_h) / 2.0
-
-        emerald = QColor("#10B981")
-        amber = QColor("#F59E0B")
-        has_fail = self.rate < 100.0
-
-        x = 0.5
-        for i in range(self.bar_count):
-            if has_fail and i == self.bar_count - 2:
-                painter.setBrush(QBrush(amber))
-            else:
-                painter.setBrush(QBrush(emerald))
-            painter.setPen(Qt.NoPen)
-            painter.drawRoundedRect(QRectF(x, y, bar_w, bar_h), 0.4, 0.4)
-            x += bar_w + gap
-
-        # Percentage text
-        x += 2.0
-        painter.setPen(emerald)
-        font = QFont("Segoe UI", 7, QFont.Bold)
-        font.setStyleHint(QFont.SansSerif)
-        painter.setFont(font)
-
-        text = f"{self.rate:.1f}%"
-        rect = QRectF(x, 0, self.width() - x, self.height())
-        painter.drawText(rect, Qt.AlignLeft | Qt.AlignVCenter, text)
-        painter.end()
-
-
-class ClickableImageCard(QFrame):
-    """Card containing an embedded Pelican thumbnail image with click handler."""
-    clicked = pyqtSignal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
+        self.provider_item = provider_item
+        self.setFixedSize(38, 18)
+        self.setAlignment(Qt.AlignCenter)
         self.setCursor(Qt.PointingHandCursor)
-        self.setObjectName("PelicanCard")
+        self.setToolTip("点击查看该运营商的历史检测图")
         self.setStyleSheet("""
-            QFrame#PelicanCard {
-                background: rgba(16, 185, 129, 0.05);
-                border: 1px solid rgba(16, 185, 129, 0.22);
-                border-radius: 6px;
+            QLabel {
+                background: rgba(16, 185, 129, 0.08);
+                border: 1px solid rgba(16, 185, 129, 0.28);
+                border-radius: 3px;
+                color: #64748B;
+                font-size: 8px;
             }
-            QFrame#PelicanCard:hover {
-                background: rgba(16, 185, 129, 0.12);
-                border-color: rgba(16, 185, 129, 0.45);
+            QLabel:hover {
+                background: rgba(16, 185, 129, 0.22);
+                border-color: rgba(16, 185, 129, 0.6);
             }
         """)
 
+        local_path = provider_item.get("local_image_path", "")
+        if local_path and os.path.exists(local_path):
+            pix = QPixmap(local_path)
+            if not pix.isNull():
+                scaled = pix.scaled(QSize(36, 16), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self.setPixmap(scaled)
+            else:
+                self.setText("📷")
+        else:
+            self.setText("无图")
+
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self.clicked.emit()
+            images = self.provider_item.get("operator_images", [])
+            code = self.provider_item.get("code", "AIHub")
+            self.clicked.emit(images, code)
             event.accept()
         else:
             super().mousePressEvent(event)
@@ -96,7 +93,8 @@ class ClickableImageCard(QFrame):
 class RelayStationView(QWidget):
     """Component for displaying Square API & AIHub live stats in expanded mode."""
 
-    pelican_clicked = pyqtSignal()
+    pelican_clicked = pyqtSignal(list, str)  # (operator_images, operator_code)
+    filter_dialog_requested = pyqtSignal()
     refresh_requested = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -111,7 +109,7 @@ class RelayStationView(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Card container with glassmorphism style matching Codex card
+        # Main Card container
         self.card = QFrame(self)
         self.card.setProperty("class", "CardSection")
         card_layout = QVBoxLayout(self.card)
@@ -189,7 +187,7 @@ class RelayStationView(QWidget):
         header.addWidget(self.btn_refresh)
         card_layout.addLayout(header)
 
-        # Divider inside card
+        # Divider
         div = QFrame(self.card)
         div.setFrameShape(QFrame.HLine)
         div.setStyleSheet("background-color: rgba(255, 255, 255, 0.05); height: 1px; border: none;")
@@ -216,82 +214,87 @@ class RelayStationView(QWidget):
         p_layout.setContentsMargins(0, 1, 0, 1)
         p_layout.setSpacing(4)
 
-        # 1. Square Sub-header
-        self.sq_status_lbl = QLabel("🟢 Square API (api.squarefaceicon.org)")
+        # Sub-header with Filter Button
+        sub_hdr = QHBoxLayout()
+        self.sq_status_lbl = QLabel("🟢 Square API (实时监控)")
         self.sq_status_lbl.setStyleSheet("font-size: 10px; font-weight: 600; color: #10B981;")
-        p_layout.addWidget(self.sq_status_lbl)
 
-        # 2. Target Models Badges Container
-        self.sq_models_container = QWidget(self.square_panel)
-        self.sq_models_layout = QVBoxLayout(self.sq_models_container)
-        self.sq_models_layout.setContentsMargins(0, 0, 0, 0)
-        self.sq_models_layout.setSpacing(2)
-        p_layout.addWidget(self.sq_models_container)
+        self.btn_sq_filter = QPushButton("⚙️ 勾选监控")
+        self.btn_sq_filter.setCursor(Qt.PointingHandCursor)
+        self.btn_sq_filter.setToolTip("手动勾选想要监控的分组与模型")
+        self.btn_sq_filter.setStyleSheet("""
+            QPushButton {
+                background: rgba(59, 130, 246, 0.15);
+                border: 1px solid rgba(59, 130, 246, 0.35);
+                border-radius: 3px;
+                color: #60A5FA;
+                font-size: 8px;
+                font-weight: 600;
+                padding: 1px 5px;
+            }
+            QPushButton:hover {
+                background: rgba(59, 130, 246, 0.28);
+                color: #93C5FD;
+            }
+        """)
+        self.btn_sq_filter.clicked.connect(self.filter_dialog_requested.emit)
 
-        # 3. Benchmark Grid Container (Table matching user screenshot)
-        self.sq_bench_container = QWidget(self.square_panel)
-        self.sq_bench_grid = QGridLayout(self.sq_bench_container)
-        self.sq_bench_grid.setContentsMargins(2, 2, 2, 2)
-        self.sq_bench_grid.setHorizontalSpacing(4)
-        self.sq_bench_grid.setVerticalSpacing(3)
-        p_layout.addWidget(self.sq_bench_container)
+        sub_hdr.addWidget(self.sq_status_lbl)
+        sub_hdr.addStretch()
+        sub_hdr.addWidget(self.btn_sq_filter)
+        p_layout.addLayout(sub_hdr)
 
-        p_layout.addStretch()
+        # Scroll Area for Square Monitored Rows
+        self.sq_scroll = QScrollArea()
+        self.sq_scroll.setWidgetResizable(True)
+        self.sq_scroll.setFixedHeight(235)
+        self.sq_scroll.setStyleSheet(SCROLL_STYLE)
+        self.sq_scroll.viewport().setStyleSheet("background: transparent; border: none;")
+        self.sq_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        self.sq_scroll_content = QWidget()
+        self.sq_scroll_content.setStyleSheet("background: transparent;")
+        self.sq_grid = QGridLayout(self.sq_scroll_content)
+        self.sq_grid.setContentsMargins(1, 1, 1, 1)
+        self.sq_grid.setHorizontalSpacing(4)
+        self.sq_grid.setVerticalSpacing(3)
+        self.sq_scroll.setWidget(self.sq_scroll_content)
+        p_layout.addWidget(self.sq_scroll)
 
     def init_aihub_panel(self):
         p_layout = QVBoxLayout(self.aihub_panel)
         p_layout.setContentsMargins(0, 1, 0, 1)
         p_layout.setSpacing(4)
 
-        # 1. Sub-header: AIHub user balance & status
-        self.aihub_header_layout = QHBoxLayout()
-        self.aihub_balance_lbl = QLabel("余额: ¥--")
-        self.aihub_balance_lbl.setStyleSheet("font-size: 11px; font-weight: 700; color: #10B981;")
+        # Sub-header (NO balance display per user request)
+        sub_hdr = QHBoxLayout()
+        self.aihub_title_lbl = QLabel("AIHub 供应商实测 (前 10 低价分组)")
+        self.aihub_title_lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #10B981;")
 
-        self.aihub_status_lbl = QLabel("已连接")
-        self.aihub_status_lbl.setStyleSheet("font-size: 9px; color: #94A3B8;")
+        self.aihub_status_lbl = QLabel("实时更新")
+        self.aihub_status_lbl.setStyleSheet("font-size: 8px; color: #94A3B8;")
 
-        self.aihub_header_layout.addWidget(self.aihub_balance_lbl)
-        self.aihub_header_layout.addStretch()
-        self.aihub_header_layout.addWidget(self.aihub_status_lbl)
-        p_layout.addLayout(self.aihub_header_layout)
+        sub_hdr.addWidget(self.aihub_title_lbl)
+        sub_hdr.addStretch()
+        sub_hdr.addWidget(self.aihub_status_lbl)
+        p_layout.addLayout(sub_hdr)
 
-        # 2. Container for top 3 group rows (Grid layout for sharp columns)
-        self.aihub_groups_widget = QWidget(self.aihub_panel)
-        self.aihub_groups_grid = QGridLayout(self.aihub_groups_widget)
-        self.aihub_groups_grid.setContentsMargins(2, 1, 2, 1)
-        self.aihub_groups_grid.setHorizontalSpacing(6)
-        self.aihub_groups_grid.setVerticalSpacing(3)
-        p_layout.addWidget(self.aihub_groups_widget)
+        # Scroll Area for 10 Providers Table
+        self.aihub_scroll = QScrollArea()
+        self.aihub_scroll.setWidgetResizable(True)
+        self.aihub_scroll.setFixedHeight(235)
+        self.aihub_scroll.setStyleSheet(SCROLL_STYLE)
+        self.aihub_scroll.viewport().setStyleSheet("background: transparent; border: none;")
+        self.aihub_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
-        # 3. Direct Pelican Embedded Image Card (Clickable to view history)
-        self.pelican_card = ClickableImageCard(self.aihub_panel)
-        p_card_lay = QVBoxLayout(self.pelican_card)
-        p_card_lay.setContentsMargins(5, 4, 5, 4)
-        p_card_lay.setSpacing(3)
-
-        self.pelican_hdr_lbl = QLabel("📷 鹈鹕 (Pelican) 实测图 (点击查看同运营商5张历史 ↗)")
-        self.pelican_hdr_lbl.setStyleSheet("font-size: 9px; font-weight: 600; color: #34D399;")
-        p_card_lay.addWidget(self.pelican_hdr_lbl)
-
-        self.pelican_img_lbl = QLabel()
-        self.pelican_img_lbl.setFixedHeight(68)
-        self.pelican_img_lbl.setAlignment(Qt.AlignCenter)
-        self.pelican_img_lbl.setStyleSheet("""
-            QLabel {
-                background: rgba(0, 0, 0, 0.28);
-                border-radius: 4px;
-                color: #64748B;
-                font-size: 9px;
-            }
-        """)
-        self.pelican_img_lbl.setText("⏳ 正在加载鹈鹕实测图...")
-        p_card_lay.addWidget(self.pelican_img_lbl)
-
-        self.pelican_card.clicked.connect(self.pelican_clicked.emit)
-        p_layout.addWidget(self.pelican_card)
-
-        p_layout.addStretch()
+        self.aihub_scroll_content = QWidget()
+        self.aihub_scroll_content.setStyleSheet("background: transparent;")
+        self.aihub_grid = QGridLayout(self.aihub_scroll_content)
+        self.aihub_grid.setContentsMargins(1, 1, 1, 1)
+        self.aihub_grid.setHorizontalSpacing(4)
+        self.aihub_grid.setVerticalSpacing(3)
+        self.aihub_scroll.setWidget(self.aihub_scroll_content)
+        p_layout.addWidget(self.aihub_scroll)
 
     def switch_tab(self, index: int):
         self.current_tab = index
@@ -304,7 +307,7 @@ class RelayStationView(QWidget):
             self.parentWidget().adjustSize()
 
     def update_square_data(self, data: Dict[str, Any]):
-        """Render Square API target models and group performance table."""
+        """Render Square API real-time monitored groups, models, and descriptions."""
         self._square_data = data
         if not data.get("success"):
             self.sq_status_lbl.setText(f"⚠️ {data.get('error', '获取失败')}")
@@ -313,139 +316,110 @@ class RelayStationView(QWidget):
         balance_info = data.get("balance", {})
         used = balance_info.get("total_usage")
         if used is not None:
-            self.sq_status_lbl.setText(f"🟢 Square 正常 · 已用: ${used:.2f}")
+            self.sq_status_lbl.setText(f"🟢 Square (已用: ${used:.2f})")
         else:
-            self.sq_status_lbl.setText("🟢 Square 正常 · 公开价格")
+            self.sq_status_lbl.setText("🟢 Square (实时监控)")
 
-        # 1. Update Target Model Quick Badges
-        while self.sq_models_layout.count():
-            item = self.sq_models_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-            elif item.layout():
-                while item.layout().count():
-                    sub = item.layout().takeAt(0)
-                    if sub.widget():
-                        sub.widget().deleteLater()
-
-        models = data.get("models", [])
-        for m in models:
-            m_row = QHBoxLayout()
-            m_row.setContentsMargins(1, 0, 1, 0)
-            m_row.setSpacing(4)
-
-            d_name = m.get("display_name", "")
-            if "Opus" in d_name:
-                short_name = "Opus 5.5"
-            elif "Astra" in d_name:
-                short_name = "GPT-6 Astra"
-            elif "v4.1" in d_name:
-                short_name = "DS-v4.1"
-            else:
-                short_name = d_name
-
-            name_lbl = QLabel(short_name)
-            name_lbl.setStyleSheet("font-size: 9px; font-weight: 700; color: #CBD5E1;")
-            m_row.addWidget(name_lbl)
-
-            tags_str = " · ".join([f"{g['name']} {g['ratio_str']}" for g in m.get("groups", [])])
-            tags_lbl = QLabel(tags_str)
-            tags_lbl.setStyleSheet("font-size: 8px; color: #94A3B8;")
-            m_row.addWidget(tags_lbl)
-            m_row.addStretch()
-
-            self.sq_models_layout.addLayout(m_row)
-
-        # 2. Update Group Benchmark Table (matching user screenshot)
-        while self.sq_bench_grid.count():
-            item = self.sq_bench_grid.takeAt(0)
+        # Clear grid
+        while self.sq_grid.count():
+            item = self.sq_grid.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
 
-        # Table Header
-        h_titles = ["分组", "倍率", "速度", "首字", "延迟", "成功率"]
-        h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight]
+        # Header Titles
+        h_titles = ["关注分组", "倍率", "对应勾选模型", "实时说明/特性"]
+        h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignLeft, Qt.AlignLeft]
         for col_idx, (title, align) in enumerate(zip(h_titles, h_aligns)):
             h_lbl = QLabel(title)
             h_lbl.setAlignment(align | Qt.AlignVCenter)
             h_lbl.setStyleSheet("font-size: 8px; font-weight: 700; color: #64748B;")
-            self.sq_bench_grid.addWidget(h_lbl, 0, col_idx)
-        self.sq_bench_grid.setColumnMinimumWidth(5, 75)
+            self.sq_grid.addWidget(h_lbl, 0, col_idx)
 
-        perf_groups = data.get("performance_groups", [])
-        for row_idx, pg in enumerate(perf_groups, start=1):
-            # Name in exact color from screenshot
-            color = pg.get("color", "#10B981")
-            name_lbl = QLabel(pg.get("short_name", pg["name"]))
-            name_lbl.setToolTip(pg.get("name", ""))
-            name_lbl.setStyleSheet(f"font-size: 9px; font-weight: 700; color: {color};")
+        colors = ["#10B981", "#38BDF8", "#F59E0B", "#A78BFA", "#EAB308", "#EC4899", "#34D399", "#60A5FA"]
 
-            mult_lbl = QLabel(pg.get("multiplier", "--"))
-            mult_lbl.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-            mult_lbl.setStyleSheet("font-size: 8px; font-weight: 600; color: #60A5FA;")
+        monitored_rows = data.get("monitored_rows", [])
+        if not monitored_rows:
+            empty_lbl = QLabel("暂无勾选的分组，请点击右上角 [⚙️ 勾选监控] 选择")
+            empty_lbl.setStyleSheet("font-size: 9px; color: #94A3B8; padding: 10px;")
+            self.sq_grid.addWidget(empty_lbl, 1, 0, 1, 4, Qt.AlignCenter)
+        else:
+            for row_idx, r in enumerate(monitored_rows, start=1):
+                color = colors[(row_idx - 1) % len(colors)]
+                raw_g = r["group_name"]
+                if "鹈鹕" in raw_g:
+                    short_g = "已过鹈鹕"
+                elif "特惠" in raw_g:
+                    short_g = "特惠分组"
+                elif "4.1" in raw_g and "专门" in raw_g:
+                    short_g = "4.1专门"
+                elif "ultra" in raw_g:
+                    short_g = "ultra"
+                elif "aws" in raw_g:
+                    short_g = "aws-cc"
+                elif "官方" in raw_g:
+                    short_g = "官方max"
+                elif "pro" in raw_g:
+                    short_g = "pro专享"
+                elif "terra" in raw_g:
+                    short_g = "terra"
+                elif "混池" in raw_g:
+                    short_g = "混池优惠"
+                else:
+                    short_g = raw_g.replace("gpt-", "").replace("claude-", "")[:6]
 
-            tps_lbl = QLabel(pg.get("tps", "--"))
-            tps_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            tps_lbl.setStyleSheet("font-size: 8px; color: #CBD5E1;")
+                g_lbl = QLabel(short_g)
+                g_lbl.setToolTip(raw_g)
+                g_lbl.setStyleSheet(f"font-size: 9px; font-weight: 700; color: {color};")
 
-            ttft_lbl = QLabel(pg.get("ttft", "--"))
-            ttft_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            ttft_lbl.setStyleSheet("font-size: 8px; color: #94A3B8;")
+                mult_lbl = QLabel(r["ratio_str"])
+                mult_lbl.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+                mult_lbl.setStyleSheet("font-size: 8px; font-weight: 600; color: #60A5FA;")
 
-            lat_lbl = QLabel(pg.get("latency", "--"))
-            lat_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            lat_lbl.setStyleSheet("font-size: 8px; color: #94A3B8;")
+                models_lbl = QLabel(r["models_str"])
+                models_lbl.setToolTip(r["models_str"])
+                models_lbl.setStyleSheet("font-size: 8px; color: #CBD5E1;")
 
-            # Sparkline bars matching screenshot: 16 bars for top 3, 6 bars for bottom 2
-            bar_cnt = 6 if ("terra" in pg["name"] or "混池" in pg["name"]) else 16
-            bar_widget = SuccessRateBarWidget(count=bar_cnt, success_rate=pg.get("success_rate", 100.0))
+                desc_lbl = QLabel(r.get("desc", ""))
+                desc_lbl.setToolTip(r.get("desc", ""))
+                desc_lbl.setStyleSheet("font-size: 8px; color: #94A3B8;")
 
-            self.sq_bench_grid.addWidget(name_lbl, row_idx, 0)
-            self.sq_bench_grid.addWidget(mult_lbl, row_idx, 1)
-            self.sq_bench_grid.addWidget(tps_lbl, row_idx, 2)
-            self.sq_bench_grid.addWidget(ttft_lbl, row_idx, 3)
-            self.sq_bench_grid.addWidget(lat_lbl, row_idx, 4)
-            self.sq_bench_grid.addWidget(bar_widget, row_idx, 5, Qt.AlignRight | Qt.AlignVCenter)
+                self.sq_grid.addWidget(g_lbl, row_idx, 0)
+                self.sq_grid.addWidget(mult_lbl, row_idx, 1)
+                self.sq_grid.addWidget(models_lbl, row_idx, 2)
+                self.sq_grid.addWidget(desc_lbl, row_idx, 3)
 
-        self.sq_models_container.adjustSize()
-        self.sq_bench_container.adjustSize()
+        self.sq_scroll_content.adjustSize()
         self.stack.adjustSize()
         self.card.adjustSize()
 
     def update_aihub_data(self, data: Dict[str, Any]):
-        """Render AIHub account balance, top 3 groups, and directly embedded pelican image."""
+        """Render AIHub top 10 providers with thumbnails on the right (一一对应)."""
         self._aihub_data = data
         if not data.get("success"):
             self.aihub_status_lbl.setText("⚠️ 获取失败")
             return
 
-        bal = data.get("balance")
-        if bal is not None:
-            self.aihub_balance_lbl.setText(f"余额: ¥{bal:.2f}")
-        else:
-            self.aihub_balance_lbl.setText("余额: 未知")
+        self.aihub_status_lbl.setText(f"{data.get('updated_at', '刚刚')}")
 
-        self.aihub_status_lbl.setText(f"{data.get('updated_at', '--')}")
-
-        # Clear old rows in grid
-        while self.aihub_groups_grid.count():
-            item = self.aihub_groups_grid.takeAt(0)
+        # Clear grid
+        while self.aihub_grid.count():
+            item = self.aihub_grid.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
 
-        # Header for top 3 groups
-        h_titles = ["低价分组 (≤0.2x)", "倍率", "缓存率", "TTFT"]
-        h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignRight, Qt.AlignRight]
+        # Header: 供应商, 倍率, 缓存率, TTFT, 实测图
+        h_titles = ["供应商 (≤0.2x)", "倍率", "缓存率", "TTFT", "实测图"]
+        h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignRight, Qt.AlignRight, Qt.AlignCenter]
         for col_idx, (title, align) in enumerate(zip(h_titles, h_aligns)):
             h_lbl = QLabel(title)
             h_lbl.setAlignment(align | Qt.AlignVCenter)
             h_lbl.setStyleSheet("font-size: 8px; font-weight: 700; color: #64748B;")
-            self.aihub_groups_grid.addWidget(h_lbl, 0, col_idx)
+            self.aihub_grid.addWidget(h_lbl, 0, col_idx)
 
-        # Display strictly top 3 groups as requested
         top_groups = data.get("top_groups", [])
-        for row_idx, g in enumerate(top_groups[:3], start=1):
+        for row_idx, g in enumerate(top_groups[:10], start=1):
             c_name = QLabel(f"{row_idx}. {g['code']}")
+            c_name.setToolTip(g["code"])
             c_name.setStyleSheet("font-size: 9px; font-weight: 600; color: #CBD5E1;")
 
             c_mult = QLabel(g.get("multiplier_str", "--"))
@@ -460,38 +434,16 @@ class RelayStationView(QWidget):
             c_ttft.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             c_ttft.setStyleSheet("font-size: 8px; color: #64748B;")
 
-            self.aihub_groups_grid.addWidget(c_name, row_idx, 0)
-            self.aihub_groups_grid.addWidget(c_mult, row_idx, 1)
-            self.aihub_groups_grid.addWidget(c_hit, row_idx, 2)
-            self.aihub_groups_grid.addWidget(c_ttft, row_idx, 3)
+            # Right column: individual clickable thumbnail
+            thumb = ClickableThumbnail(g, self.aihub_scroll_content)
+            thumb.clicked.connect(self.pelican_clicked.emit)
 
-        # Directly render the Pelican test image preview
-        primary_pelican = data.get("primary_pelican")
-        pelicans = data.get("pelican_images", [])
-        target_item = primary_pelican or (pelicans[0] if pelicans else None)
+            self.aihub_grid.addWidget(c_name, row_idx, 0)
+            self.aihub_grid.addWidget(c_mult, row_idx, 1)
+            self.aihub_grid.addWidget(c_hit, row_idx, 2)
+            self.aihub_grid.addWidget(c_ttft, row_idx, 3)
+            self.aihub_grid.addWidget(thumb, row_idx, 4, Qt.AlignCenter | Qt.AlignVCenter)
 
-        if target_item:
-            op_code = target_item.get("operator_code") or target_item.get("model_code", "AIHub")
-            self.pelican_hdr_lbl.setText(f"📷 {op_code} 鹈鹕实测 (点击查看同运营商5张历史 ↗)")
-
-            local_path = target_item.get("local_path", "")
-            if local_path and os.path.exists(local_path):
-                pixmap = QPixmap(local_path)
-                if not pixmap.isNull():
-                    scaled = pixmap.scaled(
-                        QSize(250, 68),
-                        Qt.KeepAspectRatio,
-                        Qt.SmoothTransformation
-                    )
-                    self.pelican_img_lbl.setPixmap(scaled)
-                else:
-                    self.pelican_img_lbl.setText("⚠️ 图片解析失败")
-            else:
-                self.pelican_img_lbl.setText("⏳ 正在下载实测图片...")
-        else:
-            self.pelican_hdr_lbl.setText("📷 鹈鹕实测图 (点击查看 ↗)")
-            self.pelican_img_lbl.setText("暂无鹈鹕实测图")
-
-        self.aihub_groups_widget.adjustSize()
+        self.aihub_scroll_content.adjustSize()
         self.stack.adjustSize()
         self.card.adjustSize()

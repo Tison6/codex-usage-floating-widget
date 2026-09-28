@@ -220,7 +220,7 @@ class AIHubClient:
 
         # Sort candidates: Available first, then rate multiplier ascending
         candidates.sort(key=lambda x: (not x["available"], x["rate_multiplier"]))
-        top_groups = candidates[:3]  # Reverted to top 3 as requested
+        top_groups = candidates[:10]  # Top 10 providers as requested
 
         # Process all available Pelican test images
         history_file = os.path.join(self.cache_dir, "pelican_history.json")
@@ -263,52 +263,28 @@ class AIHubClient:
         except Exception:
             pass
 
-        # Determine primary operator to display (prefer top 1 low cost group)
-        primary_op = "A015-Plus"
-        if top_groups:
-            for g in top_groups:
-                if g["code"] in operator_history and operator_history[g["code"]]:
-                    primary_op = g["code"]
-                    break
+        # Link each provider in top_groups with its cached image and operator history
+        for g in top_groups:
+            code = g["code"]
+            history_list = operator_history.get(code, [])
+            if history_list:
+                g["local_image_path"] = history_list[0].get("local_path", "")
+                g["operator_images"] = history_list[:5]
             else:
-                if pelican_candidates:
-                    primary_op = pelican_candidates[0]["model_code"]
-        elif pelican_candidates:
-            primary_op = pelican_candidates[0]["model_code"]
-
-        # Ensure primary operator has 5 historical records (supplement from existing cache if needed)
-        op_images = list(operator_history.get(primary_op, []))
-        if not op_images and pelican_candidates:
-            op_images = [pelican_candidates[0]]
-
-        # If fewer than 5 images recorded yet for this operator, supplement so 5 are available for gallery
-        if len(op_images) < 5 and pelican_candidates:
-            for extra in pelican_candidates:
-                if len(op_images) >= 5:
-                    break
-                if not any(x.get("id") == extra.get("id") for x in op_images):
-                    cloned = dict(extra)
-                    cloned["model_code"] = primary_op
-                    op_images.append(cloned)
-
-        primary_pelican = None
-        if op_images:
-            primary_pelican = {
-                "operator_code": primary_op,
-                "local_path": op_images[0]["local_path"],
-                "published_at_str": op_images[0].get("published_at_str", ""),
-                "operator_images": op_images[:5],
-            }
+                # If this code didn't have its own image yet, check pelican_candidates
+                matching = [p for p in pelican_candidates if p.get("model_code") == code]
+                if matching:
+                    g["local_image_path"] = matching[0].get("local_path", "")
+                    g["operator_images"] = matching[:5]
+                else:
+                    g["local_image_path"] = ""
+                    g["operator_images"] = []
 
         self.cached_providers = top_groups
-        self.cached_pelicans = op_images[:5]
         self.last_fetch_time = now
 
         return {
             "success": True,
-            "balance": balance,
             "top_groups": top_groups,
-            "primary_pelican": primary_pelican,
-            "pelican_images": op_images[:5],
             "updated_at": time.strftime("%H:%M:%S", time.localtime(now)),
         }

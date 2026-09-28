@@ -125,7 +125,7 @@ class FloatingWidget(QWidget):
         self.activity_tracker = CodexActivityTracker(self.cfg.get("codex_home"))
         
         # Relay Station clients
-        self.square_client = SquareAPIClient(self.cfg.get("square_api_key"))
+        self.square_client = SquareAPIClient(self.cfg.get("square_api_key"), config=self.cfg)
         self.aihub_client = AIHubClient(
             email=self.cfg.get("aihub_email", ""),
             password=self.cfg.get("aihub_password", ""),
@@ -245,6 +245,7 @@ class FloatingWidget(QWidget):
         
         self.relay_view = RelayStationView(right_col)
         self.relay_view.pelican_clicked.connect(self.open_pelican_viewer)
+        self.relay_view.filter_dialog_requested.connect(self.open_square_filter_dialog)
         self.relay_view.refresh_requested.connect(lambda: self.fetch_relay_async(force=True))
         right_layout.addWidget(self.relay_view)
         right_layout.addStretch()
@@ -490,10 +491,17 @@ class FloatingWidget(QWidget):
         if not self.is_mini:
             self.adjustSize()
 
-    def open_pelican_viewer(self):
+    def open_pelican_viewer(self, images=None, code=""):
         """Open Pelican Test Image Viewer dialog."""
-        pelicans = self.aihub_client.cached_pelicans
-        dlg = PelicanViewerDialog(pelicans, self)
+        pelicans = images or getattr(self.aihub_client, "cached_pelicans", [])
+        dlg = PelicanViewerDialog(pelicans, operator_code=code, parent=self)
+        dlg.exec_()
+
+    def open_square_filter_dialog(self):
+        """Open Square API interactive group and model filter selection dialog."""
+        from ui.square_filter_dialog import SquareFilterDialog
+        dlg = SquareFilterDialog(self.square_client, parent=self)
+        dlg.filters_changed.connect(lambda: self.fetch_relay_async(force=True))
         dlg.exec_()
 
     def update_mini_quota_display(self):

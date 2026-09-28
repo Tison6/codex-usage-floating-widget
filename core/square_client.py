@@ -1,7 +1,7 @@
 """
 Square API Relay Client (https://api.squarefaceicon.org).
-Monitors public model pricing, group ratios, and user balance.
-Focuses on gpt-6-astra (混池优惠, gpt-已过鹈鹕测试不降智), gpt-5.5, and deepseek-v4.1-flash.
+Real-time monitors public model pricing, group ratios, descriptions, and user balance.
+Supports user-defined group and model filtering.
 """
 
 import os
@@ -11,26 +11,53 @@ from typing import Dict, Any, Optional, List
 import requests
 
 
-class SquareAPIClient:
-    """Client for fetching Square API pricing, groups, and user account usage."""
+# Default recommended groups to monitor if user hasn't configured
+DEFAULT_SELECTED_GROUPS = [
+    "gpt-已过鹈鹕测试不降智",
+    "gpt-特惠分组",
+    "pro专享",
+    "terra分组",
+    "混池优惠",
+    "claude-ultra",
+    "官方max",
+    "aws-cc",
+    "ds-v4没有4.1，4.1有专门分组",
+    "ds-v4.1",
+]
 
+# Default recommended models to monitor if user hasn't configured
+DEFAULT_SELECTED_MODELS = [
+    "gpt-6-astra",
+    "claude-opus-5-5",
+    "deepseek-v4.1-flash",
+    "gpt-5.5",
+]
+
+# Friendly display names for common models
+MODEL_DISPLAY_NAMES = {
+    "gpt-6-astra": "GPT-6 Astra",
+    "claude-opus-5-5": "Claude Opus 5.5",
+    "deepseek-v4.1-flash": "DS-v4.1 Flash",
+    "gpt-5.5": "GPT-5.5",
+    "claude-sonnet-5": "Claude Sonnet 5",
+    "gpt-5.6-terra": "GPT-5.6 Terra",
+    "gpt-6-sol": "GPT-6 Sol",
+    "claude-ultra": "Claude Ultra",
+}
+
+
+class SquareAPIClient:
+    """Client for fetching live Square API groups, pricing, and user usage."""
+
+    GROUPS_URL = "https://api.squarefaceicon.org/api/user/groups"
     PRICING_URL = "https://api.squarefaceicon.org/api/pricing"
-    SUBSCRIPTION_URL = "https://api.squarefaceicon.org/dashboard/billing/subscription"
     USAGE_URL = "https://api.squarefaceicon.org/dashboard/billing/usage"
 
-    # Baseline official reference prices ($ / 1M tokens)
-    BASELINE_PRICES = {
-        "gpt-6-astra": {"input": 10.0, "output": 50.0},
-        "gpt-5.5": {"input": 5.0, "output": 15.0},
-        "deepseek-v4.1-flash": {"input": 0.14, "output": 0.28},
-    }
-
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, config=None):
+        self.config = config
         self.api_key = api_key or self._get_key_from_cc_switch()
-        self.cached_pricing: Optional[Dict[str, Any]] = None
-        self.last_pricing_time: float = 0
-        self.cached_balance: Optional[Dict[str, Any]] = None
-        self.last_balance_time: float = 0
+        self.cached_data: Optional[Dict[str, Any]] = None
+        self.last_fetch_time: float = 0
 
     def _get_key_from_cc_switch(self) -> Optional[str]:
         """Try to retrieve Square API key from CC Switch local database."""
@@ -61,187 +88,161 @@ class SquareAPIClient:
             pass
         return None
 
-    def fetch_data(self, force: bool = False, timeout: int = 8) -> Dict[str, Any]:
+    def get_selected_groups(self) -> List[str]:
+        """Get list of user-selected group names."""
+        if self.config:
+            sel = self.config.get("square_selected_groups")
+            if sel and isinstance(sel, list):
+                return sel
+        return list(DEFAULT_SELECTED_GROUPS)
+
+    def set_selected_groups(self, groups: List[str]):
+        """Save user-selected group names."""
+        if self.config:
+            self.config.set("square_selected_groups", groups)
+
+    def get_selected_models(self) -> List[str]:
+        """Get list of user-selected model names."""
+        if self.config:
+            sel = self.config.get("square_selected_models")
+            if sel and isinstance(sel, list):
+                return sel
+        return list(DEFAULT_SELECTED_MODELS)
+
+    def set_selected_models(self, models: List[str]):
+        """Save user-selected model names."""
+        if self.config:
+            self.config.set("square_selected_models", models)
+
+    def fetch_data(self, force: bool = False, timeout: int = 6) -> Dict[str, Any]:
         """
-        Fetch public pricing and user balance for Square API.
-        Returns aggregated dictionary for UI display.
+        Fetch real-time public groups, models, and user balance from Square API.
+        Computes dynamic mapping between selected groups and selected models.
         """
         now = time.time()
-        
-        # 1. Fetch public pricing
-        pricing_data = self.cached_pricing
-        if force or not pricing_data or (now - self.last_pricing_time > 60):
-            try:
-                headers = {"User-Agent": "Mozilla/5.0"}
-                resp = requests.get(self.PRICING_URL, headers=headers, timeout=timeout)
-                if resp.status_code == 200:
-                    pricing_data = resp.json()
-                    self.cached_pricing = pricing_data
-                    self.last_pricing_time = now
-            except Exception as e:
-                pass
+        if not force and self.cached_data and (now - self.last_fetch_time < 30):
+            return self.cached_data
 
-        # 2. Fetch user balance if API key is present
-        balance_info = {"has_key": False, "total_usage_usd": None}
+        headers = {"User-Agent": "Mozilla/5.0"}
+
+        # 1. Fetch live groups
+        raw_groups: Dict[str, Any] = {}
+        try:
+            r_g = requests.get(self.GROUPS_URL, headers=headers, timeout=timeout)
+            r_g.encoding = "utf-8"
+            if r_g.status_code == 200:
+                raw_groups = r_g.json().get("data", {})
+        except Exception as e:
+            pass
+
+        # 2. Fetch live models and pricing
+        raw_models: List[Dict[str, Any]] = []
+        try:
+            r_p = requests.get(self.PRICING_URL, headers=headers, timeout=timeout)
+            r_p.encoding = "utf-8"
+            if r_p.status_code == 200:
+                raw_models = r_p.json().get("data", [])
+        except Exception as e:
+            pass
+
+        # 3. Fetch user balance if API key present
+        balance_info = {"has_key": False, "total_usage": None}
         if not self.api_key:
             self.api_key = self._get_key_from_cc_switch()
-            
         if self.api_key:
             balance_info["has_key"] = True
-            if force or not self.cached_balance or (now - self.last_balance_time > 60):
-                try:
-                    auth_headers = {
-                        "Authorization": f"Bearer {self.api_key}",
-                        "User-Agent": "Mozilla/5.0",
-                    }
-                    usage_resp = requests.get(self.USAGE_URL, headers=auth_headers, timeout=timeout)
-                    if usage_resp.status_code == 200:
-                        u_data = usage_resp.json()
-                        total_usage = u_data.get("total_usage", 0.0)
-                        # total_usage is in cents or standard units depending on One-API
-                        balance_info["total_usage"] = total_usage
-                        self.cached_balance = balance_info
-                        self.last_balance_time = now
-                except Exception:
-                    pass
-            elif self.cached_balance:
-                balance_info = self.cached_balance
+            try:
+                auth_headers = {
+                    "Authorization": f"Bearer {self.api_key}",
+                    "User-Agent": "Mozilla/5.0",
+                }
+                usage_resp = requests.get(self.USAGE_URL, headers=auth_headers, timeout=timeout)
+                if usage_resp.status_code == 200:
+                    u_data = usage_resp.json()
+                    balance_info["total_usage"] = u_data.get("total_usage", 0.0)
+            except Exception:
+                pass
 
-        if not pricing_data or not pricing_data.get("success"):
+        if not raw_groups and not raw_models:
+            if self.cached_data:
+                return self.cached_data
             return {
                 "success": False,
-                "error": "获取 Square API 价格信息失败",
-                "balance": balance_info,
-                "models": [],
+                "error": "连接 Square API 失败，请检查网络",
+                "monitored_rows": [],
+                "all_groups": [],
+                "all_models": [],
             }
 
-        # 3. Parse target models and group ratios
-        group_ratios = pricing_data.get("group_ratio", {})
-        models_raw = pricing_data.get("data", [])
+        # 4. Prepare all available groups and models for selection dialog
+        all_groups = []
+        for g_name, g_info in raw_groups.items():
+            all_groups.append({
+                "name": g_name,
+                "ratio": float(g_info.get("ratio", 1.0)),
+                "ratio_str": f"{float(g_info.get('ratio', 1.0)):.2f}x",
+                "desc": g_info.get("desc", ""),
+            })
+        # Sort groups: lower ratio first
+        all_groups.sort(key=lambda x: x["ratio"])
 
-        # Helper to clean group names
-        def get_group_ratio(name_key: str, default_val: float) -> float:
-            for k, v in group_ratios.items():
-                if name_key in k:
-                    try:
-                        return float(v)
-                    except Exception:
-                        pass
-            return default_val
+        all_models = []
+        for m in raw_models:
+            m_name = m.get("model_name", "")
+            all_models.append({
+                "name": m_name,
+                "display_name": MODEL_DISPLAY_NAMES.get(m_name, m_name),
+                "enable_groups": m.get("enable_groups", []),
+                "model_ratio": float(m.get("model_ratio", 1.0)),
+            })
+        all_models.sort(key=lambda x: x["name"])
 
-        # Models with actual group multipliers (NO base ratio multiplication)
-        models_result = []
+        # 5. Build dynamic monitored rows based on user's active selections
+        selected_group_names = self.get_selected_groups()
+        selected_model_names = self.get_selected_models()
 
-        # Target 1: gpt-6-astra
-        astra_item = next((m for m in models_raw if m.get("model_name") == "gpt-6-astra"), None)
-        if astra_item:
-            ratio_pelican = get_group_ratio("鹈鹕", 0.25)
-            ratio_hunchi = get_group_ratio("混池", 0.10)
-            ratio_terra = get_group_ratio("terra", 0.15)
-            ratio_pro = get_group_ratio("pro", 0.25)
-            models_result.append({
-                "model_id": "gpt-6-astra",
-                "display_name": "GPT-6 Astra",
-                "groups": [
-                    {"name": "鹈鹕保真", "ratio_str": f"{ratio_pelican:.2f}x", "ratio": ratio_pelican, "verified": True},
-                    {"name": "混池优惠", "ratio_str": f"{ratio_hunchi:.2f}x", "ratio": ratio_hunchi, "verified": False},
-                    {"name": "terra分组", "ratio_str": f"{ratio_terra:.2f}x", "ratio": ratio_terra, "verified": False},
-                ]
+        monitored_rows = []
+        for g_name in selected_group_names:
+            g_info = raw_groups.get(g_name)
+            if not g_info:
+                # If group name not in raw_groups yet, skip or show placeholder
+                continue
+
+            ratio = float(g_info.get("ratio", 1.0))
+            desc = g_info.get("desc", "")
+
+            # Find matching models that user checked AND that belong to this group
+            matching_models = []
+            for m in raw_models:
+                m_name = m.get("model_name", "")
+                if m_name in selected_model_names:
+                    enable_groups = m.get("enable_groups", [])
+                    if g_name in enable_groups:
+                        matching_models.append({
+                            "name": m_name,
+                            "display_name": MODEL_DISPLAY_NAMES.get(m_name, m_name),
+                        })
+
+            monitored_rows.append({
+                "group_name": g_name,
+                "ratio": ratio,
+                "ratio_str": f"{ratio:.2f}x",
+                "desc": desc,
+                "models": matching_models,
+                "models_str": ", ".join([m["display_name"] for m in matching_models]) if matching_models else "（无勾选模型）",
             })
 
-        # Target 2: Claude Opus 5.5 (User requested Opus 5.5 / OpenSSL 5.5, NOT OpenAI 5.5)
-        opus_item = next((m for m in models_raw if m.get("model_name") == "claude-opus-5-5"), None)
-        if opus_item:
-            ratio_ultra = get_group_ratio("claude-ultra", 0.40)
-            ratio_max = get_group_ratio("官方max", 0.60)
-            ratio_aws = get_group_ratio("aws-cc", 0.40)
-            models_result.append({
-                "model_id": "claude-opus-5-5",
-                "display_name": "Claude Opus 5.5",
-                "groups": [
-                    {"name": "ultra", "ratio_str": f"{ratio_ultra:.2f}x", "ratio": ratio_ultra, "verified": False},
-                    {"name": "官方max", "ratio_str": f"{ratio_max:.2f}x", "ratio": ratio_max, "verified": False},
-                    {"name": "aws-cc", "ratio_str": f"{ratio_aws:.2f}x", "ratio": ratio_aws, "verified": False},
-                ]
-            })
-
-        # Target 3: deepseek-v4.1-flash
-        ds_item = next((m for m in models_raw if m.get("model_name") == "deepseek-v4.1-flash"), None)
-        if ds_item:
-            ratio_special = get_group_ratio("4.1有专门分组", 0.08)
-            ratio_std = get_group_ratio("ds-v4.1", 0.10)
-            models_result.append({
-                "model_id": "deepseek-v4.1-flash",
-                "display_name": "DS-v4.1 Flash",
-                "groups": [
-                    {"name": "4.1特惠", "ratio_str": f"{ratio_special:.2f}x", "ratio": ratio_special, "verified": False},
-                    {"name": "4.1通用", "ratio_str": f"{ratio_std:.2f}x", "ratio": ratio_std, "verified": False},
-                ]
-            })
-
-        # 4. Group Performance Table (matching user screenshot with TPS, TTFT, Latency & Success rate bar)
-        performance_groups = [
-            {
-                "raw_name": "gpt-已过鹈鹕测试不降智",
-                "name": "已过鹈鹕测试不降智",
-                "short_name": "已过鹈鹕",
-                "color": "#10B981",  # Vibrant green
-                "multiplier": f"{get_group_ratio('鹈鹕', 0.25):.2f}x",
-                "tps": "32.9 t/s",
-                "ttft": "7.63s",
-                "latency": "21.62s",
-                "success_rate": 100.0,
-            },
-            {
-                "raw_name": "gpt-特惠分组",
-                "name": "gpt-特惠分组",
-                "short_name": "特惠分组",
-                "color": "#38BDF8",  # Sky Blue
-                "multiplier": f"{get_group_ratio('gpt-特惠', 0.25):.2f}x",
-                "tps": "32.7 t/s",
-                "ttft": "4.59s",
-                "latency": "16.07s",
-                "success_rate": 100.0,
-            },
-            {
-                "raw_name": "pro专享",
-                "name": "pro专享",
-                "short_name": "pro专享",
-                "color": "#F59E0B",  # Amber gold
-                "multiplier": f"{get_group_ratio('pro专享', 0.25):.2f}x",
-                "tps": "31.8 t/s",
-                "ttft": "4.95s",
-                "latency": "22.60s",
-                "success_rate": 100.0,
-            },
-            {
-                "raw_name": "terra分组",
-                "name": "terra分组",
-                "short_name": "terra分组",
-                "color": "#A78BFA",  # Purple
-                "multiplier": f"{get_group_ratio('terra', 0.15):.2f}x",
-                "tps": "45.3 t/s",
-                "ttft": "4.52s",
-                "latency": "17.83s",
-                "success_rate": 100.0,
-            },
-            {
-                "raw_name": "混池优惠",
-                "name": "混池优惠",
-                "short_name": "混池优惠",
-                "color": "#EAB308",  # Yellow
-                "multiplier": f"{get_group_ratio('混池', 0.10):.2f}x",
-                "tps": "27.6 t/s",
-                "ttft": "13.22s",
-                "latency": "28.90s",
-                "success_rate": 98.6,
-            },
-        ]
-
-        return {
+        result = {
             "success": True,
             "updated_at": time.strftime("%H:%M:%S", time.localtime(now)),
             "balance": balance_info,
-            "models": models_result,
-            "performance_groups": performance_groups,
+            "monitored_rows": monitored_rows,
+            "all_groups": all_groups,
+            "all_models": all_models,
+            "selected_groups": selected_group_names,
+            "selected_models": selected_model_names,
         }
+
+        self.cached_data = result
+        self.last_fetch_time = now
+        return result
