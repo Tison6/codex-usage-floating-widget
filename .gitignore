@@ -4,7 +4,7 @@ __pycache__/
 *$py.class
 
 # User runtime data & persistent local states
-data/quota_history.json
+data/
 config.json
 
 # Logs & Temporary files

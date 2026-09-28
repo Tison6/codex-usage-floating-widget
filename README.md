@@ -69,7 +69,20 @@ When pairing wireless microphones like the **DJI Mic Mini** or **DJI Mic** for *
   - Instantly snaps back to a glowing emerald green dot (🟢) the millisecond the turn completes;
   - Immune to tool-execution latency gaps or CPU sampling noise—completely eliminating the status light "flicker/jitter" problem.
 
-### 3. 🪟 Fluid Desktop Interaction
+### 3. 🌐 Relay Station Monitoring & CC Switch Seamless Compatibility
+- **CC Switch Official Quota Protection (Dual-Source SQLite Resolver)**:
+  - Resolves the issue where switching profiles in CC Switch overwrites `~/.codex/auth.json` and causes official Codex quota to show error ("异常");
+  - Features an automatic SQLite fallback parser reading `%USERPROFILE%\.cc-switch\cc-switch.db`: **ChatGPT Plus / Codex quota & countdown tracking remain 100% active regardless of which relay provider is currently active in CC Switch**;
+- **Square API Integration (`api.squarefaceicon.org`)**:
+  - Target model tracking for `gpt-6-astra` with group filtering: **`混池优惠`** (0.50x, $5.0 / $25.0 per 1M) and **`gpt-已过鹈鹕测试不降智`** (1.25x, $12.5 / $62.5 per 1M, with 🟢 Pelican verification badge);
+  - Real-time multiplier tracking for `gpt-5.5` (0.25x ~ 0.62x) and `deepseek-v4.1-flash` (0.08x ~ 0.10x);
+  - Automatic balance and usage calculation;
+- **AIHub Integration & Pelican Test Gallery (`aihub.top`)**:
+  - Live account balance (¥15.00) and concurrency monitoring;
+  - Smart filtering of **low-multiplier ($\le 0.2\times$) active groups** (e.g. `A015-Plus`, `A018-BugTeam`, `A025-BugTeam`), displaying rate multiplier, cache hit rate, and real-user TTFT latency;
+  - **Pelican (鹈鹕) Test Image Viewer**: Automatically scrapes and locally caches the **latest 5 Pelican model verification test images** with precise timestamps, viewable in a high-res gallery dialog.
+
+### 4. 🪟 Fluid Desktop Interaction
 - **Dark Frosted Glassmorphism**: Subtle translucent blur, refined borders, and gentle depth drop-shadows;
 - **Click Anywhere to Expand**: Click any area of the mini capsule to instantly reveal the detailed card;
 - **Auto-Collapse on Focus Loss**: Clicking outside anywhere on the desktop automatically folds the widget back into capsule mode;

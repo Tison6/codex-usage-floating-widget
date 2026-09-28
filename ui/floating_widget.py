@@ -22,10 +22,14 @@ from core.bt_scanner import BluetoothScanner
 from core.codex_client import CodexUsageClient
 from core.quota_tracker import QuotaTracker
 from core.codex_activity_tracker import CodexActivityTracker
+from core.square_client import SquareAPIClient
+from core.aihub_client import AIHubClient
 from ui.battery_view import BatteryView
 from ui.codex_view import CodexQuotaView
 from ui.status_light import CodexStatusLight
 from ui.settings_dialog import SettingsDialog
+from ui.relay_view import RelayStationView
+from ui.pelican_viewer import PelicanViewerDialog
 from ui.styles import MAIN_STYLESHEET
 
 
@@ -69,6 +73,31 @@ class CodexFetchWorker(QThread):
         self.data_ready.emit(result)
 
 
+class RelayFetchWorker(QThread):
+    """Background worker to query Square API and AIHub without freezing UI."""
+    square_ready = pyqtSignal(dict)
+    aihub_ready = pyqtSignal(dict)
+
+    def __init__(self, square_client: SquareAPIClient, aihub_client: AIHubClient, force: bool = False):
+        super().__init__()
+        self.sq_client = square_client
+        self.ai_client = aihub_client
+        self.force = force
+
+    def run(self):
+        try:
+            sq = self.sq_client.fetch_data(force=self.force)
+            self.square_ready.emit(sq)
+        except Exception as e:
+            self.square_ready.emit({"success": False, "error": str(e)})
+
+        try:
+            ai = self.ai_client.fetch_data(force=self.force)
+            self.aihub_ready.emit(ai)
+        except Exception as e:
+            self.aihub_ready.emit({"success": False, "error": str(e)})
+
+
 class FloatingWidget(QWidget):
     """Frameless translucent desktop floating widget with auto-collapse & instant interaction."""
     
@@ -92,7 +121,15 @@ class FloatingWidget(QWidget):
         # Async workers & Mature Activity tracker
         self._bt_worker: Optional[BluetoothScanWorker] = None
         self._codex_worker: Optional[CodexFetchWorker] = None
+        self._relay_worker: Optional[RelayFetchWorker] = None
         self.activity_tracker = CodexActivityTracker(self.cfg.get("codex_home"))
+        
+        # Relay Station clients
+        self.square_client = SquareAPIClient(self.cfg.get("square_api_key"))
+        self.aihub_client = AIHubClient(
+            email=self.cfg.get("aihub_email", ""),
+            password=self.cfg.get("aihub_password", ""),
+        )
         
         # Window setup
         self.init_window_flags()
@@ -180,6 +217,18 @@ class FloatingWidget(QWidget):
         self.codex_view.refresh_requested.connect(lambda: self.fetch_codex_async(force=True))
         self.exp_layout.addWidget(self.codex_view)
         
+        # Divider Line 2
+        divider2 = QFrame(self.expanded_container)
+        divider2.setFrameShape(QFrame.HLine)
+        divider2.setStyleSheet("background-color: rgba(255, 255, 255, 0.06); height: 1px; border: none;")
+        self.exp_layout.addWidget(divider2)
+        
+        # Relay Station View (Square API & AIHub)
+        self.relay_view = RelayStationView(self.expanded_container)
+        self.relay_view.pelican_clicked.connect(self.open_pelican_viewer)
+        self.relay_view.refresh_requested.connect(lambda: self.fetch_relay_async(force=True))
+        self.exp_layout.addWidget(self.relay_view)
+        
         self.root_layout.addWidget(self.expanded_container)
         
         # -------------------------------------------------------------
@@ -258,7 +307,7 @@ class FloatingWidget(QWidget):
 
     def update_mode_visibility(self):
         """Instant toggle between mini and expanded views with zero lag."""
-        base_w = int(240 * self.widget_scale)
+        base_w = int(250 * self.widget_scale)
         if self.is_mini:
             self.expanded_container.hide()
             self.mini_container.show()
@@ -312,6 +361,12 @@ class FloatingWidget(QWidget):
         self.activity_timer.timeout.connect(self.check_codex_activity_fast)
         self.activity_timer.start(1000)
 
+        # 4. Relay Station timer (Square API & AIHub)
+        self.relay_timer = QTimer(self)
+        self.relay_timer.timeout.connect(lambda: self.fetch_relay_async(force=False))
+        relay_sec = max(20, int(self.cfg.get("relay_interval_sec", 60)))
+        self.relay_timer.start(relay_sec * 1000)
+
     # -------------------------------------------------------------
     # Fast Activity & Data Methods
     # -------------------------------------------------------------
@@ -326,9 +381,10 @@ class FloatingWidget(QWidget):
         self.codex_view.set_codex_running_state(running)
 
     def refresh_all_data(self, force: bool = True):
-        """Trigger async scan for Bluetooth and Codex."""
+        """Trigger async scan for Bluetooth, Codex, and Relay Stations."""
         self.scan_bluetooth_async()
         self.fetch_codex_async(force=force)
+        self.fetch_relay_async(force=force)
 
     def scan_bluetooth_async(self):
         """Asynchronously scan Bluetooth devices in background thread."""
@@ -388,6 +444,34 @@ class FloatingWidget(QWidget):
             
         if not self.is_mini:
             self.adjustSize()
+
+    def fetch_relay_async(self, force: bool = False):
+        """Asynchronously fetch Square API and AIHub data in background."""
+        if self._relay_worker and self._relay_worker.isRunning():
+            return
+            
+        self._relay_worker = RelayFetchWorker(self.square_client, self.aihub_client, force=force)
+        self._relay_worker.square_ready.connect(self.on_square_data_received)
+        self._relay_worker.aihub_ready.connect(self.on_aihub_data_received)
+        self._relay_worker.start()
+
+    def on_square_data_received(self, data: Dict[str, Any]):
+        """Render Square API data."""
+        self.relay_view.update_square_data(data)
+        if not self.is_mini:
+            self.adjustSize()
+
+    def on_aihub_data_received(self, data: Dict[str, Any]):
+        """Render AIHub data."""
+        self.relay_view.update_aihub_data(data)
+        if not self.is_mini:
+            self.adjustSize()
+
+    def open_pelican_viewer(self):
+        """Open Pelican Test Image Viewer dialog."""
+        pelicans = self.aihub_client.cached_pelicans
+        dlg = PelicanViewerDialog(pelicans, self)
+        dlg.exec_()
 
     def update_mini_quota_display(self):
         """Render mini quota with concise 100% · 84% format and dynamic health colors."""

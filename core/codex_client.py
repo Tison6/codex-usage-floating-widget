@@ -64,29 +64,78 @@ class CodexUsageClient:
         self._account_id: Optional[str] = None
 
     def reload_auth_if_needed(self) -> bool:
-        """Check if auth.json was modified and reload tokens."""
-        if not os.path.exists(self.auth_path):
-            self.last_error = f"未找到凭证文件: {self.auth_path}"
-            return False
+        """Check if auth.json was modified and reload tokens.
+        If auth.json is missing tokens (e.g. CC Switch swapped to third-party proxy),
+        fall back to CC Switch SQLite database (~/.cc-switch/cc-switch.db).
+        """
+        token_found = False
         
-        try:
-            mtime = os.path.getmtime(self.auth_path)
-            if mtime != self._auth_mtime or not self._access_token:
-                with open(self.auth_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                
-                tokens = data.get("tokens", {})
-                self._access_token = tokens.get("access_token")
-                self._account_id = tokens.get("account_id")
-                self._auth_mtime = mtime
-                
-                if not self._access_token:
-                    self.last_error = "auth.json 中未找到 access_token"
-                    return False
+        # 1. First try reading auth.json
+        if os.path.exists(self.auth_path):
+            try:
+                mtime = os.path.getmtime(self.auth_path)
+                if mtime != self._auth_mtime or not self._access_token:
+                    with open(self.auth_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    
+                    tokens = data.get("tokens", {})
+                    token = tokens.get("access_token")
+                    acct_id = tokens.get("account_id")
+                    if token:
+                        self._access_token = token
+                        self._account_id = acct_id
+                        self._auth_mtime = mtime
+                        self.last_error = None
+                        token_found = True
+            except Exception:
+                pass
+        
+        if token_found:
             return True
-        except Exception as e:
-            self.last_error = f"读取 auth.json 失败: {e}"
+            
+        # 2. If token not in auth.json, fallback to CC Switch database
+        fb = self._get_fallback_tokens_from_cc_switch()
+        if fb:
+            self._access_token, self._account_id = fb
+            self.last_error = None
+            return True
+            
+        if not self._access_token:
+            self.last_error = "未找到有效的 ChatGPT OAuth 凭证 (auth.json 与 CC Switch 均无可用 Token)"
             return False
+            
+        return True
+
+    def _get_fallback_tokens_from_cc_switch(self) -> Optional[tuple]:
+        """Attempt to read official OpenAI OAuth tokens from CC Switch local database."""
+        db_path = os.path.expanduser("~/.cc-switch/cc-switch.db")
+        if not os.path.exists(db_path):
+            return None
+        try:
+            import sqlite3
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT settings_config FROM providers WHERE app_type='codex' AND (name LIKE '%Official%' OR name LIKE '%OpenAI%')"
+            )
+            rows = cursor.fetchall()
+            conn.close()
+            for (settings_raw,) in rows:
+                if not settings_raw:
+                    continue
+                try:
+                    settings = json.loads(settings_raw)
+                    auth = settings.get("auth", {})
+                    tokens = auth.get("tokens", {})
+                    token = tokens.get("access_token")
+                    acct_id = tokens.get("account_id")
+                    if token:
+                        return token, acct_id
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return None
 
     def fetch_usage(self, force: bool = False, timeout: int = 8) -> Dict[str, Any]:
         """
