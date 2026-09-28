@@ -202,33 +202,55 @@ class FloatingWidget(QWidget):
         title_bar.addWidget(self.btn_settings)
         self.exp_layout.addLayout(title_bar)
         
+        # Horizontal Two-Column Content (Left: Bluetooth + Codex, Right: Relay Stations)
+        self.cols_widget = QWidget(self.expanded_container)
+        cols_layout = QHBoxLayout(self.cols_widget)
+        cols_layout.setContentsMargins(0, 0, 0, 0)
+        cols_layout.setSpacing(8)
+        
+        # --- Left Column: Devices & Official Codex ---
+        left_col = QWidget(self.cols_widget)
+        left_layout = QVBoxLayout(left_col)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(6)
+        
         # Bluetooth Battery View
-        self.battery_view = BatteryView(self.expanded_container)
-        self.exp_layout.addWidget(self.battery_view)
+        self.battery_view = BatteryView(left_col)
+        left_layout.addWidget(self.battery_view)
         
         # Divider Line
-        divider = QFrame(self.expanded_container)
+        divider = QFrame(left_col)
         divider.setFrameShape(QFrame.HLine)
         divider.setStyleSheet("background-color: rgba(255, 255, 255, 0.06); height: 1px; border: none;")
-        self.exp_layout.addWidget(divider)
+        left_layout.addWidget(divider)
         
         # Codex Quota View
-        self.codex_view = CodexQuotaView(self.quota_tracker, self.expanded_container)
+        self.codex_view = CodexQuotaView(self.quota_tracker, left_col)
         self.codex_view.refresh_requested.connect(lambda: self.fetch_codex_async(force=True))
-        self.exp_layout.addWidget(self.codex_view)
+        left_layout.addWidget(self.codex_view)
+        left_layout.addStretch()
+        cols_layout.addWidget(left_col, 10)
         
-        # Divider Line 2
-        divider2 = QFrame(self.expanded_container)
-        divider2.setFrameShape(QFrame.HLine)
-        divider2.setStyleSheet("background-color: rgba(255, 255, 255, 0.06); height: 1px; border: none;")
-        self.exp_layout.addWidget(divider2)
+        # Vertical Separator between Left and Right
+        v_sep = QFrame(self.cols_widget)
+        v_sep.setFrameShape(QFrame.VLine)
+        v_sep.setStyleSheet("background-color: rgba(255, 255, 255, 0.08); width: 1px; border: none;")
+        cols_layout.addWidget(v_sep)
         
-        # Relay Station View (Square API & AIHub)
-        self.relay_view = RelayStationView(self.expanded_container)
+        # --- Right Column: Relay Stations (Square API & AIHub) ---
+        right_col = QWidget(self.cols_widget)
+        right_layout = QVBoxLayout(right_col)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(6)
+        
+        self.relay_view = RelayStationView(right_col)
         self.relay_view.pelican_clicked.connect(self.open_pelican_viewer)
         self.relay_view.refresh_requested.connect(lambda: self.fetch_relay_async(force=True))
-        self.exp_layout.addWidget(self.relay_view)
+        right_layout.addWidget(self.relay_view)
+        right_layout.addStretch()
+        cols_layout.addWidget(right_col, 11)
         
+        self.exp_layout.addWidget(self.cols_widget)
         self.root_layout.addWidget(self.expanded_container)
         
         # -------------------------------------------------------------
@@ -307,7 +329,7 @@ class FloatingWidget(QWidget):
 
     def update_mode_visibility(self):
         """Instant toggle between mini and expanded views with zero lag."""
-        base_w = int(250 * self.widget_scale)
+        base_w = int(560 * self.widget_scale)
         if self.is_mini:
             self.expanded_container.hide()
             self.mini_container.show()
@@ -317,7 +339,7 @@ class FloatingWidget(QWidget):
             self.expanded_container.show()
             self.setFixedWidth(base_w)
             self.setMinimumHeight(150)
-            self.setMaximumHeight(800)
+            self.setMaximumHeight(16777215)
             self.adjustSize()
 
     def set_scale(self, scale_val: float):
@@ -335,12 +357,13 @@ class FloatingWidget(QWidget):
         """Restore saved window coordinates or place near top-right."""
         pos = self.cfg.get("window_pos")
         screen = QApplication.primaryScreen().availableGeometry()
+        expected_w = int(560 * self.widget_scale) if not self.is_mini else int(215 * self.widget_scale)
         if pos and len(pos) == 2:
-            x = max(screen.left() + 10, min(pos[0], screen.right() - 240))
+            x = max(screen.left() + 10, min(pos[0], screen.right() - expected_w))
             y = max(screen.top() + 10, min(pos[1], screen.bottom() - 150))
             self.move(x, y)
         else:
-            self.move(screen.right() - 250, screen.top() + 80)
+            self.move(screen.right() - expected_w - 20, screen.top() + 80)
 
     def setup_timers(self):
         """Setup non-blocking timers."""

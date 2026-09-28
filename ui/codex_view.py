@@ -119,15 +119,18 @@ class CodexQuotaView(QWidget):
         
         # 7-Day Sparkline Curve with Grid
         self.sparkline = QuotaSparklineWidget(self.weekly_container)
+        self.sparkline.setFixedHeight(56)
         wk_layout.addWidget(self.sparkline)
         
         # Reset Countdown (Upper Line) & Exhaustion (Lower Line, Bold)
         self.reset_lbl = QLabel("倒计时: --", self.weekly_container)
         self.reset_lbl.setStyleSheet("font-size: 9px; color: #9CA3AF; font-weight: 400;")
+        self.reset_lbl.setFixedHeight(14)
         wk_layout.addWidget(self.reset_lbl)
         
         self.exhaust_lbl = QLabel("预计分析中...", self.weekly_container)
         self.exhaust_lbl.setStyleSheet("font-size: 9px; color: #F3F4F6; font-weight: 700;")
+        self.exhaust_lbl.setFixedHeight(14)
         wk_layout.addWidget(self.exhaust_lbl)
         
         self.card_layout.addWidget(self.weekly_container)

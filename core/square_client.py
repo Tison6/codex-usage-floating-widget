@@ -134,8 +134,10 @@ class SquareAPIClient:
                 base_p = self.BASELINE_PRICES["gpt-6-astra"]
                 inp_p = round(base_p["input"] * eff_mult, 2)
                 out_p = round(base_p["output"] * eff_mult, 2)
+                short_name = "鹈鹕保真" if "鹈鹕" in g_name else ("混池优惠" if "混池" in g_name else g_name)
                 groups.append({
-                    "name": g_name,
+                    "name": short_name,
+                    "raw_name": g_name,
                     "group_ratio": g_ratio,
                     "effective_multiplier": eff_mult,
                     "input_price_1m": inp_p,
@@ -164,8 +166,10 @@ class SquareAPIClient:
                     base_p = self.BASELINE_PRICES["gpt-5.5"]
                     inp_p = round(base_p["input"] * eff_mult, 2)
                     out_p = round(base_p["output"] * eff_mult, 2)
+                    short_name = "特惠分组" if "特惠" in g_name else ("混池优惠" if "混池" in g_name else g_name)
                     groups.append({
-                        "name": g_name,
+                        "name": short_name,
+                        "raw_name": g_name,
                         "group_ratio": g_ratio,
                         "effective_multiplier": eff_mult,
                         "input_price_1m": inp_p,
@@ -191,8 +195,9 @@ class SquareAPIClient:
                 if g_name in group_ratios:
                     g_ratio = float(group_ratios.get(g_name, 0.1))
                     eff_mult = round(base_ratio * g_ratio, 3)
+                    short_name = "4.1特惠" if "专门分组" in g_name else ("4.1通用" if "ds-v4.1" in g_name else g_name)
                     groups.append({
-                        "name": "4.1特惠组" if "专门分组" in g_name else g_name,
+                        "name": short_name,
                         "raw_name": g_name,
                         "group_ratio": g_ratio,
                         "effective_multiplier": eff_mult,

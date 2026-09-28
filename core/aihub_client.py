@@ -220,7 +220,7 @@ class AIHubClient:
 
         # Sort candidates: Available first, then rate multiplier ascending
         candidates.sort(key=lambda x: (not x["available"], x["rate_multiplier"]))
-        top_3 = candidates[:3]
+        top_groups = candidates[:4]
 
         # Process top 5 Pelican test images
         pelican_candidates.sort(key=lambda x: x["published_at"] or "", reverse=True)
@@ -240,14 +240,14 @@ class AIHubClient:
                 except Exception:
                     pass
 
-        self.cached_providers = top_3
+        self.cached_providers = top_groups
         self.cached_pelicans = top_5_pelicans
         self.last_fetch_time = now
 
         return {
             "success": True,
             "balance": balance,
-            "top_groups": top_3,
+            "top_groups": top_groups,
             "pelican_images": top_5_pelicans,
             "updated_at": time.strftime("%H:%M:%S", time.localtime(now)),
         }
