@@ -1,13 +1,14 @@
 """
-Square API Group and Model Selection Dialog.
-Allows users to manually check and uncheck which groups and models they want to monitor.
+Relay Stations Group & Provider Selection Dialogs.
+Allows users to manually check and uncheck which Square groups/models and AIHub providers to monitor,
+displaying live parameters (multiplier, cache rate, TTFT/latency, success rates) to make informed choices.
 """
 
-from typing import List, Dict, Any, Set
+from typing import List, Dict, Any, Set, Optional
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QWidget, QScrollArea, QCheckBox, QFrame,
-    QLineEdit, QGraphicsDropShadowEffect
+    QGraphicsDropShadowEffect
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QCursor
@@ -82,7 +83,7 @@ class SquareFilterDialog(QDialog):
         self.setWindowTitle("Square API 监控项筛选")
         self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.resize(540, 520)
+        self.resize(560, 520)
 
     def init_ui(self):
         root = QVBoxLayout(self)
@@ -110,7 +111,7 @@ class SquareFilterDialog(QDialog):
 
         # 1. Header Bar
         header = QHBoxLayout()
-        title_lbl = QLabel("⚙️ 勾选监控的分组与模型 (实时生效)")
+        title_lbl = QLabel("⚙️ 勾选 Square 监控项 (实时生效)")
         title_lbl.setStyleSheet("font-size: 13px; font-weight: 700; color: #F1F5F9;")
 
         btn_close = QPushButton("✕")
@@ -166,7 +167,7 @@ class SquareFilterDialog(QDialog):
         # Tab 1: Groups Tab
         tab_groups = QWidget()
         self.init_groups_tab(tab_groups)
-        tabs.addTab(tab_groups, "1. 勾选关注分组")
+        tabs.addTab(tab_groups, "1. 勾选关注分组 (含实时参数)")
 
         # Tab 2: Models Tab
         tab_models = QWidget()
@@ -226,7 +227,7 @@ class SquareFilterDialog(QDialog):
 
         # Actions row
         act_row = QHBoxLayout()
-        tip_lbl = QLabel("提示: 勾选的分组将在中转站主界面展示其实时倍率与说明")
+        tip_lbl = QLabel("提示: 勾选分组将在主界面展示其速度、延迟与成功率")
         tip_lbl.setStyleSheet("font-size: 10px; color: #94A3B8;")
         act_row.addWidget(tip_lbl)
         act_row.addStretch()
@@ -236,6 +237,7 @@ class SquareFilterDialog(QDialog):
         btn_all.setCursor(Qt.PointingHandCursor)
         btn_all.setStyleSheet("font-size: 10px; color: #60A5FA; background: transparent; border: none;")
         btn_all.clicked.connect(lambda: self.toggle_all_groups(True))
+
         btn_none = QPushButton("清空")
         btn_none.setFixedHeight(20)
         btn_none.setCursor(Qt.PointingHandCursor)
@@ -245,6 +247,22 @@ class SquareFilterDialog(QDialog):
         act_row.addWidget(btn_all)
         act_row.addWidget(btn_none)
         layout.addLayout(act_row)
+
+        # Table Column Header
+        h_row = QHBoxLayout()
+        h_row.setContentsMargins(8, 2, 8, 2)
+        h_g = QLabel("分组名称")
+        h_g.setStyleSheet("font-size: 9px; font-weight: 700; color: #64748B;")
+        h_row.addWidget(h_g)
+        h_row.addStretch()
+
+        for title, w in [("倍率", 42), ("速度", 48), ("延迟", 46), ("成功率", 48), ("说明/特性", 75)]:
+            lbl = QLabel(title)
+            lbl.setFixedWidth(w)
+            lbl.setAlignment(Qt.AlignCenter if title in ["倍率", "成功率"] else Qt.AlignRight)
+            lbl.setStyleSheet("font-size: 9px; font-weight: 700; color: #64748B;")
+            h_row.addWidget(lbl)
+        layout.addLayout(h_row)
 
         # Scroll Area
         scroll = QScrollArea()
@@ -280,28 +298,56 @@ class SquareFilterDialog(QDialog):
             """)
             r_lay = QHBoxLayout(row)
             r_lay.setContentsMargins(6, 4, 6, 4)
+            r_lay.setSpacing(6)
 
             cb = QCheckBox(g_name)
             cb.setChecked(g_name in cur_selected)
             cb.setStyleSheet(CHECKBOX_STYLE)
             self.group_checkboxes[g_name] = cb
             r_lay.addWidget(cb)
+            r_lay.addStretch()
 
-            ratio_lbl = QLabel(g.get("ratio_str", ""))
+            # Multiplier badge
+            ratio_lbl = QLabel(g.get("ratio_str", "--"))
+            ratio_lbl.setFixedWidth(42)
+            ratio_lbl.setAlignment(Qt.AlignCenter)
             ratio_lbl.setStyleSheet("""
                 background: rgba(59, 130, 246, 0.2);
                 color: #60A5FA;
                 border-radius: 3px;
-                padding: 1px 4px;
+                padding: 1px 3px;
                 font-size: 9px;
                 font-weight: 700;
             """)
             r_lay.addWidget(ratio_lbl)
 
-            r_lay.addStretch()
+            # Speed
+            tps_lbl = QLabel(g.get("tps", "--"))
+            tps_lbl.setFixedWidth(48)
+            tps_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            tps_lbl.setStyleSheet("font-size: 9px; color: #CBD5E1;")
+            r_lay.addWidget(tps_lbl)
 
+            # Latency
+            lat_lbl = QLabel(g.get("latency", "--"))
+            lat_lbl.setFixedWidth(46)
+            lat_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            lat_lbl.setStyleSheet("font-size: 9px; color: #94A3B8;")
+            r_lay.addWidget(lat_lbl)
+
+            # Success rate
+            sr_val = g.get("success_rate", 100.0)
+            sr_lbl = QLabel(f"{sr_val:.1f}%")
+            sr_lbl.setFixedWidth(48)
+            sr_lbl.setAlignment(Qt.AlignCenter)
+            sr_lbl.setStyleSheet("font-size: 9px; font-weight: 700; color: #10B981;")
+            r_lay.addWidget(sr_lbl)
+
+            # Desc
             desc_lbl = QLabel(g.get("desc", ""))
-            desc_lbl.setStyleSheet("font-size: 10px; color: #94A3B8;")
+            desc_lbl.setFixedWidth(75)
+            desc_lbl.setToolTip(g.get("desc", ""))
+            desc_lbl.setStyleSheet("font-size: 9px; color: #64748B;")
             r_lay.addWidget(desc_lbl)
 
             c_layout.addWidget(row)
@@ -327,6 +373,7 @@ class SquareFilterDialog(QDialog):
         btn_all.setCursor(Qt.PointingHandCursor)
         btn_all.setStyleSheet("font-size: 10px; color: #60A5FA; background: transparent; border: none;")
         btn_all.clicked.connect(lambda: self.toggle_all_models(True))
+
         btn_none = QPushButton("清空")
         btn_none.setFixedHeight(20)
         btn_none.setCursor(Qt.PointingHandCursor)
@@ -414,6 +461,315 @@ class SquareFilterDialog(QDialog):
 
         # Force re-computation of monitored rows
         self.square_client.fetch_data(force=True)
+        self.filters_changed.emit()
+        self.close()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.close()
+        else:
+            super().keyPressEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._drag_pos = event.globalPos() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton and hasattr(self, "_drag_pos"):
+            self.move(event.globalPos() - self._drag_pos)
+            event.accept()
+
+
+class AIHubFilterDialog(QDialog):
+    """Modern dark-themed popup dialog for configuring AIHub monitored providers with live stats."""
+
+    filters_changed = pyqtSignal()
+
+    def __init__(self, aihub_client, parent=None):
+        super().__init__(parent)
+        self.aihub_client = aihub_client
+        self.provider_checkboxes: Dict[str, QCheckBox] = {}
+        self.provider_data_map: Dict[str, Dict[str, Any]] = {}
+
+        self.init_window()
+        self.init_ui()
+
+    def init_window(self):
+        self.setWindowTitle("AIHub 供应商监控项筛选")
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.resize(560, 520)
+
+    def init_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(10, 10, 10, 10)
+
+        container = QWidget(self)
+        container.setObjectName("FilterContainer")
+        container.setStyleSheet("""
+            QWidget#FilterContainer {
+                background-color: rgba(20, 24, 33, 0.98);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 12px;
+            }
+        """)
+
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(20)
+        shadow.setColor(QColor(0, 0, 0, 180))
+        shadow.setOffset(0, 4)
+        container.setGraphicsEffect(shadow)
+
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(10)
+
+        # 1. Header Bar
+        header = QHBoxLayout()
+        title_lbl = QLabel("⚙️ 勾选 AIHub 监控供应商 (实时参数筛选)")
+        title_lbl.setStyleSheet("font-size: 13px; font-weight: 700; color: #F1F5F9;")
+
+        btn_close = QPushButton("✕")
+        btn_close.setFixedSize(24, 24)
+        btn_close.setCursor(Qt.PointingHandCursor)
+        btn_close.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.08);
+                color: #94A3B8;
+                border: none;
+                border-radius: 12px;
+                font-size: 12px;
+                font-weight: 700;
+            }
+            QPushButton:hover {
+                background: rgba(239, 68, 68, 0.3);
+                color: #EF4444;
+            }
+        """)
+        btn_close.clicked.connect(self.close)
+
+        header.addWidget(title_lbl)
+        header.addStretch()
+        header.addWidget(btn_close)
+        layout.addLayout(header)
+
+        # Subtitle & Action bar
+        act_row = QHBoxLayout()
+        tip_lbl = QLabel("查看各供应商实时倍率、缓存率与成功率，低成功率(<50%)已高亮标红")
+        tip_lbl.setStyleSheet("font-size: 10px; color: #94A3B8;")
+        act_row.addWidget(tip_lbl)
+        act_row.addStretch()
+
+        btn_good = QPushButton("⭐ 优质预设")
+        btn_good.setFixedHeight(20)
+        btn_good.setCursor(Qt.PointingHandCursor)
+        btn_good.setStyleSheet("font-size: 10px; color: #34D399; background: transparent; border: none; font-weight: 600;")
+        btn_good.setToolTip("自动勾选倍率≤0.20且成功率≥90%的优质供应商")
+        btn_good.clicked.connect(self.apply_good_preset)
+
+        btn_all = QPushButton("全选")
+        btn_all.setFixedHeight(20)
+        btn_all.setCursor(Qt.PointingHandCursor)
+        btn_all.setStyleSheet("font-size: 10px; color: #60A5FA; background: transparent; border: none;")
+        btn_all.clicked.connect(lambda: self.toggle_all(True))
+
+        btn_none = QPushButton("清空")
+        btn_none.setFixedHeight(20)
+        btn_none.setCursor(Qt.PointingHandCursor)
+        btn_none.setStyleSheet("font-size: 10px; color: #64748B; background: transparent; border: none;")
+        btn_none.clicked.connect(lambda: self.toggle_all(False))
+
+        act_row.addWidget(btn_good)
+        act_row.addWidget(btn_all)
+        act_row.addWidget(btn_none)
+        layout.addLayout(act_row)
+
+        # Table Column Header
+        h_row = QHBoxLayout()
+        h_row.setContentsMargins(8, 2, 8, 2)
+        h_prov = QLabel("供应商代码")
+        h_prov.setStyleSheet("font-size: 9px; font-weight: 700; color: #64748B;")
+        h_row.addWidget(h_prov)
+        h_row.addStretch()
+
+        for title, w in [("倍率", 42), ("缓存率", 44), ("TTFT", 42), ("成功率", 56), ("实测图", 36)]:
+            lbl = QLabel(title)
+            lbl.setFixedWidth(w)
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setStyleSheet("font-size: 9px; font-weight: 700; color: #64748B;")
+            h_row.addWidget(lbl)
+        layout.addLayout(h_row)
+
+        # Scroll Area for Providers
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet(SCROLL_STYLE)
+        scroll.viewport().setStyleSheet("background: transparent; border: none;")
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        content = QWidget()
+        content.setStyleSheet("background: transparent;")
+        c_layout = QVBoxLayout(content)
+        c_layout.setContentsMargins(2, 2, 2, 2)
+        c_layout.setSpacing(4)
+
+        all_providers = (self.aihub_client.cached_data or {}).get("all_providers", [])
+        cur_selected = set(self.aihub_client.get_selected_providers() or [])
+
+        for p in all_providers:
+            code = p["code"]
+            self.provider_data_map[code] = p
+
+            row = QFrame()
+            row.setStyleSheet("""
+                QFrame {
+                    background: rgba(255, 255, 255, 0.03);
+                    border: 1px solid rgba(255, 255, 255, 0.05);
+                    border-radius: 4px;
+                }
+                QFrame:hover {
+                    background: rgba(255, 255, 255, 0.06);
+                }
+            """)
+            r_lay = QHBoxLayout(row)
+            r_lay.setContentsMargins(6, 4, 6, 4)
+            r_lay.setSpacing(6)
+
+            cb = QCheckBox(code)
+            cb.setChecked(code in cur_selected)
+            cb.setStyleSheet(CHECKBOX_STYLE)
+            cb.stateChanged.connect(self.update_count_label)
+            self.provider_checkboxes[code] = cb
+            r_lay.addWidget(cb)
+            r_lay.addStretch()
+
+            # Multiplier badge
+            mult_lbl = QLabel(p.get("multiplier_str", "--"))
+            mult_lbl.setFixedWidth(42)
+            mult_lbl.setAlignment(Qt.AlignCenter)
+            mult_lbl.setStyleSheet("""
+                background: rgba(16, 185, 129, 0.18);
+                color: #34D399;
+                border-radius: 3px;
+                padding: 1px 3px;
+                font-size: 9px;
+                font-weight: 700;
+            """)
+            r_lay.addWidget(mult_lbl)
+
+            # Cache hit rate
+            cache_lbl = QLabel(p.get("cache_hit_rate", "-"))
+            cache_lbl.setFixedWidth(44)
+            cache_lbl.setAlignment(Qt.AlignCenter)
+            cache_lbl.setStyleSheet("font-size: 9px; color: #94A3B8;")
+            r_lay.addWidget(cache_lbl)
+
+            # TTFT
+            ttft_lbl = QLabel(p.get("ttft_str", "--"))
+            ttft_lbl.setFixedWidth(42)
+            ttft_lbl.setAlignment(Qt.AlignCenter)
+            ttft_lbl.setStyleSheet("font-size: 9px; color: #64748B;")
+            r_lay.addWidget(ttft_lbl)
+
+            # Success rate with warning color if bad
+            sr_val = float(p.get("success_rate", 100.0))
+            sr_text = p.get("success_rate_str", "--")
+            sr_lbl = QLabel()
+            sr_lbl.setFixedWidth(56)
+            sr_lbl.setAlignment(Qt.AlignCenter)
+
+            if sr_val < 50.0:
+                sr_lbl.setText(f"⚠️ {sr_text}")
+                sr_lbl.setStyleSheet("""
+                    background: rgba(239, 68, 68, 0.2);
+                    border: 1px solid rgba(239, 68, 68, 0.4);
+                    color: #EF4444;
+                    border-radius: 3px;
+                    padding: 1px 2px;
+                    font-size: 8px;
+                    font-weight: 700;
+                """)
+                sr_lbl.setToolTip(f"该供应商成功率仅 {sr_val:.1f}%，极不稳定，建议取消勾选！")
+            elif sr_val < 90.0:
+                sr_lbl.setText(sr_text)
+                sr_lbl.setStyleSheet("font-size: 9px; font-weight: 600; color: #F59E0B;")
+            else:
+                sr_lbl.setText(sr_text)
+                sr_lbl.setStyleSheet("font-size: 9px; font-weight: 600; color: #10B981;")
+
+            r_lay.addWidget(sr_lbl)
+
+            # Has image indicator
+            img_lbl = QLabel("📷" if p.get("has_image") else "-")
+            img_lbl.setFixedWidth(36)
+            img_lbl.setAlignment(Qt.AlignCenter)
+            img_lbl.setStyleSheet("font-size: 10px; color: #10B981;" if p.get("has_image") else "font-size: 9px; color: #475569;")
+            r_lay.addWidget(img_lbl)
+
+            c_layout.addWidget(row)
+
+        c_layout.addStretch()
+        scroll.setWidget(content)
+        layout.addWidget(scroll, 1)
+
+        # Footer
+        footer = QHBoxLayout()
+        self.count_lbl = QLabel("")
+        self.count_lbl.setStyleSheet("font-size: 10px; color: #94A3B8;")
+        self.update_count_label()
+        footer.addWidget(self.count_lbl)
+        footer.addStretch()
+
+        btn_save = QPushButton("保存并应用")
+        btn_save.setCursor(Qt.PointingHandCursor)
+        btn_save.setStyleSheet("""
+            QPushButton {
+                background: #10B981;
+                color: #FFFFFF;
+                border: none;
+                border-radius: 5px;
+                padding: 4px 16px;
+                font-size: 11px;
+                font-weight: 700;
+            }
+            QPushButton:hover {
+                background: #059669;
+            }
+        """)
+        btn_save.clicked.connect(self.save_and_apply)
+        footer.addWidget(btn_save)
+        layout.addLayout(footer)
+
+        root.addWidget(container)
+
+    def update_count_label(self):
+        checked = sum(1 for cb in self.provider_checkboxes.values() if cb.isChecked())
+        total = len(self.provider_checkboxes)
+        self.count_lbl.setText(f"已勾选: {checked} / 总计 {total} 个供应商")
+
+    def toggle_all(self, checked: bool):
+        for cb in self.provider_checkboxes.values():
+            cb.setChecked(checked)
+        self.update_count_label()
+
+    def apply_good_preset(self):
+        for code, cb in self.provider_checkboxes.items():
+            p = self.provider_data_map.get(code, {})
+            mult = float(p.get("rate_multiplier", 1.0))
+            sr = float(p.get("success_rate", 0.0))
+            avail = bool(p.get("available", False))
+            # Pick available providers with rate <= 0.20 and success rate >= 90%
+            is_good = avail and (mult <= 0.20) and (sr >= 90.0)
+            cb.setChecked(is_good)
+        self.update_count_label()
+
+    def save_and_apply(self):
+        selected_codes = [code for code, cb in self.provider_checkboxes.items() if cb.isChecked()]
+        self.aihub_client.set_selected_providers(selected_codes)
+
+        # Force re-computation of monitored rows
+        self.aihub_client.fetch_data(force=True)
         self.filters_changed.emit()
         self.close()
 

@@ -159,10 +159,12 @@ class CodexQuotaView(QWidget):
     def update_data(self, data: Dict[str, Any]):
         """Update quota numbers with exact minute timestamps and uniform 9px font."""
         if not data.get("success"):
-            err_msg = data.get("error", "获取失败")
+            err_msg = str(data.get("error", "获取失败"))
             self.stat_num_lbl.setText("异常")
             self.stat_num_lbl.setStyleSheet("color: #EF4444; font-size: 10px;")
-            self.exhaust_lbl.setText(f"提示: {err_msg}")
+            short_err = "网络连接异常" if "Connection" in err_msg or "HTTPS" in err_msg else (err_msg[:20] + "..." if len(err_msg) > 20 else err_msg)
+            self.exhaust_lbl.setText(f"提示: {short_err}")
+            self.exhaust_lbl.setToolTip(f"错误详情: {err_msg}")
             self.pbar.setValue(0)
             self.credits_badge.hide()
             self.five_hour_container.hide()

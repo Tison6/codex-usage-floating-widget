@@ -127,6 +127,7 @@ class FloatingWidget(QWidget):
         # Relay Station clients
         self.square_client = SquareAPIClient(self.cfg.get("square_api_key"), config=self.cfg)
         self.aihub_client = AIHubClient(
+            config=self.cfg,
             email=self.cfg.get("aihub_email", ""),
             password=self.cfg.get("aihub_password", ""),
         )
@@ -210,6 +211,7 @@ class FloatingWidget(QWidget):
         
         # --- Left Column: Devices & Official Codex ---
         left_col = QWidget(self.cols_widget)
+        left_col.setFixedWidth(int(220 * self.widget_scale))
         left_layout = QVBoxLayout(left_col)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(6)
@@ -229,7 +231,7 @@ class FloatingWidget(QWidget):
         self.codex_view.refresh_requested.connect(lambda: self.fetch_codex_async(force=True))
         left_layout.addWidget(self.codex_view)
         left_layout.addStretch()
-        cols_layout.addWidget(left_col, 9)
+        cols_layout.addWidget(left_col, 7)
         
         # Vertical Separator between Left and Right
         v_sep = QFrame(self.cols_widget)
@@ -246,10 +248,11 @@ class FloatingWidget(QWidget):
         self.relay_view = RelayStationView(right_col)
         self.relay_view.pelican_clicked.connect(self.open_pelican_viewer)
         self.relay_view.filter_dialog_requested.connect(self.open_square_filter_dialog)
+        self.relay_view.aihub_filter_requested.connect(self.open_aihub_filter_dialog)
         self.relay_view.refresh_requested.connect(lambda: self.fetch_relay_async(force=True))
         right_layout.addWidget(self.relay_view)
         right_layout.addStretch()
-        cols_layout.addWidget(right_col, 11)
+        cols_layout.addWidget(right_col, 13)
         
         self.exp_layout.addWidget(self.cols_widget)
         self.root_layout.addWidget(self.expanded_container)
@@ -330,7 +333,7 @@ class FloatingWidget(QWidget):
 
     def update_mode_visibility(self):
         """Instant toggle between mini and expanded views with zero lag."""
-        base_w = int(615 * self.widget_scale)
+        base_w = int(760 * self.widget_scale)
         if self.is_mini:
             self.expanded_container.hide()
             self.mini_container.show()
@@ -358,7 +361,7 @@ class FloatingWidget(QWidget):
         """Restore saved window coordinates or place near top-right."""
         pos = self.cfg.get("window_pos")
         screen = QApplication.primaryScreen().availableGeometry()
-        expected_w = int(615 * self.widget_scale) if not self.is_mini else int(215 * self.widget_scale)
+        expected_w = int(760 * self.widget_scale) if not self.is_mini else int(215 * self.widget_scale)
         if pos and len(pos) == 2:
             x = max(screen.left() + 10, min(pos[0], screen.right() - expected_w))
             y = max(screen.top() + 10, min(pos[1], screen.bottom() - 150))
@@ -491,16 +494,23 @@ class FloatingWidget(QWidget):
         if not self.is_mini:
             self.adjustSize()
 
-    def open_pelican_viewer(self, images=None, code=""):
-        """Open Pelican Test Image Viewer dialog."""
-        pelicans = images or getattr(self.aihub_client, "cached_pelicans", [])
-        dlg = PelicanViewerDialog(pelicans, operator_code=code, parent=self)
+    def open_pelican_viewer(self, provider_item_or_images=None, code=""):
+        """Open Pelican Test Image Viewer dialog with all historical images loaded dynamically online."""
+        from ui.pelican_viewer import PelicanViewerDialog
+        dlg = PelicanViewerDialog(provider_item_or_images, aihub_client=self.aihub_client, operator_code=code, parent=self)
         dlg.exec_()
 
     def open_square_filter_dialog(self):
         """Open Square API interactive group and model filter selection dialog."""
         from ui.square_filter_dialog import SquareFilterDialog
         dlg = SquareFilterDialog(self.square_client, parent=self)
+        dlg.filters_changed.connect(lambda: self.fetch_relay_async(force=True))
+        dlg.exec_()
+
+    def open_aihub_filter_dialog(self):
+        """Open AIHub interactive provider filter selection dialog with live stats."""
+        from ui.square_filter_dialog import AIHubFilterDialog
+        dlg = AIHubFilterDialog(self.aihub_client, parent=self)
         dlg.filters_changed.connect(lambda: self.fetch_relay_async(force=True))
         dlg.exec_()
 

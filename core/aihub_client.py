@@ -1,26 +1,24 @@
 """
 AIHub Relay Client (https://aihub.top).
-Handles session login, balance tracking, rate multiplier <= 0.2 filtering,
-and caching of the latest 5 Pelican (鹈鹕) verification test images.
+Monitors low-multiplier provider groups, live latency, cache rates, success rates, and pelican test images.
+Supports user-defined provider selection with real-time parameter filtering.
 """
 
 import os
 import json
 import time
-from datetime import datetime
 from typing import Dict, Any, Optional, List
+from datetime import datetime
 import requests
 
 
 def format_iso_timestamp(iso_str: Optional[str]) -> str:
-    """Format ISO 8601 string to friendly local datetime (MM-DD HH:MM:SS)."""
+    """Format ISO 8601 timestamp to readable local string."""
     if not iso_str:
-        return "--:--:--"
+        return ""
     try:
-        # e.g. 2026-09-28T16:13:48.901269+08:00
         clean_str = iso_str.split(".")[0]
         if "+" in iso_str:
-            tz_part = iso_str.split("+")[1]
             dt = datetime.fromisoformat(iso_str)
         elif "Z" in iso_str:
             dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
@@ -28,7 +26,6 @@ def format_iso_timestamp(iso_str: Optional[str]) -> str:
             dt = datetime.fromisoformat(clean_str)
         return dt.strftime("%m-%d %H:%M:%S")
     except Exception:
-        # Fallback to string slicing
         try:
             return iso_str[5:19].replace("T", " ")
         except Exception:
@@ -36,122 +33,46 @@ def format_iso_timestamp(iso_str: Optional[str]) -> str:
 
 
 class AIHubClient:
-    """Client for querying AIHub accounts, low-multiplier groups, and pelican test images."""
+    """Client for querying AIHub provider metrics, cache rate, success rate, and pelican test images."""
 
-    LOGIN_URL = "https://aihub.top/api/v1/auth/login"
-    USER_ME_URL = "https://aihub.top/api/v1/auth/me"
     PROVIDERS_URL = "https://aihub.top/api/v1/public/providers"
     USAGE_STATS_URL = "https://aihub.top/api/v1/public/groups/usage-stats"
 
-    def __init__(self, email: str = "", password: str = "", cache_dir: Optional[str] = None):
+    def __init__(self, config=None, cache_dir: Optional[str] = None, email: Optional[str] = None, password: Optional[str] = None, **kwargs):
+        self.config = config
         self.email = email
         self.password = password
-        
-        # Load from config.json if not passed directly
-        if not self.email or not self.password:
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            cfg_path = os.path.join(base_dir, "config.json")
-            if os.path.exists(cfg_path):
-                try:
-                    with open(cfg_path, "r", encoding="utf-8") as f:
-                        cfg_data = json.load(f)
-                    self.email = self.email or cfg_data.get("aihub_email", "")
-                    self.password = self.password or cfg_data.get("aihub_password", "")
-                except Exception:
-                    pass
-
-        self.access_token: Optional[str] = None
-        self.token_expiry: float = 0
-        
-        # Cache directory for pelican images
-        if cache_dir:
-            self.cache_dir = cache_dir
-        else:
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            self.cache_dir = os.path.join(base_dir, "data", "pelican_cache")
+        self.cache_dir = cache_dir or os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "pelican_cache"
+        )
         os.makedirs(self.cache_dir, exist_ok=True)
 
-        self.cached_balance: Optional[float] = None
-        self.cached_providers: Optional[List[Dict[str, Any]]] = None
-        self.cached_pelicans: List[Dict[str, Any]] = []
+        self.cached_data: Optional[Dict[str, Any]] = None
         self.last_fetch_time: float = 0
-        self.last_error: Optional[str] = None
+        self.last_error: str = ""
 
-    def ensure_authenticated(self, timeout: int = 8) -> bool:
-        """Ensure valid JWT access token from login or cached session."""
-        now = time.time()
-        if self.access_token and now < self.token_expiry:
-            return True
+    def get_selected_providers(self) -> Optional[List[str]]:
+        """Get list of user-selected provider codes."""
+        if self.config:
+            sel = self.config.get("aihub_selected_providers")
+            if sel and isinstance(sel, list):
+                return sel
+        return None  # Will default to top stable candidates
 
-        headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        }
-        payload = {"email": self.email, "password": self.password}
-
-        try:
-            resp = requests.post(self.LOGIN_URL, json=payload, headers=headers, timeout=timeout)
-            if resp.status_code == 200:
-                data = resp.json()
-                d_inner = data.get("data", {})
-                self.access_token = d_inner.get("access_token")
-                # Tokens usually valid for 24h, expire after 12h
-                self.token_expiry = now + 43200
-                user = d_inner.get("user", {})
-                if user and "balance" in user:
-                    self.cached_balance = float(user["balance"])
-                self.last_error = None
-                return True
-            else:
-                self.last_error = f"登录失败 (HTTP {resp.status_code})"
-                return False
-        except Exception as e:
-            self.last_error = f"登录网络异常: {e}"
-            return False
-
-    def fetch_user_balance(self, timeout: int = 8) -> Optional[float]:
-        """Fetch current account balance in CNY."""
-        if not self.ensure_authenticated(timeout=timeout):
-            return self.cached_balance
-
-        headers = {
-            "Authorization": f"Bearer {self.access_token}",
-            "User-Agent": "Mozilla/5.0",
-        }
-        try:
-            resp = requests.get(self.USER_ME_URL, headers=headers, timeout=timeout)
-            if resp.status_code == 200:
-                data = resp.json().get("data", {})
-                bal = data.get("balance")
-                if bal is not None:
-                    self.cached_balance = float(bal)
-                    return self.cached_balance
-            elif resp.status_code == 401:
-                # Force re-login next time
-                self.access_token = None
-        except Exception:
-            pass
-        return self.cached_balance
+    def set_selected_providers(self, providers: List[str]):
+        """Save user-selected provider codes."""
+        if self.config:
+            self.config.set("aihub_selected_providers", providers)
 
     def fetch_data(self, force: bool = False, timeout: int = 8) -> Dict[str, Any]:
         """
-        Fetch AIHub status, user balance, top 3 accounts (multiplier <= 0.2),
-        and latest 5 Pelican test images with local caching.
+        Fetch public providers and live usage stats from AIHub.
+        Parses multiplier, cache rate, TTFT, TPS, success rate, and test images.
         """
         now = time.time()
-        if not force and self.cached_providers and (now - self.last_fetch_time < 60):
-            return {
-                "success": True,
-                "balance": self.cached_balance,
-                "top_groups": self.cached_providers,
-                "pelican_images": self.cached_pelicans,
-                "updated_at": time.strftime("%H:%M:%S", time.localtime(self.last_fetch_time)),
-            }
+        if not force and self.cached_data and (now - self.last_fetch_time < 30):
+            return self.cached_data
 
-        # 1. Update user balance
-        balance = self.fetch_user_balance(timeout=timeout)
-
-        # 2. Fetch public providers & usage stats
         headers = {"User-Agent": "Mozilla/5.0"}
         providers_raw = []
         try:
@@ -170,59 +91,7 @@ class AIHubClient:
         except Exception:
             pass
 
-        # 3. Filter candidates: rate_multiplier <= 0.2 and available
-        candidates = []
-        pelican_candidates = []
-
-        for it in providers_raw:
-            mult = it.get("rate_multiplier")
-            code = it.get("code", "")
-            is_avail = it.get("available", False)
-
-            # Check for pelican test image artifacts
-            dm = it.get("detection_media")
-            if dm and isinstance(dm, dict):
-                pres = dm.get("presentation", {})
-                img = pres.get("image", {})
-                if img.get("status") == "successful" and img.get("url"):
-                    p_id = str(dm.get("id"))
-                    pub_at = dm.get("published_at")
-                    img_url = "https://aihub.top" + img.get("url")
-                    pelican_candidates.append({
-                        "id": p_id,
-                        "published_at": pub_at,
-                        "published_at_str": format_iso_timestamp(pub_at),
-                        "model_code": code,
-                        "url": img_url,
-                        "title": img.get("title", {}).get("zh", "鹈鹕测试"),
-                    })
-
-            # Filter for active candidates with multiplier <= 0.2
-            if mult is not None and mult <= 0.2:
-                # Merge live usage stats
-                stat = stats_by_code.get(code, {})
-                ttft_ms = stat.get("avg_ttft_ms") or it.get("user_avg_ttft_ms") or it.get("avg_ttft_ms")
-                ttft_str = f"{ttft_ms/1000:.1f}s" if ttft_ms else "--"
-                cache_hit = it.get("cache_hit_rate", "-")
-                if isinstance(cache_hit, (float, int)):
-                    cache_hit = f"{cache_hit*100:.1f}%"
-
-                candidates.append({
-                    "code": code,
-                    "rate_multiplier": mult,
-                    "multiplier_str": f"{mult:.2f}x",
-                    "cache_hit_rate": cache_hit,
-                    "avg_ttft_ms": ttft_ms,
-                    "ttft_str": ttft_str,
-                    "available": is_avail,
-                    "has_pelican": bool(dm and dm.get("presentation", {}).get("image", {}).get("status") == "successful"),
-                })
-
-        # Sort candidates: Available first, then rate multiplier ascending
-        candidates.sort(key=lambda x: (not x["available"], x["rate_multiplier"]))
-        top_groups = candidates[:10]  # Top 10 providers as requested
-
-        # Process all available Pelican test images
+        # Load operator history for pelican images
         history_file = os.path.join(self.cache_dir, "pelican_history.json")
         operator_history: Dict[str, List[Dict[str, Any]]] = {}
         if os.path.exists(history_file):
@@ -232,59 +101,136 @@ class AIHubClient:
             except Exception:
                 pass
 
-        # Download & cache images locally in background/sync
-        for item in pelican_candidates:
-            local_filename = f"pelican_{item['id']}.png"
-            local_filepath = os.path.join(self.cache_dir, local_filename)
-            item["local_path"] = local_filepath
-            if not os.path.exists(local_filepath) or os.path.getsize(local_filepath) == 0:
-                try:
-                    img_resp = requests.get(item["url"], headers=headers, timeout=6)
-                    if img_resp.status_code == 200:
-                        with open(local_filepath, "wb") as f:
-                            f.write(img_resp.content)
-                except Exception:
-                    pass
+        all_parsed_providers = []
+        for it in providers_raw:
+            code = it.get("code", "")
+            mult = it.get("rate_multiplier")
+            if mult is None:
+                continue
 
-            code = item["model_code"]
-            if code not in operator_history:
-                operator_history[code] = []
-            
-            # Check if this ID is already in operator_history
-            if not any(h.get("id") == item["id"] for h in operator_history[code]):
-                operator_history[code].insert(0, item)
-            # Keep top 5 per operator
-            operator_history[code] = operator_history[code][:5]
+            is_avail = bool(it.get("available", False))
 
-        # Save operator history
-        try:
-            with open(history_file, "w", encoding="utf-8") as f:
-                json.dump(operator_history, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
+            # Cache hit rate
+            cache_hit = it.get("cache_hit_rate", "-")
+            cache_hit_str = "-"
+            if isinstance(cache_hit, (float, int)):
+                cache_hit_str = f"{cache_hit*100:.1f}%"
+            elif isinstance(cache_hit, str) and "%" in cache_hit:
+                cache_hit_str = cache_hit
 
-        # Link each provider in top_groups with its cached image and operator history
-        for g in top_groups:
-            code = g["code"]
-            history_list = operator_history.get(code, [])
-            if history_list:
-                g["local_image_path"] = history_list[0].get("local_path", "")
-                g["operator_images"] = history_list[:5]
+            # TTFT
+            stat = stats_by_code.get(code, {})
+            ttft_ms = it.get("avg_ttft_ms") or it.get("user_avg_ttft_ms") or stat.get("avg_ttft_ms")
+            ttft_str = f"{ttft_ms/1000:.1f}s" if ttft_ms else "--"
+
+            # TPS
+            tps_val = it.get("output_tps")
+            tps_str = f"{tps_val:.1f} t/s" if tps_val else "--"
+
+            # Success rate: calculate from sr24h or probe_success_rate_6h
+            sr_obj = it.get("success_rates") or {}
+            sr_val = None
+            if isinstance(sr_obj, dict):
+                sr_val = sr_obj.get("24h") or sr_obj.get("6h")
+            if sr_val is None:
+                sr_val = it.get("probe_success_rate_6h")
+
+            if sr_val is not None:
+                sr_percent = round(float(sr_val) * 100, 1)
+                sr_str = f"{sr_percent:.1f}%"
             else:
-                # If this code didn't have its own image yet, check pelican_candidates
-                matching = [p for p in pelican_candidates if p.get("model_code") == code]
-                if matching:
-                    g["local_image_path"] = matching[0].get("local_path", "")
-                    g["operator_images"] = matching[:5]
-                else:
-                    g["local_image_path"] = ""
-                    g["operator_images"] = []
+                sr_percent = 100.0
+                sr_str = "100.0%"
 
-        self.cached_providers = top_groups
-        self.last_fetch_time = now
+            # Detection media / image
+            dm = it.get("detection_media") or {}
+            pres = dm.get("presentation") or {}
+            img = pres.get("image") or {}
+            img_url = img.get("url")
+            full_img_url = ("https://aihub.top" + img_url) if img_url else ""
+            group_id = it.get("group_id")
 
-        return {
+            all_parsed_providers.append({
+                "code": code,
+                "group_id": group_id,
+                "rate_multiplier": mult,
+                "multiplier_str": f"{mult:.2f}x",
+                "cache_hit_rate": cache_hit_str,
+                "ttft_str": ttft_str,
+                "ttft_ms": ttft_ms or 99999,
+                "tps_str": tps_str,
+                "success_rate": sr_percent,
+                "success_rate_str": sr_str,
+                "available": is_avail,
+                "has_image": bool(img_url),
+                "image_url": full_img_url,
+            })
+
+        # Sort all providers: available first, then lower rate multiplier ascending
+        all_parsed_providers.sort(key=lambda x: (not x["available"], x["rate_multiplier"]))
+
+        # User-selected providers
+        selected_codes = self.get_selected_providers()
+        if selected_codes is None:
+            # Default: select up to 10 low-cost candidates, prioritizing those with >= 50% success rate
+            stable_candidates = [p["code"] for p in all_parsed_providers if p["available"] and p["success_rate"] >= 50.0][:10]
+            if len(stable_candidates) >= 5:
+                selected_codes = stable_candidates
+            else:
+                selected_codes = [p["code"] for p in all_parsed_providers[:10]]
+            self.set_selected_providers(selected_codes)
+
+        # Monitored rows are those checked by user (in multiplier order)
+        monitored_rows = [p for p in all_parsed_providers if p["code"] in selected_codes]
+        if not monitored_rows:
+            monitored_rows = all_parsed_providers[:10]
+
+        result = {
             "success": True,
-            "top_groups": top_groups,
+            "all_providers": all_parsed_providers,
+            "monitored_providers": monitored_rows,
+            "top_groups": monitored_rows,
+            "selected_codes": selected_codes,
             "updated_at": time.strftime("%H:%M:%S", time.localtime(now)),
         }
+
+        self.cached_data = result
+        self.last_fetch_time = now
+        return result
+
+    def get_provider_history_images(self, group_id: int, max_items: int = 60) -> List[Dict[str, Any]]:
+        """
+        Online fetch of all historical pelican images for the provider from /api/v2/public/providers/{group_id}/images.
+        Returns image items without downloading them to disk.
+        """
+        headers = {"User-Agent": "Mozilla/5.0"}
+        url = f"https://aihub.top/api/v2/public/providers/{group_id}/images"
+        all_items = []
+        cursor = None
+        try:
+            while len(all_items) < max_items:
+                params = {"cursor": cursor} if cursor else {}
+                resp = requests.get(url, headers=headers, params=params, timeout=6)
+                if resp.status_code != 200:
+                    break
+                data = resp.json().get("data", {})
+                items = data.get("items", [])
+                if not items:
+                    break
+                for it in items:
+                    dm = it.get("presentation", {}).get("image", {})
+                    img_u = dm.get("url")
+                    if img_u:
+                        all_items.append({
+                            "id": str(it.get("id")),
+                            "published_at": it.get("published_at"),
+                            "published_at_str": format_iso_timestamp(it.get("published_at")),
+                            "url": "https://aihub.top" + img_u,
+                            "title": dm.get("title", {}).get("zh", "鹈鹕"),
+                        })
+                cursor = data.get("next_cursor")
+                if not cursor:
+                    break
+        except Exception as e:
+            print("Error fetching provider history images:", e)
+        return all_items
