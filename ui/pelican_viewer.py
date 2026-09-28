@@ -61,7 +61,8 @@ class PelicanViewerDialog(QDialog):
 
         # 1. Header Bar
         header = QHBoxLayout()
-        title_lbl = QLabel("📷 鹈鹕 (Pelican) 模型检测最新实测图 (最新 5 张)")
+        op_name = self.pelican_items[0].get("model_code", "同运营商") if self.pelican_items else "同运营商"
+        title_lbl = QLabel(f"📷 鹈鹕 (Pelican) 实测图 - 【运营商: {op_name}】历史 5 次检测")
         title_lbl.setStyleSheet("font-size: 13px; font-weight: 700; color: #F1F5F9;")
         
         btn_close = QPushButton("✕")

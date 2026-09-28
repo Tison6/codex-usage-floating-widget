@@ -229,7 +229,7 @@ class FloatingWidget(QWidget):
         self.codex_view.refresh_requested.connect(lambda: self.fetch_codex_async(force=True))
         left_layout.addWidget(self.codex_view)
         left_layout.addStretch()
-        cols_layout.addWidget(left_col, 10)
+        cols_layout.addWidget(left_col, 9)
         
         # Vertical Separator between Left and Right
         v_sep = QFrame(self.cols_widget)
@@ -329,7 +329,7 @@ class FloatingWidget(QWidget):
 
     def update_mode_visibility(self):
         """Instant toggle between mini and expanded views with zero lag."""
-        base_w = int(560 * self.widget_scale)
+        base_w = int(615 * self.widget_scale)
         if self.is_mini:
             self.expanded_container.hide()
             self.mini_container.show()
@@ -357,7 +357,7 @@ class FloatingWidget(QWidget):
         """Restore saved window coordinates or place near top-right."""
         pos = self.cfg.get("window_pos")
         screen = QApplication.primaryScreen().availableGeometry()
-        expected_w = int(560 * self.widget_scale) if not self.is_mini else int(215 * self.widget_scale)
+        expected_w = int(615 * self.widget_scale) if not self.is_mini else int(215 * self.widget_scale)
         if pos and len(pos) == 2:
             x = max(screen.left() + 10, min(pos[0], screen.right() - expected_w))
             y = max(screen.top() + 10, min(pos[1], screen.bottom() - 150))

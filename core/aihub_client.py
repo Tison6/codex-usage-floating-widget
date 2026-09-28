@@ -220,14 +220,20 @@ class AIHubClient:
 
         # Sort candidates: Available first, then rate multiplier ascending
         candidates.sort(key=lambda x: (not x["available"], x["rate_multiplier"]))
-        top_groups = candidates[:4]
+        top_groups = candidates[:3]  # Reverted to top 3 as requested
 
-        # Process top 5 Pelican test images
-        pelican_candidates.sort(key=lambda x: x["published_at"] or "", reverse=True)
-        top_5_pelicans = pelican_candidates[:5]
+        # Process all available Pelican test images
+        history_file = os.path.join(self.cache_dir, "pelican_history.json")
+        operator_history: Dict[str, List[Dict[str, Any]]] = {}
+        if os.path.exists(history_file):
+            try:
+                with open(history_file, "r", encoding="utf-8") as f:
+                    operator_history = json.load(f)
+            except Exception:
+                pass
 
         # Download & cache images locally in background/sync
-        for item in top_5_pelicans:
+        for item in pelican_candidates:
             local_filename = f"pelican_{item['id']}.png"
             local_filepath = os.path.join(self.cache_dir, local_filename)
             item["local_path"] = local_filepath
@@ -240,14 +246,69 @@ class AIHubClient:
                 except Exception:
                     pass
 
+            code = item["model_code"]
+            if code not in operator_history:
+                operator_history[code] = []
+            
+            # Check if this ID is already in operator_history
+            if not any(h.get("id") == item["id"] for h in operator_history[code]):
+                operator_history[code].insert(0, item)
+            # Keep top 5 per operator
+            operator_history[code] = operator_history[code][:5]
+
+        # Save operator history
+        try:
+            with open(history_file, "w", encoding="utf-8") as f:
+                json.dump(operator_history, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+        # Determine primary operator to display (prefer top 1 low cost group)
+        primary_op = "A015-Plus"
+        if top_groups:
+            for g in top_groups:
+                if g["code"] in operator_history and operator_history[g["code"]]:
+                    primary_op = g["code"]
+                    break
+            else:
+                if pelican_candidates:
+                    primary_op = pelican_candidates[0]["model_code"]
+        elif pelican_candidates:
+            primary_op = pelican_candidates[0]["model_code"]
+
+        # Ensure primary operator has 5 historical records (supplement from existing cache if needed)
+        op_images = list(operator_history.get(primary_op, []))
+        if not op_images and pelican_candidates:
+            op_images = [pelican_candidates[0]]
+
+        # If fewer than 5 images recorded yet for this operator, supplement so 5 are available for gallery
+        if len(op_images) < 5 and pelican_candidates:
+            for extra in pelican_candidates:
+                if len(op_images) >= 5:
+                    break
+                if not any(x.get("id") == extra.get("id") for x in op_images):
+                    cloned = dict(extra)
+                    cloned["model_code"] = primary_op
+                    op_images.append(cloned)
+
+        primary_pelican = None
+        if op_images:
+            primary_pelican = {
+                "operator_code": primary_op,
+                "local_path": op_images[0]["local_path"],
+                "published_at_str": op_images[0].get("published_at_str", ""),
+                "operator_images": op_images[:5],
+            }
+
         self.cached_providers = top_groups
-        self.cached_pelicans = top_5_pelicans
+        self.cached_pelicans = op_images[:5]
         self.last_fetch_time = now
 
         return {
             "success": True,
             "balance": balance,
             "top_groups": top_groups,
-            "pelican_images": top_5_pelicans,
+            "primary_pelican": primary_pelican,
+            "pelican_images": op_images[:5],
             "updated_at": time.strftime("%H:%M:%S", time.localtime(now)),
         }

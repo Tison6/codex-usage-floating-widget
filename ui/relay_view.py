@@ -5,12 +5,92 @@ Designed for two-column side-by-side presentation.
 """
 
 from typing import Dict, Any, List, Optional
+import os
+
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFrame, QStackedWidget
+    QFrame, QStackedWidget, QSizePolicy, QGridLayout
 )
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QFont, QCursor
+from PyQt5.QtCore import Qt, pyqtSignal, QRectF, QSize
+from PyQt5.QtGui import QPainter, QColor, QFont, QCursor, QBrush, QPixmap
+
+
+class SuccessRateBarWidget(QWidget):
+    """
+    Renders benchmark success rate sparkline matching user screenshot:
+    Vertical rounded pill bars followed by percentage text (e.g. 100.0% or 98.6%).
+    """
+
+    def __init__(self, count: int = 16, success_rate: float = 100.0, parent=None):
+        super().__init__(parent)
+        self.bar_count = max(4, min(count, 16))
+        self.rate = success_rate
+        self.setFixedHeight(14)
+        self.setFixedWidth(75)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        bar_w = 0.95
+        bar_h = 8.5
+        gap = 0.7
+        y = (self.height() - bar_h) / 2.0
+
+        emerald = QColor("#10B981")
+        amber = QColor("#F59E0B")
+        has_fail = self.rate < 100.0
+
+        x = 0.5
+        for i in range(self.bar_count):
+            if has_fail and i == self.bar_count - 2:
+                painter.setBrush(QBrush(amber))
+            else:
+                painter.setBrush(QBrush(emerald))
+            painter.setPen(Qt.NoPen)
+            painter.drawRoundedRect(QRectF(x, y, bar_w, bar_h), 0.4, 0.4)
+            x += bar_w + gap
+
+        # Percentage text
+        x += 2.0
+        painter.setPen(emerald)
+        font = QFont("Segoe UI", 7, QFont.Bold)
+        font.setStyleHint(QFont.SansSerif)
+        painter.setFont(font)
+
+        text = f"{self.rate:.1f}%"
+        rect = QRectF(x, 0, self.width() - x, self.height())
+        painter.drawText(rect, Qt.AlignLeft | Qt.AlignVCenter, text)
+        painter.end()
+
+
+class ClickableImageCard(QFrame):
+    """Card containing an embedded Pelican thumbnail image with click handler."""
+    clicked = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setObjectName("PelicanCard")
+        self.setStyleSheet("""
+            QFrame#PelicanCard {
+                background: rgba(16, 185, 129, 0.05);
+                border: 1px solid rgba(16, 185, 129, 0.22);
+                border-radius: 6px;
+            }
+            QFrame#PelicanCard:hover {
+                background: rgba(16, 185, 129, 0.12);
+                border-color: rgba(16, 185, 129, 0.45);
+            }
+        """)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
 
 
 class RelayStationView(QWidget):
@@ -35,8 +115,8 @@ class RelayStationView(QWidget):
         self.card = QFrame(self)
         self.card.setProperty("class", "CardSection")
         card_layout = QVBoxLayout(self.card)
-        card_layout.setContentsMargins(8, 6, 8, 6)
-        card_layout.setSpacing(6)
+        card_layout.setContentsMargins(6, 5, 6, 5)
+        card_layout.setSpacing(5)
 
         # 1. Header with Tab Toggle
         header = QHBoxLayout()
@@ -46,9 +126,6 @@ class RelayStationView(QWidget):
         self.title_lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #E2E8F0;")
 
         # Tab Buttons
-        tab_container = QHBoxLayout()
-        tab_container.setSpacing(4)
-
         self.btn_square = QPushButton("Square")
         self.btn_square.setCheckable(True)
         self.btn_square.setChecked(True)
@@ -87,7 +164,7 @@ class RelayStationView(QWidget):
                 padding: 1px 5px;
                 font-size: 9px;
                 font-weight: 600;
-                min-width: 42px;
+                min-width: 44px;
             }
             QPushButton:hover {
                 background: rgba(255, 255, 255, 0.1);
@@ -120,7 +197,7 @@ class RelayStationView(QWidget):
 
         # 2. Stacked Content (Square API vs AIHub)
         self.stack = QStackedWidget(self.card)
-        
+
         # Panel 0: Square API
         self.square_panel = QWidget()
         self.init_square_panel()
@@ -136,32 +213,41 @@ class RelayStationView(QWidget):
 
     def init_square_panel(self):
         p_layout = QVBoxLayout(self.square_panel)
-        p_layout.setContentsMargins(0, 2, 0, 2)
-        p_layout.setSpacing(5)
+        p_layout.setContentsMargins(0, 1, 0, 1)
+        p_layout.setSpacing(4)
 
-        # Sub-header: Square balance / usage
-        self.sq_status_lbl = QLabel("正在获取 Square API 数据...")
-        self.sq_status_lbl.setStyleSheet("font-size: 10px; color: #64748B;")
+        # 1. Square Sub-header
+        self.sq_status_lbl = QLabel("🟢 Square API (api.squarefaceicon.org)")
+        self.sq_status_lbl.setStyleSheet("font-size: 10px; font-weight: 600; color: #10B981;")
         p_layout.addWidget(self.sq_status_lbl)
 
-        # Container for model rows
-        self.sq_models_widget = QWidget(self.square_panel)
-        self.sq_models_layout = QVBoxLayout(self.sq_models_widget)
+        # 2. Target Models Badges Container
+        self.sq_models_container = QWidget(self.square_panel)
+        self.sq_models_layout = QVBoxLayout(self.sq_models_container)
         self.sq_models_layout.setContentsMargins(0, 0, 0, 0)
-        self.sq_models_layout.setSpacing(4)
-        p_layout.addWidget(self.sq_models_widget)
+        self.sq_models_layout.setSpacing(2)
+        p_layout.addWidget(self.sq_models_container)
+
+        # 3. Benchmark Grid Container (Table matching user screenshot)
+        self.sq_bench_container = QWidget(self.square_panel)
+        self.sq_bench_grid = QGridLayout(self.sq_bench_container)
+        self.sq_bench_grid.setContentsMargins(2, 2, 2, 2)
+        self.sq_bench_grid.setHorizontalSpacing(4)
+        self.sq_bench_grid.setVerticalSpacing(3)
+        p_layout.addWidget(self.sq_bench_container)
+
         p_layout.addStretch()
 
     def init_aihub_panel(self):
         p_layout = QVBoxLayout(self.aihub_panel)
-        p_layout.setContentsMargins(0, 2, 0, 2)
-        p_layout.setSpacing(5)
+        p_layout.setContentsMargins(0, 1, 0, 1)
+        p_layout.setSpacing(4)
 
-        # Sub-header: AIHub user balance & status
+        # 1. Sub-header: AIHub user balance & status
         self.aihub_header_layout = QHBoxLayout()
-        self.aihub_balance_lbl = QLabel("余额: --")
+        self.aihub_balance_lbl = QLabel("余额: ¥--")
         self.aihub_balance_lbl.setStyleSheet("font-size: 11px; font-weight: 700; color: #10B981;")
-        
+
         self.aihub_status_lbl = QLabel("已连接")
         self.aihub_status_lbl.setStyleSheet("font-size: 9px; color: #94A3B8;")
 
@@ -170,53 +256,41 @@ class RelayStationView(QWidget):
         self.aihub_header_layout.addWidget(self.aihub_status_lbl)
         p_layout.addLayout(self.aihub_header_layout)
 
-        # Groups Table Header
-        tbl_hdr = QHBoxLayout()
-        tbl_hdr.setContentsMargins(4, 0, 4, 0)
-        c1 = QLabel("低价分组 (≤0.2x)")
-        c1.setStyleSheet("font-size: 9px; color: #64748B; font-weight: 700;")
-        c2 = QLabel("倍率")
-        c2.setStyleSheet("font-size: 9px; color: #64748B; font-weight: 700;")
-        c3 = QLabel("缓存率")
-        c3.setStyleSheet("font-size: 9px; color: #64748B; font-weight: 700;")
-        c4 = QLabel("TTFT")
-        c4.setStyleSheet("font-size: 9px; color: #64748B; font-weight: 700;")
-        
-        tbl_hdr.addWidget(c1, 5)
-        tbl_hdr.addWidget(c2, 2)
-        tbl_hdr.addWidget(c3, 2)
-        tbl_hdr.addWidget(c4, 2)
-        p_layout.addLayout(tbl_hdr)
-
-        # Container for top group rows
+        # 2. Container for top 3 group rows (Grid layout for sharp columns)
         self.aihub_groups_widget = QWidget(self.aihub_panel)
-        self.aihub_groups_layout = QVBoxLayout(self.aihub_groups_widget)
-        self.aihub_groups_layout.setContentsMargins(0, 0, 0, 0)
-        self.aihub_groups_layout.setSpacing(3)
+        self.aihub_groups_grid = QGridLayout(self.aihub_groups_widget)
+        self.aihub_groups_grid.setContentsMargins(2, 1, 2, 1)
+        self.aihub_groups_grid.setHorizontalSpacing(6)
+        self.aihub_groups_grid.setVerticalSpacing(3)
         p_layout.addWidget(self.aihub_groups_widget)
 
-        # Pelican Verification Action Row
-        self.btn_pelican = QPushButton("📷 鹈鹕实测图 [查看最新 5 张 ↗]")
-        self.btn_pelican.setCursor(Qt.PointingHandCursor)
-        self.btn_pelican.setFixedHeight(24)
-        self.btn_pelican.setStyleSheet("""
-            QPushButton {
-                background: rgba(16, 185, 129, 0.12);
-                border: 1px solid rgba(16, 185, 129, 0.3);
+        # 3. Direct Pelican Embedded Image Card (Clickable to view history)
+        self.pelican_card = ClickableImageCard(self.aihub_panel)
+        p_card_lay = QVBoxLayout(self.pelican_card)
+        p_card_lay.setContentsMargins(5, 4, 5, 4)
+        p_card_lay.setSpacing(3)
+
+        self.pelican_hdr_lbl = QLabel("📷 鹈鹕 (Pelican) 实测图 (点击查看同运营商5张历史 ↗)")
+        self.pelican_hdr_lbl.setStyleSheet("font-size: 9px; font-weight: 600; color: #34D399;")
+        p_card_lay.addWidget(self.pelican_hdr_lbl)
+
+        self.pelican_img_lbl = QLabel()
+        self.pelican_img_lbl.setFixedHeight(68)
+        self.pelican_img_lbl.setAlignment(Qt.AlignCenter)
+        self.pelican_img_lbl.setStyleSheet("""
+            QLabel {
+                background: rgba(0, 0, 0, 0.28);
                 border-radius: 4px;
-                color: #34D399;
-                font-size: 10px;
-                font-weight: 600;
-                padding: 1px 6px;
-            }
-            QPushButton:hover {
-                background: rgba(16, 185, 129, 0.22);
-                border-color: #10B981;
-                color: #6EE7B7;
+                color: #64748B;
+                font-size: 9px;
             }
         """)
-        self.btn_pelican.clicked.connect(self.pelican_clicked.emit)
-        p_layout.addWidget(self.btn_pelican)
+        self.pelican_img_lbl.setText("⏳ 正在加载鹈鹕实测图...")
+        p_card_lay.addWidget(self.pelican_img_lbl)
+
+        self.pelican_card.clicked.connect(self.pelican_clicked.emit)
+        p_layout.addWidget(self.pelican_card)
+
         p_layout.addStretch()
 
     def switch_tab(self, index: int):
@@ -230,7 +304,7 @@ class RelayStationView(QWidget):
             self.parentWidget().adjustSize()
 
     def update_square_data(self, data: Dict[str, Any]):
-        """Render Square API models and prices."""
+        """Render Square API target models and group performance table."""
         self._square_data = data
         if not data.get("success"):
             self.sq_status_lbl.setText(f"⚠️ {data.get('error', '获取失败')}")
@@ -239,11 +313,11 @@ class RelayStationView(QWidget):
         balance_info = data.get("balance", {})
         used = balance_info.get("total_usage")
         if used is not None:
-            self.sq_status_lbl.setText(f"🟢 Square 正常 (已用: ${used:.2f})")
+            self.sq_status_lbl.setText(f"🟢 Square 正常 · 已用: ${used:.2f}")
         else:
-            self.sq_status_lbl.setText(f"🟢 Square 正常 (公开价格)")
+            self.sq_status_lbl.setText("🟢 Square 正常 · 公开价格")
 
-        # Clear old rows
+        # 1. Update Target Model Quick Badges
         while self.sq_models_layout.count():
             item = self.sq_models_layout.takeAt(0)
             if item.widget():
@@ -256,50 +330,90 @@ class RelayStationView(QWidget):
 
         models = data.get("models", [])
         for m in models:
-            m_box = QFrame()
-            m_box.setStyleSheet("""
-                QFrame {
-                    background: rgba(255, 255, 255, 0.03);
-                    border: 1px solid rgba(255, 255, 255, 0.06);
-                    border-radius: 4px;
-                }
-            """)
-            mb_layout = QVBoxLayout(m_box)
-            mb_layout.setContentsMargins(5, 3, 5, 3)
-            mb_layout.setSpacing(2)
+            m_row = QHBoxLayout()
+            m_row.setContentsMargins(1, 0, 1, 0)
+            m_row.setSpacing(4)
 
-            m_title = QLabel(f"• {m['display_name']} (基准 {m['base_ratio']}x)")
-            m_title.setStyleSheet("font-size: 10px; font-weight: 700; color: #E2E8F0;")
-            mb_layout.addWidget(m_title)
+            d_name = m.get("display_name", "")
+            if "Opus" in d_name:
+                short_name = "Opus 5.5"
+            elif "Astra" in d_name:
+                short_name = "GPT-6 Astra"
+            elif "v4.1" in d_name:
+                short_name = "DS-v4.1"
+            else:
+                short_name = d_name
 
-            for g in m.get("groups", []):
-                g_row = QHBoxLayout()
-                g_row.setContentsMargins(4, 0, 0, 0)
-                
-                badge = " 🟢" if g.get("is_pelican_verified") else ""
-                name_lbl = QLabel(f"{g['name']}{badge}:")
-                name_lbl.setStyleSheet("font-size: 9px; color: #94A3B8;")
-                
-                mult_lbl = QLabel(f"{g['effective_multiplier']:.2f}x")
-                mult_lbl.setStyleSheet("font-size: 9px; font-weight: 700; color: #38BDF8;")
+            name_lbl = QLabel(short_name)
+            name_lbl.setStyleSheet("font-size: 9px; font-weight: 700; color: #CBD5E1;")
+            m_row.addWidget(name_lbl)
 
-                price_lbl = QLabel(f"${g['input_price_1m']}/${g['output_price_1m']}")
-                price_lbl.setStyleSheet("font-size: 9px; color: #64748B;")
+            tags_str = " · ".join([f"{g['name']} {g['ratio_str']}" for g in m.get("groups", [])])
+            tags_lbl = QLabel(tags_str)
+            tags_lbl.setStyleSheet("font-size: 8px; color: #94A3B8;")
+            m_row.addWidget(tags_lbl)
+            m_row.addStretch()
 
-                g_row.addWidget(name_lbl)
-                g_row.addWidget(mult_lbl)
-                g_row.addStretch()
-                g_row.addWidget(price_lbl)
-                mb_layout.addLayout(g_row)
+            self.sq_models_layout.addLayout(m_row)
 
-            self.sq_models_layout.addWidget(m_box)
+        # 2. Update Group Benchmark Table (matching user screenshot)
+        while self.sq_bench_grid.count():
+            item = self.sq_bench_grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
 
-        self.sq_models_widget.adjustSize()
+        # Table Header
+        h_titles = ["分组", "倍率", "速度", "首字", "延迟", "成功率"]
+        h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight]
+        for col_idx, (title, align) in enumerate(zip(h_titles, h_aligns)):
+            h_lbl = QLabel(title)
+            h_lbl.setAlignment(align | Qt.AlignVCenter)
+            h_lbl.setStyleSheet("font-size: 8px; font-weight: 700; color: #64748B;")
+            self.sq_bench_grid.addWidget(h_lbl, 0, col_idx)
+        self.sq_bench_grid.setColumnMinimumWidth(5, 75)
+
+        perf_groups = data.get("performance_groups", [])
+        for row_idx, pg in enumerate(perf_groups, start=1):
+            # Name in exact color from screenshot
+            color = pg.get("color", "#10B981")
+            name_lbl = QLabel(pg.get("short_name", pg["name"]))
+            name_lbl.setToolTip(pg.get("name", ""))
+            name_lbl.setStyleSheet(f"font-size: 9px; font-weight: 700; color: {color};")
+
+            mult_lbl = QLabel(pg.get("multiplier", "--"))
+            mult_lbl.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+            mult_lbl.setStyleSheet("font-size: 8px; font-weight: 600; color: #60A5FA;")
+
+            tps_lbl = QLabel(pg.get("tps", "--"))
+            tps_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            tps_lbl.setStyleSheet("font-size: 8px; color: #CBD5E1;")
+
+            ttft_lbl = QLabel(pg.get("ttft", "--"))
+            ttft_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            ttft_lbl.setStyleSheet("font-size: 8px; color: #94A3B8;")
+
+            lat_lbl = QLabel(pg.get("latency", "--"))
+            lat_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            lat_lbl.setStyleSheet("font-size: 8px; color: #94A3B8;")
+
+            # Sparkline bars matching screenshot: 16 bars for top 3, 6 bars for bottom 2
+            bar_cnt = 6 if ("terra" in pg["name"] or "混池" in pg["name"]) else 16
+            bar_widget = SuccessRateBarWidget(count=bar_cnt, success_rate=pg.get("success_rate", 100.0))
+
+            self.sq_bench_grid.addWidget(name_lbl, row_idx, 0)
+            self.sq_bench_grid.addWidget(mult_lbl, row_idx, 1)
+            self.sq_bench_grid.addWidget(tps_lbl, row_idx, 2)
+            self.sq_bench_grid.addWidget(ttft_lbl, row_idx, 3)
+            self.sq_bench_grid.addWidget(lat_lbl, row_idx, 4)
+            self.sq_bench_grid.addWidget(bar_widget, row_idx, 5, Qt.AlignRight | Qt.AlignVCenter)
+
+        self.sq_models_container.adjustSize()
+        self.sq_bench_container.adjustSize()
         self.stack.adjustSize()
         self.card.adjustSize()
 
     def update_aihub_data(self, data: Dict[str, Any]):
-        """Render AIHub account balance, top 4 groups, and pelican status."""
+        """Render AIHub account balance, top 3 groups, and directly embedded pelican image."""
         self._aihub_data = data
         if not data.get("success"):
             self.aihub_status_lbl.setText("⚠️ 获取失败")
@@ -310,57 +424,73 @@ class RelayStationView(QWidget):
             self.aihub_balance_lbl.setText(f"余额: ¥{bal:.2f}")
         else:
             self.aihub_balance_lbl.setText("余额: 未知")
-        
+
         self.aihub_status_lbl.setText(f"{data.get('updated_at', '--')}")
 
-        # Clear old rows
-        while self.aihub_groups_layout.count():
-            item = self.aihub_groups_layout.takeAt(0)
+        # Clear old rows in grid
+        while self.aihub_groups_grid.count():
+            item = self.aihub_groups_grid.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-            elif item.layout():
-                while item.layout().count():
-                    sub = item.layout().takeAt(0)
-                    if sub.widget():
-                        sub.widget().deleteLater()
 
+        # Header for top 3 groups
+        h_titles = ["低价分组 (≤0.2x)", "倍率", "缓存率", "TTFT"]
+        h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignRight, Qt.AlignRight]
+        for col_idx, (title, align) in enumerate(zip(h_titles, h_aligns)):
+            h_lbl = QLabel(title)
+            h_lbl.setAlignment(align | Qt.AlignVCenter)
+            h_lbl.setStyleSheet("font-size: 8px; font-weight: 700; color: #64748B;")
+            self.aihub_groups_grid.addWidget(h_lbl, 0, col_idx)
+
+        # Display strictly top 3 groups as requested
         top_groups = data.get("top_groups", [])
-        for i, g in enumerate(top_groups[:4]):
-            row_w = QFrame()
-            row_w.setStyleSheet("""
-                QFrame {
-                    background: rgba(255, 255, 255, 0.025);
-                    border-radius: 3px;
-                }
-            """)
-            r_lay = QHBoxLayout(row_w)
-            r_lay.setContentsMargins(4, 3, 4, 3)
-            
-            c_name = QLabel(f"{i+1}. {g['code']}")
+        for row_idx, g in enumerate(top_groups[:3], start=1):
+            c_name = QLabel(f"{row_idx}. {g['code']}")
             c_name.setStyleSheet("font-size: 9px; font-weight: 600; color: #CBD5E1;")
 
             c_mult = QLabel(g.get("multiplier_str", "--"))
+            c_mult.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
             c_mult.setStyleSheet("font-size: 9px; font-weight: 700; color: #34D399;")
 
             c_hit = QLabel(g.get("cache_hit_rate", "-"))
-            c_hit.setStyleSheet("font-size: 9px; color: #94A3B8;")
+            c_hit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            c_hit.setStyleSheet("font-size: 8px; color: #94A3B8;")
 
             c_ttft = QLabel(g.get("ttft_str", "--"))
-            c_ttft.setStyleSheet("font-size: 9px; color: #64748B;")
+            c_ttft.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            c_ttft.setStyleSheet("font-size: 8px; color: #64748B;")
 
-            r_lay.addWidget(c_name, 5)
-            r_lay.addWidget(c_mult, 2)
-            r_lay.addWidget(c_hit, 2)
-            r_lay.addWidget(c_ttft, 2)
-            self.aihub_groups_layout.addWidget(row_w)
+            self.aihub_groups_grid.addWidget(c_name, row_idx, 0)
+            self.aihub_groups_grid.addWidget(c_mult, row_idx, 1)
+            self.aihub_groups_grid.addWidget(c_hit, row_idx, 2)
+            self.aihub_groups_grid.addWidget(c_ttft, row_idx, 3)
 
-        # Update button text with cached pelican count
+        # Directly render the Pelican test image preview
+        primary_pelican = data.get("primary_pelican")
         pelicans = data.get("pelican_images", [])
-        if pelicans:
-            latest_time = pelicans[0].get("published_at_str", "")
-            self.btn_pelican.setText(f"📷 鹈鹕实测图 [{latest_time} ↗]")
+        target_item = primary_pelican or (pelicans[0] if pelicans else None)
+
+        if target_item:
+            op_code = target_item.get("operator_code") or target_item.get("model_code", "AIHub")
+            self.pelican_hdr_lbl.setText(f"📷 {op_code} 鹈鹕实测 (点击查看同运营商5张历史 ↗)")
+
+            local_path = target_item.get("local_path", "")
+            if local_path and os.path.exists(local_path):
+                pixmap = QPixmap(local_path)
+                if not pixmap.isNull():
+                    scaled = pixmap.scaled(
+                        QSize(250, 68),
+                        Qt.KeepAspectRatio,
+                        Qt.SmoothTransformation
+                    )
+                    self.pelican_img_lbl.setPixmap(scaled)
+                else:
+                    self.pelican_img_lbl.setText("⚠️ 图片解析失败")
+            else:
+                self.pelican_img_lbl.setText("⏳ 正在下载实测图片...")
         else:
-            self.btn_pelican.setText("📷 鹈鹕实测图 [查看最新 5 张 ↗]")
+            self.pelican_hdr_lbl.setText("📷 鹈鹕实测图 (点击查看 ↗)")
+            self.pelican_img_lbl.setText("暂无鹈鹕实测图")
 
         self.aihub_groups_widget.adjustSize()
         self.stack.adjustSize()

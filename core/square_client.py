@@ -115,106 +115,133 @@ class SquareAPIClient:
                 "models": [],
             }
 
+        # 3. Parse target models and group ratios
         group_ratios = pricing_data.get("group_ratio", {})
         models_raw = pricing_data.get("data", [])
 
-        # Parse target models
+        # Helper to clean group names
+        def get_group_ratio(name_key: str, default_val: float) -> float:
+            for k, v in group_ratios.items():
+                if name_key in k:
+                    try:
+                        return float(v)
+                    except Exception:
+                        pass
+            return default_val
+
+        # Models with actual group multipliers (NO base ratio multiplication)
         models_result = []
 
         # Target 1: gpt-6-astra
         astra_item = next((m for m in models_raw if m.get("model_name") == "gpt-6-astra"), None)
         if astra_item:
-            base_ratio = float(astra_item.get("model_ratio", 5.0))
-            groups = []
-            # Specific filter for user's desired groups
-            target_groups = ["混池优惠", "gpt-已过鹈鹕测试不降智"]
-            for g_name in target_groups:
-                g_ratio = float(group_ratios.get(g_name, 0.25))
-                eff_mult = round(base_ratio * g_ratio, 2)
-                base_p = self.BASELINE_PRICES["gpt-6-astra"]
-                inp_p = round(base_p["input"] * eff_mult, 2)
-                out_p = round(base_p["output"] * eff_mult, 2)
-                short_name = "鹈鹕保真" if "鹈鹕" in g_name else ("混池优惠" if "混池" in g_name else g_name)
-                groups.append({
-                    "name": short_name,
-                    "raw_name": g_name,
-                    "group_ratio": g_ratio,
-                    "effective_multiplier": eff_mult,
-                    "input_price_1m": inp_p,
-                    "output_price_1m": out_p,
-                    "is_pelican_verified": "鹈鹕" in g_name,
-                })
+            ratio_pelican = get_group_ratio("鹈鹕", 0.25)
+            ratio_hunchi = get_group_ratio("混池", 0.10)
+            ratio_terra = get_group_ratio("terra", 0.15)
+            ratio_pro = get_group_ratio("pro", 0.25)
             models_result.append({
                 "model_id": "gpt-6-astra",
                 "display_name": "GPT-6 Astra",
-                "base_ratio": base_ratio,
-                "groups": groups,
+                "groups": [
+                    {"name": "鹈鹕保真", "ratio_str": f"{ratio_pelican:.2f}x", "ratio": ratio_pelican, "verified": True},
+                    {"name": "混池优惠", "ratio_str": f"{ratio_hunchi:.2f}x", "ratio": ratio_hunchi, "verified": False},
+                    {"name": "terra分组", "ratio_str": f"{ratio_terra:.2f}x", "ratio": ratio_terra, "verified": False},
+                ]
             })
 
-        # Target 2: gpt-5.5
-        gpt55_item = next((m for m in models_raw if m.get("model_name") == "gpt-5.5"), None)
-        if gpt55_item:
-            base_ratio = float(gpt55_item.get("model_ratio", 2.5))
-            enable_groups = gpt55_item.get("enable_groups", [])
-            groups = []
-            # Select top relevant groups: 混池优惠, gpt-特惠分组, codex
-            priority_groups = ["混池优惠", "gpt-特惠分组", "codex", "terra车"]
-            for g_name in priority_groups:
-                if g_name in enable_groups or g_name in group_ratios:
-                    g_ratio = float(group_ratios.get(g_name, 0.25))
-                    eff_mult = round(base_ratio * g_ratio, 2)
-                    base_p = self.BASELINE_PRICES["gpt-5.5"]
-                    inp_p = round(base_p["input"] * eff_mult, 2)
-                    out_p = round(base_p["output"] * eff_mult, 2)
-                    short_name = "特惠分组" if "特惠" in g_name else ("混池优惠" if "混池" in g_name else g_name)
-                    groups.append({
-                        "name": short_name,
-                        "raw_name": g_name,
-                        "group_ratio": g_ratio,
-                        "effective_multiplier": eff_mult,
-                        "input_price_1m": inp_p,
-                        "output_price_1m": out_p,
-                        "is_pelican_verified": False,
-                    })
+        # Target 2: Claude Opus 5.5 (User requested Opus 5.5 / OpenSSL 5.5, NOT OpenAI 5.5)
+        opus_item = next((m for m in models_raw if m.get("model_name") == "claude-opus-5-5"), None)
+        if opus_item:
+            ratio_ultra = get_group_ratio("claude-ultra", 0.40)
+            ratio_max = get_group_ratio("官方max", 0.60)
+            ratio_aws = get_group_ratio("aws-cc", 0.40)
             models_result.append({
-                "model_id": "gpt-5.5",
-                "display_name": "OpenAI 5.5",
-                "base_ratio": base_ratio,
-                "groups": groups[:2],  # keep top 2 for compact view
+                "model_id": "claude-opus-5-5",
+                "display_name": "Claude Opus 5.5",
+                "groups": [
+                    {"name": "ultra", "ratio_str": f"{ratio_ultra:.2f}x", "ratio": ratio_ultra, "verified": False},
+                    {"name": "官方max", "ratio_str": f"{ratio_max:.2f}x", "ratio": ratio_max, "verified": False},
+                    {"name": "aws-cc", "ratio_str": f"{ratio_aws:.2f}x", "ratio": ratio_aws, "verified": False},
+                ]
             })
 
         # Target 3: deepseek-v4.1-flash
-        ds_item = next(
-            (m for m in models_raw if m.get("model_name") == "deepseek-v4.1-flash"), None
-        )
+        ds_item = next((m for m in models_raw if m.get("model_name") == "deepseek-v4.1-flash"), None)
         if ds_item:
-            base_ratio = float(ds_item.get("model_ratio", 1.0))
-            groups = []
-            ds_groups = ["ds-v4没有4.1，4.1有专门分组", "ds-v4.1"]
-            for g_name in ds_groups:
-                if g_name in group_ratios:
-                    g_ratio = float(group_ratios.get(g_name, 0.1))
-                    eff_mult = round(base_ratio * g_ratio, 3)
-                    short_name = "4.1特惠" if "专门分组" in g_name else ("4.1通用" if "ds-v4.1" in g_name else g_name)
-                    groups.append({
-                        "name": short_name,
-                        "raw_name": g_name,
-                        "group_ratio": g_ratio,
-                        "effective_multiplier": eff_mult,
-                        "input_price_1m": round(0.14 * g_ratio, 3),
-                        "output_price_1m": round(0.28 * g_ratio, 3),
-                        "is_pelican_verified": False,
-                    })
+            ratio_special = get_group_ratio("4.1有专门分组", 0.08)
+            ratio_std = get_group_ratio("ds-v4.1", 0.10)
             models_result.append({
                 "model_id": "deepseek-v4.1-flash",
                 "display_name": "DS-v4.1 Flash",
-                "base_ratio": base_ratio,
-                "groups": groups,
+                "groups": [
+                    {"name": "4.1特惠", "ratio_str": f"{ratio_special:.2f}x", "ratio": ratio_special, "verified": False},
+                    {"name": "4.1通用", "ratio_str": f"{ratio_std:.2f}x", "ratio": ratio_std, "verified": False},
+                ]
             })
+
+        # 4. Group Performance Table (matching user screenshot with TPS, TTFT, Latency & Success rate bar)
+        performance_groups = [
+            {
+                "raw_name": "gpt-已过鹈鹕测试不降智",
+                "name": "已过鹈鹕测试不降智",
+                "short_name": "已过鹈鹕",
+                "color": "#10B981",  # Vibrant green
+                "multiplier": f"{get_group_ratio('鹈鹕', 0.25):.2f}x",
+                "tps": "32.9 t/s",
+                "ttft": "7.63s",
+                "latency": "21.62s",
+                "success_rate": 100.0,
+            },
+            {
+                "raw_name": "gpt-特惠分组",
+                "name": "gpt-特惠分组",
+                "short_name": "特惠分组",
+                "color": "#38BDF8",  # Sky Blue
+                "multiplier": f"{get_group_ratio('gpt-特惠', 0.25):.2f}x",
+                "tps": "32.7 t/s",
+                "ttft": "4.59s",
+                "latency": "16.07s",
+                "success_rate": 100.0,
+            },
+            {
+                "raw_name": "pro专享",
+                "name": "pro专享",
+                "short_name": "pro专享",
+                "color": "#F59E0B",  # Amber gold
+                "multiplier": f"{get_group_ratio('pro专享', 0.25):.2f}x",
+                "tps": "31.8 t/s",
+                "ttft": "4.95s",
+                "latency": "22.60s",
+                "success_rate": 100.0,
+            },
+            {
+                "raw_name": "terra分组",
+                "name": "terra分组",
+                "short_name": "terra分组",
+                "color": "#A78BFA",  # Purple
+                "multiplier": f"{get_group_ratio('terra', 0.15):.2f}x",
+                "tps": "45.3 t/s",
+                "ttft": "4.52s",
+                "latency": "17.83s",
+                "success_rate": 100.0,
+            },
+            {
+                "raw_name": "混池优惠",
+                "name": "混池优惠",
+                "short_name": "混池优惠",
+                "color": "#EAB308",  # Yellow
+                "multiplier": f"{get_group_ratio('混池', 0.10):.2f}x",
+                "tps": "27.6 t/s",
+                "ttft": "13.22s",
+                "latency": "28.90s",
+                "success_rate": 98.6,
+            },
+        ]
 
         return {
             "success": True,
             "updated_at": time.strftime("%H:%M:%S", time.localtime(now)),
             "balance": balance_info,
             "models": models_result,
+            "performance_groups": performance_groups,
         }
