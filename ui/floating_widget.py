@@ -496,9 +496,22 @@ class FloatingWidget(QWidget):
 
     def open_pelican_viewer(self, provider_item_or_images=None, code=""):
         """Open Pelican Test Image Viewer dialog with all historical images loaded dynamically online."""
+        if hasattr(self, "_pelican_dlg") and self._pelican_dlg is not None:
+            try:
+                if self._pelican_dlg.isVisible():
+                    self._pelican_dlg.raise_()
+                    self._pelican_dlg.activateWindow()
+                    return
+            except Exception:
+                self._pelican_dlg = None
+
         from ui.pelican_viewer import PelicanViewerDialog
         dlg = PelicanViewerDialog(provider_item_or_images, aihub_client=self.aihub_client, operator_code=code, parent=self)
-        dlg.exec_()
+        self._pelican_dlg = dlg
+        try:
+            dlg.exec_()
+        finally:
+            self._pelican_dlg = None
 
     def open_square_filter_dialog(self):
         """Open Square API interactive group and model filter selection dialog."""

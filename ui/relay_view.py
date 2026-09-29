@@ -4,17 +4,19 @@ Renders real-time monitored tables for Square API and AIHub.
 Supports interactive group/model/provider filtering and per-provider Pelican test image thumbnails.
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Set
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 import requests
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QStackedWidget, QScrollArea, QGridLayout, QSizePolicy
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QSize, QRectF, QRunnable, QThreadPool, QObject
+from PyQt5.QtCore import Qt, pyqtSignal, QSize, QRectF, QObject
 from PyQt5.QtGui import QPixmap, QImage, QColor, QFont, QPainter, QBrush
-from ui.pelican_viewer import get_pelican_session
+
 
 
 SCROLL_STYLE = """
@@ -120,36 +122,61 @@ class SuccessRateBarWidget(QWidget):
 
 
 
-_IN_MEM_THUMB_QIMAGE: Dict[str, QImage] = {}
+class ThumbnailDownloadManager(QObject):
+    """Central persistent manager for streaming and caching small supplier thumbnails without thread deadlocks."""
+    _instance: Optional["ThumbnailDownloadManager"] = None
+    _lock = threading.Lock()
+    thumb_loaded = pyqtSignal(str, QImage)
 
+    @classmethod
+    def instance(cls) -> "ThumbnailDownloadManager":
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = ThumbnailDownloadManager()
+            return cls._instance
 
-class ThumbLoadSignals(QObject):
-    loaded = pyqtSignal(str, QImage)
-
-
-class ThumbDownloadTask(QRunnable):
-    """Asynchronously fetches small thumbnail bytes into memory without touching disk."""
-
-    def __init__(self, url: str, signals: ThumbLoadSignals):
+    def __init__(self):
         super().__init__()
-        self.url = url
-        self.signals = signals
+        self.cache: Dict[str, QImage] = {}
+        self.in_flight: Set[str] = set()
+        self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="thumb_worker")
+        self._thread_local = threading.local()
 
-    def run(self):
-        if self.url in _IN_MEM_THUMB_QIMAGE:
-            self.signals.loaded.emit(self.url, _IN_MEM_THUMB_QIMAGE[self.url])
+    def _get_session(self) -> requests.Session:
+        if not hasattr(self._thread_local, "session"):
+            s = requests.Session()
+            adapter = requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=4, max_retries=1)
+            s.mount("https://", adapter)
+            s.mount("http://", adapter)
+            s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            self._thread_local.session = s
+        return self._thread_local.session
+
+    def request_thumbnail(self, url: str):
+        if not url:
             return
+        if url in self.cache:
+            self.thumb_loaded.emit(url, self.cache[url])
+            return
+        if url in self.in_flight:
+            return
+        self.in_flight.add(url)
+        self.executor.submit(self._fetch_thumb_worker, url)
+
+    def _fetch_thumb_worker(self, url: str):
         try:
-            session = get_pelican_session()
-            resp = session.get(self.url, timeout=5)
+            s = self._get_session()
+            resp = s.get(url, timeout=(3.0, 5.0))
             if resp.status_code == 200 and resp.content:
                 qimg = QImage()
                 if qimg.loadFromData(resp.content):
                     scaled = qimg.scaled(70, 34, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    _IN_MEM_THUMB_QIMAGE[self.url] = scaled
-                    self.signals.loaded.emit(self.url, scaled)
+                    self.cache[url] = scaled
+                    self.thumb_loaded.emit(url, scaled)
         except Exception:
             pass
+        finally:
+            self.in_flight.discard(url)
 
 
 class ClickableThumbnail(QLabel):
@@ -165,89 +192,72 @@ class ClickableThumbnail(QLabel):
         self.setToolTip("点击在线查看该供应商全部历史鹈鹕图")
 
         has_img = provider_item.get("has_image")
-        img_url = provider_item.get("image_url")
+        self.img_url = provider_item.get("image_url") or ""
 
-        if has_img and img_url:
-            if img_url in _IN_MEM_THUMB_QIMAGE:
-                pix = QPixmap.fromImage(_IN_MEM_THUMB_QIMAGE[img_url])
-                self.setPixmap(pix)
-                self.setStyleSheet("""
-                    QLabel {
-                        background: rgba(0, 0, 0, 0.4);
-                        border: 1px solid rgba(16, 185, 129, 0.45);
-                        border-radius: 4px;
-                    }
-                    QLabel:hover {
-                        border-color: #34D399;
-                        border-width: 1.5px;
-                    }
-                """)
+        mgr = ThumbnailDownloadManager.instance()
+        if has_img and self.img_url:
+            if self.img_url in mgr.cache:
+                self._apply_image(mgr.cache[self.img_url])
                 return
 
             self.setText("📷 实测")
-            self.setStyleSheet("""
-                QLabel {
-                    background: rgba(16, 185, 129, 0.12);
-                    border: 1px solid rgba(16, 185, 129, 0.4);
-                    border-radius: 4px;
-                    color: #34D399;
-                    font-size: 9px;
-                    font-weight: 700;
-                }
-                QLabel:hover {
-                    background: rgba(16, 185, 129, 0.28);
-                    border-color: rgba(16, 185, 129, 0.8);
-                }
-            """)
-            self._signals = ThumbLoadSignals()
-            self._signals.loaded.connect(self._on_img_loaded)
-            task = ThumbDownloadTask(img_url, self._signals)
-            QThreadPool.globalInstance().start(task)
+            self._set_loading_style()
+            mgr.thumb_loaded.connect(self._on_img_loaded)
+            mgr.request_thumbnail(self.img_url)
         elif has_img:
             self.setText("📷 实测")
-            self.setStyleSheet("""
-                QLabel {
-                    background: rgba(16, 185, 129, 0.12);
-                    border: 1px solid rgba(16, 185, 129, 0.4);
-                    border-radius: 4px;
-                    color: #34D399;
-                    font-size: 9px;
-                    font-weight: 700;
-                }
-                QLabel:hover {
-                    background: rgba(16, 185, 129, 0.28);
-                    border-color: rgba(16, 185, 129, 0.8);
-                }
-            """)
+            self._set_loading_style()
         else:
             self.setText("-")
-            self.setStyleSheet("""
-                QLabel {
-                    background: rgba(255, 255, 255, 0.03);
-                    border: 1px solid rgba(255, 255, 255, 0.06);
-                    border-radius: 4px;
-                    color: #64748B;
-                    font-size: 9px;
-                }
-            """)
+            self._set_empty_style()
+
+    def _set_loading_style(self):
+        self.setStyleSheet("""
+            QLabel {
+                background: rgba(16, 185, 129, 0.12);
+                border: 1px solid rgba(16, 185, 129, 0.4);
+                border-radius: 4px;
+                color: #34D399;
+                font-size: 9px;
+                font-weight: 700;
+            }
+            QLabel:hover {
+                background: rgba(16, 185, 129, 0.28);
+                border-color: rgba(16, 185, 129, 0.8);
+            }
+        """)
+
+    def _set_empty_style(self):
+        self.setStyleSheet("""
+            QLabel {
+                background: rgba(255, 255, 255, 0.03);
+                border: 1px solid rgba(255, 255, 255, 0.06);
+                border-radius: 4px;
+                color: #64748B;
+                font-size: 9px;
+            }
+        """)
+
+    def _apply_image(self, scaled: QImage):
+        pix = QPixmap.fromImage(scaled)
+        self.setText("")
+        self.setPixmap(pix)
+        self.setStyleSheet("""
+            QLabel {
+                background: rgba(0, 0, 0, 0.4);
+                border: 1px solid rgba(16, 185, 129, 0.45);
+                border-radius: 4px;
+            }
+            QLabel:hover {
+                border-color: #34D399;
+                border-width: 1.5px;
+            }
+        """)
 
     def _on_img_loaded(self, url: str, scaled: QImage):
-        _IN_MEM_THUMB_QIMAGE[url] = scaled
-        if self.provider_item.get("image_url") == url:
-            pix = QPixmap.fromImage(scaled)
-            self.setText("")
-            self.setPixmap(pix)
-            self.setStyleSheet("""
-                QLabel {
-                    background: rgba(0, 0, 0, 0.4);
-                    border: 1px solid rgba(16, 185, 129, 0.45);
-                    border-radius: 4px;
-                }
-                QLabel:hover {
-                    border-color: #34D399;
-                    border-width: 1.5px;
-                }
-            """)
+        if self.img_url == url:
+            self._apply_image(scaled)
+
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
