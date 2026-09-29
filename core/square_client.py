@@ -7,8 +7,30 @@ Supports user-defined group and model filtering with full metrics.
 import os
 import json
 import time
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
+
+
+def format_tps(val: Optional[float]) -> str:
+    """Format TPS matching official web frontend."""
+    if val is None or val <= 0:
+        return "—"
+    if val >= 1000:
+        return f"{val/1000:.1f}K t/s"
+    if val < 10:
+        return f"{val:.2f} t/s"
+    return f"{val:.1f} t/s"
+
+
+def format_duration(ms: Optional[float]) -> str:
+    """Format latency / TTFT in seconds or ms matching official web frontend."""
+    if ms is None or ms <= 0:
+        return "—"
+    if ms >= 1000:
+        return f"{ms/1000:.2f}s"
+    return f"{round(ms)}ms"
+
 
 
 # Default recommended groups to monitor if user hasn't configured
@@ -190,12 +212,14 @@ class SquareAPIClient:
     GROUPS_URL = "https://api.squarefaceicon.org/api/user/groups"
     PRICING_URL = "https://api.squarefaceicon.org/api/pricing"
     USAGE_URL = "https://api.squarefaceicon.org/dashboard/billing/usage"
+    PERF_URL = "https://api.squarefaceicon.org/api/perf-metrics"
 
     def __init__(self, api_key: Optional[str] = None, config=None):
         self.config = config
         self.api_key = api_key or self._get_key_from_cc_switch()
         self.cached_data: Optional[Dict[str, Any]] = None
         self.last_fetch_time: float = 0
+        self.perf_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 
         self.session = requests.Session()
         self.session.trust_env = False
@@ -203,6 +227,67 @@ class SquareAPIClient:
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
         self.session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+
+    def fetch_model_perf(self, model_name: str, hours: int = 24, timeout: int = 5) -> Dict[str, Dict[str, Any]]:
+        """
+        Fetch 24h performance metrics for a specific model (TPS, TTFT, Latency, Success Rate, Series).
+        Follows the exact web Pricing model details Performance tab logic (/pricing/$modelId -> /api/perf-metrics?model=...).
+        """
+        now = time.time()
+        if model_name in self.perf_cache:
+            cached_time, cached_val = self.perf_cache[model_name]
+            if now - cached_time < 60:
+                return cached_val
+
+        resp_data = None
+        # Try direct session first
+        try:
+            r = self.session.get(self.PERF_URL, params={"model": model_name, "hours": hours}, timeout=timeout)
+            if r.status_code == 200:
+                resp_data = r.json()
+        except Exception:
+            pass
+
+        # Try fallback with proxy if direct fails
+        if not resp_data or not resp_data.get("success"):
+            try:
+                s_fallback = requests.Session()
+                r = s_fallback.get(self.PERF_URL, params={"model": model_name, "hours": hours}, timeout=timeout)
+                if r.status_code == 200:
+                    resp_data = r.json()
+            except Exception:
+                pass
+
+        if not resp_data or not resp_data.get("success"):
+            if model_name in self.perf_cache:
+                return self.perf_cache[model_name][1]
+            return {}
+
+        groups = resp_data.get("data", {}).get("groups", [])
+        parsed: Dict[str, Dict[str, Any]] = {}
+        for g in groups:
+            g_name = g.get("group")
+            if not g_name:
+                continue
+            tps_val = float(g.get("avg_tps", 0.0) or 0.0)
+            ttft_val = float(g.get("avg_ttft_ms", 0.0) or 0.0)
+            lat_val = float(g.get("avg_latency_ms", 0.0) or 0.0)
+            sr_val = float(g.get("success_rate", 100.0) or 0.0)
+            series = g.get("series", [])
+            parsed[g_name] = {
+                "tps": format_tps(tps_val),
+                "ttft": format_duration(ttft_val),
+                "latency": format_duration(lat_val),
+                "success_rate": round(sr_val, 1),
+                "series": series,
+                "bar_count": len(series) if series else 16,
+                "avg_tps": tps_val,
+                "avg_ttft_ms": ttft_val,
+                "avg_latency_ms": lat_val,
+            }
+        self.perf_cache[model_name] = (now, parsed)
+        return parsed
+
 
     def _get_key_from_cc_switch(self) -> Optional[str]:
         """Try to retrieve Square API key from CC Switch local database."""
@@ -329,31 +414,71 @@ class SquareAPIClient:
                 "all_models": [],
             }
 
-        # 4. Prepare all available groups and models for selection dialog
+        # 4. Determine user selections and mapping
+        selected_group_names = self.get_selected_groups()
+        selected_model_names = self.get_selected_models()
+        group_models_mapping = self.get_group_models_mapping()
+
+        # 5. Fetch live 24h performance metrics for monitored/mapped models from /api/perf-metrics
+        needed_models = (
+            set(selected_model_names)
+            | set(group_models_mapping.values())
+            | set(DEFAULT_GROUP_MODELS.values())
+            | {"gpt-6-astra", "deepseek-v4.1-flash", "claude-opus-5-5", "gpt-5.5"}
+        )
+        needed_models.discard(None)
+        needed_models.discard("")
+
+        model_perf_map: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        if needed_models:
+            with ThreadPoolExecutor(max_workers=min(len(needed_models), 6)) as executor:
+                future_to_m = {executor.submit(self.fetch_model_perf, m): m for m in needed_models}
+                for fut in as_completed(future_to_m):
+                    m_name = future_to_m[fut]
+                    try:
+                        model_perf_map[m_name] = fut.result()
+                    except Exception:
+                        model_perf_map[m_name] = {}
+
+        def get_group_bench(g_name: str, target_model: Optional[str] = None) -> Dict[str, Any]:
+            # Try target model first if specified
+            if target_model and target_model in model_perf_map:
+                if g_name in model_perf_map[target_model]:
+                    return model_perf_map[target_model][g_name]
+            # Try mapped model
+            mapped_m = group_models_mapping.get(g_name) or DEFAULT_GROUP_MODELS.get(g_name)
+            if mapped_m and mapped_m in model_perf_map:
+                if g_name in model_perf_map[mapped_m]:
+                    return model_perf_map[mapped_m][g_name]
+            # Try any other fetched model that has data for this group
+            for m_perf in model_perf_map.values():
+                if g_name in m_perf:
+                    return m_perf[g_name]
+            # Fallback to static baseline benchmarks
+            return PERFORMANCE_BENCHMARKS.get(g_name, {})
+
+        # 6. Prepare all available groups and models for selection dialog
         all_groups = []
         for g_name, g_info in raw_groups.items():
             ratio = float(g_info.get("ratio", 1.0))
-            bench = PERFORMANCE_BENCHMARKS.get(g_name, {
-                "short_name": g_name[:6],
-                "color": "#10B981" if ratio < 0.2 else ("#38BDF8" if ratio < 0.4 else "#F59E0B"),
-                "tps": "32.0 t/s",
-                "ttft": "5.00s",
-                "latency": "18.00s",
-                "success_rate": 100.0,
-                "bar_count": 16,
-            })
+            static_def = PERFORMANCE_BENCHMARKS.get(g_name, {})
+            live_bench = get_group_bench(g_name)
+            short_name = static_def.get("short_name", g_name[:6])
+            color = static_def.get("color") or ("#10B981" if ratio < 0.2 else ("#38BDF8" if ratio < 0.4 else "#F59E0B"))
+
             all_groups.append({
                 "name": g_name,
-                "short_name": bench.get("short_name", g_name[:6]),
-                "color": bench.get("color", "#10B981"),
+                "short_name": short_name,
+                "color": color,
                 "ratio": ratio,
                 "ratio_str": f"{ratio:.2f}x",
                 "desc": g_info.get("desc", ""),
-                "tps": bench.get("tps", "32.0 t/s"),
-                "ttft": bench.get("ttft", "5.00s"),
-                "latency": bench.get("latency", "18.00s"),
-                "success_rate": bench.get("success_rate", 100.0),
-                "bar_count": bench.get("bar_count", 16),
+                "tps": live_bench.get("tps") or static_def.get("tps", "32.0 t/s"),
+                "ttft": live_bench.get("ttft") or static_def.get("ttft", "5.00s"),
+                "latency": live_bench.get("latency") or static_def.get("latency", "18.00s"),
+                "success_rate": live_bench.get("success_rate") if live_bench.get("success_rate") is not None else static_def.get("success_rate", 100.0),
+                "series": live_bench.get("series", []),
+                "bar_count": live_bench.get("bar_count", static_def.get("bar_count", 16)),
             })
         # Sort groups: lower ratio first
         all_groups.sort(key=lambda x: x["ratio"])
@@ -369,10 +494,7 @@ class SquareAPIClient:
             })
         all_models.sort(key=lambda x: x["name"])
 
-        # 5. Build dynamic monitored rows based on user's active selections
-        selected_group_names = self.get_selected_groups()
-        selected_model_names = self.get_selected_models()
-
+        # 7. Build dynamic monitored rows based on user's active selections
         monitored_rows = []
         for g_name in selected_group_names:
             g_info = raw_groups.get(g_name)
@@ -381,15 +503,9 @@ class SquareAPIClient:
 
             ratio = float(g_info.get("ratio", 1.0))
             desc = g_info.get("desc", "")
-            bench = PERFORMANCE_BENCHMARKS.get(g_name, {
-                "short_name": g_name[:6],
-                "color": "#10B981" if ratio < 0.2 else ("#38BDF8" if ratio < 0.4 else "#F59E0B"),
-                "tps": "32.0 t/s",
-                "ttft": "5.00s",
-                "latency": "18.00s",
-                "success_rate": 100.0,
-                "bar_count": 16,
-            })
+            static_def = PERFORMANCE_BENCHMARKS.get(g_name, {})
+            short_name = static_def.get("short_name", g_name[:6])
+            color = static_def.get("color") or ("#10B981" if ratio < 0.2 else ("#38BDF8" if ratio < 0.4 else "#F59E0B"))
 
             # Find matching models that user checked AND that belong to this group
             matching_models = []
@@ -410,7 +526,6 @@ class SquareAPIClient:
                         })
 
             # Focus model for this group (either mapped, or first matching checked model, or default)
-            group_models_mapping = self.get_group_models_mapping()
             target_model_code = group_models_mapping.get(g_name)
 
             focus_model_obj = None
@@ -443,18 +558,21 @@ class SquareAPIClient:
                     "breakdown": f"{disp_name} (综合 {ratio:.2f}x)",
                 }
 
+            live_bench = get_group_bench(g_name, target_model=focus_model_obj["name"])
+
             monitored_rows.append({
                 "group_name": g_name,
-                "short_name": bench.get("short_name", g_name[:6]),
-                "color": bench.get("color", "#10B981"),
+                "short_name": short_name,
+                "color": color,
                 "ratio": ratio,
                 "ratio_str": f"{ratio:.2f}x",
                 "desc": desc,
-                "tps": bench.get("tps", "32.0 t/s"),
-                "ttft": bench.get("ttft", "5.00s"),
-                "latency": bench.get("latency", "18.00s"),
-                "success_rate": bench.get("success_rate", 100.0),
-                "bar_count": bench.get("bar_count", 16),
+                "tps": live_bench.get("tps") or static_def.get("tps", "32.0 t/s"),
+                "ttft": live_bench.get("ttft") or static_def.get("ttft", "5.00s"),
+                "latency": live_bench.get("latency") or static_def.get("latency", "18.00s"),
+                "success_rate": live_bench.get("success_rate") if live_bench.get("success_rate") is not None else static_def.get("success_rate", 100.0),
+                "series": live_bench.get("series", []),
+                "bar_count": live_bench.get("bar_count", static_def.get("bar_count", 16)),
                 "focus_model": focus_model_obj["name"],
                 "focus_model_display": focus_model_obj["display_name"],
                 "effective_ratio": focus_model_obj["effective_ratio"],
@@ -478,3 +596,4 @@ class SquareAPIClient:
         self.cached_data = result
         self.last_fetch_time = now
         return result
+

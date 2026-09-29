@@ -49,22 +49,24 @@ SCROLL_STYLE = """
 class SuccessRateBarWidget(QWidget):
     """
     Renders benchmark success rate sparkline:
-    Vertical rounded pill bars followed by percentage text (e.g. 100.0% or 98.6%).
+    Vertical rounded pill bars followed by percentage text (e.g. 100.0% or 83.7%).
+    Supports dynamic hourly time-series slices matching Square official website.
     """
 
-    def __init__(self, count: int = 10, success_rate: float = 100.0, parent=None):
+    def __init__(self, count: int = 10, success_rate: float = 100.0, series: Optional[List[Dict[str, Any]]] = None, parent=None):
         super().__init__(parent)
-        self.bar_count = max(4, min(count, 10))
+        self.series = series or []
         self.rate = success_rate
+        self.bar_count = max(4, min(count, 12)) if not self.series else min(len(self.series), 12)
         self.setFixedHeight(14)
-        self.setFixedWidth(60)
+        self.setFixedWidth(64)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        bar_w = 0.9
+        bar_w = 1.0
         bar_h = 8.5
         gap = 0.6
         y = (self.height() - bar_h) / 2.0
@@ -72,23 +74,40 @@ class SuccessRateBarWidget(QWidget):
         emerald = QColor("#10B981")
         amber = QColor("#F59E0B")
         rose = QColor("#EF4444")
-        has_fail = self.rate < 100.0
-        is_bad = self.rate < 60.0
 
         x = 0.5
-        for i in range(self.bar_count):
-            if is_bad:
-                painter.setBrush(QBrush(rose if i % 2 == 0 else amber))
-            elif has_fail and i == self.bar_count - 2:
-                painter.setBrush(QBrush(amber))
-            else:
-                painter.setBrush(QBrush(emerald))
-            painter.setPen(Qt.NoPen)
-            painter.drawRoundedRect(QRectF(x, y, bar_w, bar_h), 0.5, 0.5)
-            x += bar_w + gap
+        if self.series:
+            # Draw real historical time slices (last 12 points)
+            pts = self.series[-12:]
+            for pt in pts:
+                sr = float(pt.get("success_rate", 100.0) or 0.0)
+                if sr >= 99.0:
+                    painter.setBrush(QBrush(emerald))
+                elif sr >= 75.0:
+                    painter.setBrush(QBrush(amber))
+                else:
+                    painter.setBrush(QBrush(rose))
+                painter.setPen(Qt.NoPen)
+                painter.drawRoundedRect(QRectF(x, y, bar_w, bar_h), 0.5, 0.5)
+                x += bar_w + gap
+        else:
+            has_fail = self.rate < 99.0
+            is_bad = self.rate < 75.0
+            for i in range(self.bar_count):
+                if is_bad:
+                    painter.setBrush(QBrush(rose if i % 2 == 0 else amber))
+                elif has_fail and i == self.bar_count - 2:
+                    painter.setBrush(QBrush(amber))
+                else:
+                    painter.setBrush(QBrush(emerald))
+                painter.setPen(Qt.NoPen)
+                painter.drawRoundedRect(QRectF(x, y, bar_w, bar_h), 0.5, 0.5)
+                x += bar_w + gap
 
         # Percentage text
         x += 2.0
+        is_bad = self.rate < 75.0
+        has_fail = self.rate < 99.0
         text_color = rose if is_bad else (amber if has_fail else emerald)
         painter.setPen(text_color)
         font = QFont("Segoe UI", 7, QFont.Bold)
@@ -98,6 +117,7 @@ class SuccessRateBarWidget(QWidget):
         rect = QRectF(x, 0, self.width() - x, self.height())
         painter.drawText(rect, Qt.AlignLeft | Qt.AlignVCenter, text)
         painter.end()
+
 
 
 _IN_MEM_THUMB_QIMAGE: Dict[str, QImage] = {}
@@ -564,10 +584,12 @@ class RelayStationView(QWidget):
                 lat_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 lat_lbl.setStyleSheet("font-size: 8px; color: #94A3B8;")
 
-                # Sparkline bar chart
+                # Sparkline bar chart with live time-series
                 bar_cnt = r.get("bar_count", 16)
                 sr_val = float(r.get("success_rate", 100.0))
-                bar_widget = SuccessRateBarWidget(count=bar_cnt, success_rate=sr_val)
+                series_data = r.get("series", [])
+                bar_widget = SuccessRateBarWidget(count=bar_cnt, success_rate=sr_val, series=series_data)
+                bar_widget.setToolTip(f"实测成功率: {sr_val:.1f}%\n24小时时段样本: {len(series_data)}个")
 
                 self.sq_grid.addWidget(g_box, row_idx, 0)
                 self.sq_grid.addWidget(mult_lbl, row_idx, 1)
