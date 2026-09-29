@@ -51,6 +51,13 @@ class AIHubClient:
         self.last_fetch_time: float = 0
         self.last_error: str = ""
 
+        self.session = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(pool_connections=16, pool_maxsize=16, max_retries=1)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+        self.session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        self.history_metadata_cache: Dict[int, Any] = {}
+
     def get_selected_providers(self) -> Optional[List[str]]:
         """Get list of user-selected provider codes."""
         if self.config:
@@ -73,10 +80,9 @@ class AIHubClient:
         if not force and self.cached_data and (now - self.last_fetch_time < 30):
             return self.cached_data
 
-        headers = {"User-Agent": "Mozilla/5.0"}
         providers_raw = []
         try:
-            resp = requests.get(self.PROVIDERS_URL, headers=headers, timeout=timeout)
+            resp = self.session.get(self.PROVIDERS_URL, timeout=timeout)
             if resp.status_code == 200:
                 providers_raw = resp.json().get("data", {}).get("items", [])
         except Exception as e:
@@ -84,7 +90,7 @@ class AIHubClient:
 
         stats_by_code = {}
         try:
-            s_resp = requests.get(self.USAGE_STATS_URL, headers=headers, timeout=timeout)
+            s_resp = self.session.get(self.USAGE_STATS_URL, timeout=timeout)
             if s_resp.status_code == 200:
                 stats_items = s_resp.json().get("data", {}).get("items", [])
                 stats_by_code = {it.get("code"): it for it in stats_items if it.get("code")}
@@ -198,19 +204,25 @@ class AIHubClient:
         self.last_fetch_time = now
         return result
 
-    def get_provider_history_images(self, group_id: int, max_items: int = 60) -> List[Dict[str, Any]]:
+    def get_provider_history_images(self, group_id: int, max_items: int = 60, ttl: int = 60) -> List[Dict[str, Any]]:
         """
         Online fetch of all historical pelican images for the provider from /api/v2/public/providers/{group_id}/images.
         Returns image items without downloading them to disk.
+        Cached in-memory for `ttl` seconds to eliminate network lag on repeated clicks.
         """
-        headers = {"User-Agent": "Mozilla/5.0"}
+        now = time.time()
+        if group_id in self.history_metadata_cache:
+            ts, cached_items = self.history_metadata_cache[group_id]
+            if now - ts < ttl:
+                return cached_items
+
         url = f"https://aihub.top/api/v2/public/providers/{group_id}/images"
         all_items = []
         cursor = None
         try:
             while len(all_items) < max_items:
                 params = {"cursor": cursor} if cursor else {}
-                resp = requests.get(url, headers=headers, params=params, timeout=6)
+                resp = self.session.get(url, params=params, timeout=6)
                 if resp.status_code != 200:
                     break
                 data = resp.json().get("data", {})
@@ -231,6 +243,7 @@ class AIHubClient:
                 cursor = data.get("next_cursor")
                 if not cursor:
                     break
+            self.history_metadata_cache[group_id] = (now, all_items)
         except Exception as e:
             print("Error fetching provider history images:", e)
         return all_items

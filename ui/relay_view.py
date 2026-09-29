@@ -13,7 +13,8 @@ from PyQt5.QtWidgets import (
     QFrame, QStackedWidget, QScrollArea, QGridLayout, QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QSize, QRectF, QRunnable, QThreadPool, QObject
-from PyQt5.QtGui import QPixmap, QColor, QFont, QPainter, QBrush
+from PyQt5.QtGui import QPixmap, QImage, QColor, QFont, QPainter, QBrush
+from ui.pelican_viewer import get_pelican_session
 
 
 SCROLL_STYLE = """
@@ -99,11 +100,11 @@ class SuccessRateBarWidget(QWidget):
         painter.end()
 
 
-_IN_MEM_THUMB_BYTES: Dict[str, bytes] = {}
+_IN_MEM_THUMB_QIMAGE: Dict[str, QImage] = {}
 
 
 class ThumbLoadSignals(QObject):
-    loaded = pyqtSignal(str, bytes)
+    loaded = pyqtSignal(str, QImage)
 
 
 class ThumbDownloadTask(QRunnable):
@@ -115,10 +116,18 @@ class ThumbDownloadTask(QRunnable):
         self.signals = signals
 
     def run(self):
+        if self.url in _IN_MEM_THUMB_QIMAGE:
+            self.signals.loaded.emit(self.url, _IN_MEM_THUMB_QIMAGE[self.url])
+            return
         try:
-            resp = requests.get(self.url, headers={"User-Agent": "Mozilla/5.0"}, timeout=6)
+            session = get_pelican_session()
+            resp = session.get(self.url, timeout=5)
             if resp.status_code == 200 and resp.content:
-                self.signals.loaded.emit(self.url, resp.content)
+                qimg = QImage()
+                if qimg.loadFromData(resp.content):
+                    scaled = qimg.scaled(30, 16, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    _IN_MEM_THUMB_QIMAGE[self.url] = scaled
+                    self.signals.loaded.emit(self.url, scaled)
         except Exception:
             pass
 
@@ -139,21 +148,20 @@ class ClickableThumbnail(QLabel):
         img_url = provider_item.get("image_url")
 
         if has_img and img_url:
-            if img_url in _IN_MEM_THUMB_BYTES:
-                pix = QPixmap()
-                if pix.loadFromData(_IN_MEM_THUMB_BYTES[img_url]):
-                    self.setPixmap(pix.scaled(30, 16, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-                    self.setStyleSheet("""
-                        QLabel {
-                            background: rgba(0, 0, 0, 0.3);
-                            border: 1px solid rgba(16, 185, 129, 0.4);
-                            border-radius: 3px;
-                        }
-                        QLabel:hover {
-                            border-color: #34D399;
-                        }
-                    """)
-                    return
+            if img_url in _IN_MEM_THUMB_QIMAGE:
+                pix = QPixmap.fromImage(_IN_MEM_THUMB_QIMAGE[img_url])
+                self.setPixmap(pix)
+                self.setStyleSheet("""
+                    QLabel {
+                        background: rgba(0, 0, 0, 0.3);
+                        border: 1px solid rgba(16, 185, 129, 0.4);
+                        border-radius: 3px;
+                    }
+                    QLabel:hover {
+                        border-color: #34D399;
+                    }
+                """)
+                return
 
             self.setText("实测")
             self.setStyleSheet("""
@@ -202,23 +210,22 @@ class ClickableThumbnail(QLabel):
                 }
             """)
 
-    def _on_img_loaded(self, url: str, raw_bytes: bytes):
-        _IN_MEM_THUMB_BYTES[url] = raw_bytes
+    def _on_img_loaded(self, url: str, scaled: QImage):
+        _IN_MEM_THUMB_QIMAGE[url] = scaled
         if self.provider_item.get("image_url") == url:
-            pix = QPixmap()
-            if pix.loadFromData(raw_bytes):
-                self.setText("")
-                self.setPixmap(pix.scaled(30, 16, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-                self.setStyleSheet("""
-                    QLabel {
-                        background: rgba(0, 0, 0, 0.3);
-                        border: 1px solid rgba(16, 185, 129, 0.4);
-                        border-radius: 3px;
-                    }
-                    QLabel:hover {
-                        border-color: #34D399;
-                    }
-                """)
+            pix = QPixmap.fromImage(scaled)
+            self.setText("")
+            self.setPixmap(pix)
+            self.setStyleSheet("""
+                QLabel {
+                    background: rgba(0, 0, 0, 0.3);
+                    border: 1px solid rgba(16, 185, 129, 0.4);
+                    border-radius: 3px;
+                }
+                QLabel:hover {
+                    border-color: #34D399;
+                }
+            """)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:

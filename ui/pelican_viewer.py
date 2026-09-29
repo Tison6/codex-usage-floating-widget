@@ -2,6 +2,8 @@
 Pelican (鹈鹕) Test Image Viewer Dialog.
 Displays all historical model detection test images for an AIHub provider in a 3-column grid,
 loading them dynamically online in-memory without saving to local disk.
+Optimized with persistent connection pooling, worker-thread image decoding/scaling,
+in-memory caching, and dedicated controlled concurrency to eliminate all UI lag.
 """
 
 from typing import List, Dict, Any, Optional
@@ -14,7 +16,7 @@ from PyQt5.QtWidgets import (
     QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QThread, QSize, QRunnable, QThreadPool, QObject
-from PyQt5.QtGui import QPixmap, QColor, QFont, QCursor
+from PyQt5.QtGui import QPixmap, QImage, QColor, QFont, QCursor
 
 
 SCROLL_STYLE = """
@@ -43,13 +45,34 @@ SCROLL_STYLE = """
 """
 
 
+# Global in-memory cache for scaled QImage (0 disk writes, instant reload across popups)
+_GLOBAL_PELICAN_CACHE: Dict[str, QImage] = {}
+
+# Persistent HTTP session with connection pooling for high-throughput image streaming
+_SHARED_SESSION: Optional[requests.Session] = None
+
+
+def get_pelican_session() -> requests.Session:
+    global _SHARED_SESSION
+    if _SHARED_SESSION is None:
+        _SHARED_SESSION = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(pool_connections=16, pool_maxsize=16, max_retries=1)
+        _SHARED_SESSION.mount("https://", adapter)
+        _SHARED_SESSION.mount("http://", adapter)
+        _SHARED_SESSION.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+    return _SHARED_SESSION
+
+
 class ImageLoadSignals(QObject):
-    loaded = pyqtSignal(int, bytes)
+    loaded = pyqtSignal(int, str, QImage)  # item_id, url, scaled_image
     failed = pyqtSignal(int)
 
 
 class ImageDownloadTask(QRunnable):
-    """Downloads an image directly into memory without writing to disk."""
+    """
+    Downloads and decodes/scales an image completely on background thread.
+    Zero CPU decoding on the main GUI thread ensures buttery-smooth 60 FPS UI.
+    """
 
     def __init__(self, item_id: int, url: str, signals: ImageLoadSignals):
         super().__init__()
@@ -58,12 +81,24 @@ class ImageDownloadTask(QRunnable):
         self.signals = signals
 
     def run(self):
+        # 1. Fast path: check in-memory cache
+        if self.url in _GLOBAL_PELICAN_CACHE:
+            self.signals.loaded.emit(self.item_id, self.url, _GLOBAL_PELICAN_CACHE[self.url])
+            return
+
+        # 2. Parallel HTTP fetch using persistent session
         try:
-            resp = requests.get(self.url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            session = get_pelican_session()
+            resp = session.get(self.url, timeout=6)
             if resp.status_code == 200 and resp.content:
-                self.signals.loaded.emit(self.item_id, resp.content)
-            else:
-                self.signals.failed.emit(self.item_id)
+                qimg = QImage()
+                if qimg.loadFromData(resp.content):
+                    # Background CPU scaling off the main GUI thread
+                    scaled = qimg.scaled(224, 114, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    _GLOBAL_PELICAN_CACHE[self.url] = scaled
+                    self.signals.loaded.emit(self.item_id, self.url, scaled)
+                    return
+            self.signals.failed.emit(self.item_id)
         except Exception:
             self.signals.failed.emit(self.item_id)
 
@@ -122,13 +157,9 @@ class PelicanCard(QFrame):
         """)
         layout.addWidget(self.time_lbl)
 
-    def set_image_bytes(self, data: bytes):
-        pix = QPixmap()
-        if pix.loadFromData(data) and not pix.isNull():
-            scaled = pix.scaled(QSize(224, 114), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.img_lbl.setPixmap(scaled)
-        else:
-            self.img_lbl.setText("⚠️ 解析失败")
+    def set_image(self, qimg: QImage):
+        pix = QPixmap.fromImage(qimg)
+        self.img_lbl.setPixmap(pix)
 
     def set_load_failed(self):
         self.img_lbl.setText("⚠️ 图片获取失败")
@@ -155,14 +186,20 @@ class HistoryFetchThread(QThread):
 class PelicanViewerDialog(QDialog):
     """
     Modern dark popup dialog displaying all historical Pelican drawings for a provider
-    in a 3-column responsive grid with online async loading.
+    in a 3-column responsive grid with online async streaming and zero UI freezing.
     """
 
     def __init__(self, provider_item: Any, aihub_client=None, operator_code: str = "", parent=None):
         super().__init__(parent)
         self.aihub_client = aihub_client
         self.cards_map: Dict[int, PelicanCard] = {}
-        self.thread_pool = QThreadPool.globalInstance()
+
+        # Dedicated, isolated threadpool for this dialog
+        self.thread_pool = QThreadPool(self)
+        self.thread_pool.setMaxThreadCount(6)
+
+        self.total_count = 0
+        self.loaded_count = 0
 
         # Extract provider code and group_id
         if isinstance(provider_item, dict):
@@ -171,7 +208,6 @@ class PelicanViewerDialog(QDialog):
             self.group_id = provider_item.get("group_id")
             self.initial_images = provider_item.get("operator_images", [])
         elif isinstance(provider_item, list):
-            # Backward compatibility
             self.provider_item = {}
             self.initial_images = provider_item
             self.operator_code = operator_code or (provider_item[0].get("model_code", "AIHub") if provider_item else "AIHub")
@@ -222,14 +258,14 @@ class PelicanViewerDialog(QDialog):
         layout.setContentsMargins(16, 12, 16, 14)
         layout.setSpacing(10)
 
-        # 1. Header Bar matching screenshot: [Code 鹈鹕] ... [✕]
+        # 1. Header Bar: [Code 鹈鹕] ... [✕]
         header = QHBoxLayout()
         header.setContentsMargins(2, 2, 2, 2)
 
         self.title_lbl = QLabel(f"{self.operator_code} 鹈鹕")
         self.title_lbl.setStyleSheet("font-size: 14px; font-weight: 700; color: #F1F5F9;")
 
-        self.status_lbl = QLabel("正在加载...")
+        self.status_lbl = QLabel("正在连接服务器...")
         self.status_lbl.setStyleSheet("font-size: 11px; color: #94A3B8; margin-left: 8px;")
 
         btn_close = QPushButton("✕")
@@ -277,7 +313,7 @@ class PelicanViewerDialog(QDialog):
 
     def load_images(self):
         if self.aihub_client and self.group_id is not None:
-            self.status_lbl.setText("⏳ 在线获取实测历史...")
+            self.status_lbl.setText("⏳ 在线获取实测记录...")
             self.fetch_thread = HistoryFetchThread(self.aihub_client, self.group_id)
             self.fetch_thread.data_ready.connect(self.on_history_data_ready)
             self.fetch_thread.error_occurred.connect(self.on_fetch_error)
@@ -288,7 +324,8 @@ class PelicanViewerDialog(QDialog):
             self.status_lbl.setText("⚠️ 暂无该供应商图片记录")
 
     def on_history_data_ready(self, items: List[Dict[str, Any]]):
-        self.status_lbl.setText(f"共 {len(items)} 张实测图 (在线实时加载)")
+        self.total_count = len(items)
+        self.loaded_count = 0
 
         # Clear existing grid
         while self.grid.count():
@@ -298,10 +335,13 @@ class PelicanViewerDialog(QDialog):
         self.cards_map.clear()
 
         if not items:
+            self.status_lbl.setText("共 0 张实测图")
             empty_lbl = QLabel("暂无检测图片")
             empty_lbl.setStyleSheet("font-size: 12px; color: #94A3B8; padding: 30px;")
             self.grid.addWidget(empty_lbl, 0, 0, 1, 3, Qt.AlignCenter)
             return
+
+        self.status_lbl.setText(f"共 {self.total_count} 张实测图 (在线实时加载中...)")
 
         # Build 3-column grid
         for idx, item in enumerate(items):
@@ -312,28 +352,48 @@ class PelicanViewerDialog(QDialog):
             self.cards_map[idx] = card
             self.grid.addWidget(card, row, col)
 
-            # Spawn async download into memory
             img_url = item.get("url", "")
             if img_url:
-                task = ImageDownloadTask(idx, img_url, self.signals)
-                self.thread_pool.start(task)
+                if img_url in _GLOBAL_PELICAN_CACHE:
+                    card.set_image(_GLOBAL_PELICAN_CACHE[img_url])
+                    self.loaded_count += 1
+                else:
+                    task = ImageDownloadTask(idx, img_url, self.signals)
+                    self.thread_pool.start(task)
             else:
                 card.set_load_failed()
+
+        if self.loaded_count >= self.total_count and self.total_count > 0:
+            self.status_lbl.setText(f"共 {self.total_count} 张实测图 (全部就绪)")
 
         self.grid_content.adjustSize()
 
     def on_fetch_error(self, err: str):
         self.status_lbl.setText("⚠️ 获取失败，请检查网络")
 
-    def on_image_loaded(self, item_id: int, data: bytes):
+    def on_image_loaded(self, item_id: int, url: str, scaled_img: QImage):
         card = self.cards_map.get(item_id)
         if card:
-            card.set_image_bytes(data)
+            card.set_image(scaled_img)
+        self.loaded_count += 1
+        if self.loaded_count >= self.total_count:
+            self.status_lbl.setText(f"共 {self.total_count} 张实测图 (全部加载完成)")
+        else:
+            self.status_lbl.setText(f"共 {self.total_count} 张实测图 (已加载 {self.loaded_count}/{self.total_count})")
 
     def on_image_failed(self, item_id: int):
         card = self.cards_map.get(item_id)
         if card:
             card.set_load_failed()
+
+    def closeEvent(self, event):
+        # Cancel any pending download tasks to free up thread resources
+        self.thread_pool.clear()
+        super().closeEvent(event)
+
+    def reject(self):
+        self.thread_pool.clear()
+        super().reject()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:
