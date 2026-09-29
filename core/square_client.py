@@ -21,7 +21,7 @@ DEFAULT_SELECTED_GROUPS = [
     "claude-ultra",
     "官方max",
     "aws-cc",
-    "ds-v4没有4.1，4.1有专门分组",
+    "ds-v4.1可用",
     "ds-v4.1",
 ]
 
@@ -121,6 +121,15 @@ PERFORMANCE_BENCHMARKS = {
     },
     "ds-v4没有4.1，4.1有专门分组": {
         "short_name": "4.1专门",
+        "color": "#10B981",
+        "tps": "68.4 t/s",
+        "ttft": "1.25s",
+        "latency": "8.40s",
+        "success_rate": 100.0,
+        "bar_count": 16,
+    },
+    "ds-v4.1可用": {
+        "short_name": "4.1可用",
         "color": "#10B981",
         "tps": "68.4 t/s",
         "ttft": "1.25s",
@@ -337,9 +346,15 @@ class SquareAPIClient:
                 if m_name in selected_model_names:
                     enable_groups = m.get("enable_groups", [])
                     if g_name in enable_groups:
+                        m_ratio = float(m.get("model_ratio", 1.0))
+                        effective_ratio = ratio * m_ratio
+                        disp_name = MODEL_DISPLAY_NAMES.get(m_name, m_name)
                         matching_models.append({
                             "name": m_name,
-                            "display_name": MODEL_DISPLAY_NAMES.get(m_name, m_name),
+                            "display_name": disp_name,
+                            "model_ratio": m_ratio,
+                            "effective_ratio": effective_ratio,
+                            "breakdown": f"{disp_name} (官网倍率 {m_ratio}x × 分组 {ratio}x = 综合 {effective_ratio:.3f}x)",
                         })
 
             monitored_rows.append({

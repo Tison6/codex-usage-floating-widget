@@ -517,17 +517,20 @@ class RelayStationView(QWidget):
                 short_g = r.get("short_name", r["group_name"][:6])
 
                 g_lbl = QLabel(short_g)
-                # Rich tooltip with group name, monitored models, and description
+                # Rich tooltip with group name, monitored models, and calculation breakdown
+                breakdowns = [m.get("breakdown") for m in r.get("models", []) if m.get("breakdown")]
+                calc_str = ("\n官网计费折算:\n  • " + "\n  • ".join(breakdowns)) if breakdowns else ""
                 tip_text = (
                     f"分组: {r['group_name']}\n"
-                    f"实时倍率: {r.get('ratio_str', '--')}\n"
-                    f"勾选模型: {r.get('models_str', '全部')}\n"
-                    f"实时特性: {r.get('desc', '稳定可用')}"
+                    f"分组倍率: {r.get('ratio_str', '--')}\n"
+                    f"官方说明: {r.get('desc', '稳定可用')}"
+                    f"{calc_str}"
                 )
                 g_lbl.setToolTip(tip_text)
                 g_lbl.setStyleSheet(f"font-size: 9px; font-weight: 700; color: {color};")
 
                 mult_lbl = QLabel(r.get("ratio_str", "--"))
+                mult_lbl.setToolTip(tip_text)
                 mult_lbl.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
                 mult_lbl.setStyleSheet("font-size: 8px; font-weight: 600; color: #60A5FA;")
 
