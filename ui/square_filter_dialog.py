@@ -8,12 +8,12 @@ from typing import List, Dict, Any, Set, Optional
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QWidget, QScrollArea, QCheckBox, QFrame,
-    QGraphicsDropShadowEffect
+    QGraphicsDropShadowEffect, QComboBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QCursor
 
-from core.square_client import DEFAULT_SELECTED_GROUPS, DEFAULT_SELECTED_MODELS
+from core.square_client import DEFAULT_SELECTED_GROUPS, DEFAULT_SELECTED_MODELS, DEFAULT_GROUP_MODELS
 
 SCROLL_STYLE = """
     QScrollArea {
@@ -75,6 +75,7 @@ class SquareFilterDialog(QDialog):
         self.square_client = square_client
         self.group_checkboxes: Dict[str, QCheckBox] = {}
         self.model_checkboxes: Dict[str, QCheckBox] = {}
+        self.group_model_combos: Dict[str, QComboBox] = {}
 
         self.init_window()
         self.init_ui()
@@ -256,10 +257,10 @@ class SquareFilterDialog(QDialog):
         h_row.addWidget(h_g)
         h_row.addStretch()
 
-        for title, w in [("倍率", 42), ("速度", 48), ("延迟", 46), ("成功率", 48), ("说明/特性", 75)]:
+        for title, w in [("关注模型", 115), ("倍率", 40), ("速度", 46), ("延迟", 44), ("成功率", 46)]:
             lbl = QLabel(title)
             lbl.setFixedWidth(w)
-            lbl.setAlignment(Qt.AlignCenter if title in ["倍率", "成功率"] else Qt.AlignRight)
+            lbl.setAlignment(Qt.AlignCenter if title in ["关注模型", "倍率", "成功率"] else Qt.AlignRight)
             lbl.setStyleSheet("font-size: 9px; font-weight: 700; color: #64748B;")
             h_row.addWidget(lbl)
         layout.addLayout(h_row)
@@ -278,6 +279,8 @@ class SquareFilterDialog(QDialog):
         c_layout.setSpacing(4)
 
         all_groups = (self.square_client.cached_data or {}).get("all_groups", [])
+        all_models = (self.square_client.cached_data or {}).get("all_models", [])
+        mapping = self.square_client.get_group_models_mapping()
         cur_selected = set(self.square_client.get_selected_groups())
 
         if not all_groups:
@@ -307,9 +310,42 @@ class SquareFilterDialog(QDialog):
             r_lay.addWidget(cb)
             r_lay.addStretch()
 
+            # Focus Model Selector
+            combo = QComboBox()
+            combo.setFixedWidth(115)
+            combo.setFixedHeight(20)
+            combo.setStyleSheet("""
+                QComboBox {
+                    background: rgba(255, 255, 255, 0.08);
+                    border: 1px solid rgba(255, 255, 255, 0.15);
+                    border-radius: 3px;
+                    color: #F1F5F9;
+                    font-size: 9px;
+                    padding: 0px 4px;
+                }
+                QComboBox QAbstractItemView {
+                    background: #1E293B;
+                    color: #F8FAFC;
+                    selection-background-color: #3B82F6;
+                    font-size: 9px;
+                }
+            """)
+            models_to_use = all_models if all_models else [{"name": m, "display_name": m} for m in DEFAULT_SELECTED_MODELS]
+            en_models = [m for m in models_to_use if g_name in m.get("enable_groups", [])]
+            cand_models = en_models if en_models else models_to_use
+            for m in cand_models:
+                combo.addItem(m.get("display_name", m["name"]), m["name"])
+
+            cur_focus = mapping.get(g_name, DEFAULT_GROUP_MODELS.get(g_name, "gpt-6-astra"))
+            idx = combo.findData(cur_focus)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+            self.group_model_combos[g_name] = combo
+            r_lay.addWidget(combo)
+
             # Multiplier badge
             ratio_lbl = QLabel(g.get("ratio_str", "--"))
-            ratio_lbl.setFixedWidth(42)
+            ratio_lbl.setFixedWidth(40)
             ratio_lbl.setAlignment(Qt.AlignCenter)
             ratio_lbl.setStyleSheet("""
                 background: rgba(59, 130, 246, 0.2);
@@ -323,14 +359,14 @@ class SquareFilterDialog(QDialog):
 
             # Speed
             tps_lbl = QLabel(g.get("tps", "--"))
-            tps_lbl.setFixedWidth(48)
+            tps_lbl.setFixedWidth(46)
             tps_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             tps_lbl.setStyleSheet("font-size: 9px; color: #CBD5E1;")
             r_lay.addWidget(tps_lbl)
 
             # Latency
             lat_lbl = QLabel(g.get("latency", "--"))
-            lat_lbl.setFixedWidth(46)
+            lat_lbl.setFixedWidth(44)
             lat_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             lat_lbl.setStyleSheet("font-size: 9px; color: #94A3B8;")
             r_lay.addWidget(lat_lbl)
@@ -338,17 +374,10 @@ class SquareFilterDialog(QDialog):
             # Success rate
             sr_val = g.get("success_rate", 100.0)
             sr_lbl = QLabel(f"{sr_val:.1f}%")
-            sr_lbl.setFixedWidth(48)
+            sr_lbl.setFixedWidth(46)
             sr_lbl.setAlignment(Qt.AlignCenter)
             sr_lbl.setStyleSheet("font-size: 9px; font-weight: 700; color: #10B981;")
             r_lay.addWidget(sr_lbl)
-
-            # Desc
-            desc_lbl = QLabel(g.get("desc", ""))
-            desc_lbl.setFixedWidth(75)
-            desc_lbl.setToolTip(g.get("desc", ""))
-            desc_lbl.setStyleSheet("font-size: 9px; color: #64748B;")
-            r_lay.addWidget(desc_lbl)
 
             c_layout.addWidget(row)
 
@@ -456,8 +485,13 @@ class SquareFilterDialog(QDialog):
         selected_groups = [name for name, cb in self.group_checkboxes.items() if cb.isChecked()]
         selected_models = [name for name, cb in self.model_checkboxes.items() if cb.isChecked()]
 
+        new_mapping = {}
+        for g_name, combo in self.group_model_combos.items():
+            new_mapping[g_name] = combo.currentData() or combo.currentText()
+
         self.square_client.set_selected_groups(selected_groups)
         self.square_client.set_selected_models(selected_models)
+        self.square_client.set_group_models_mapping(new_mapping)
 
         # Force re-computation of monitored rows
         self.square_client.fetch_data(force=True)
@@ -593,7 +627,7 @@ class AIHubFilterDialog(QDialog):
         h_row.addWidget(h_prov)
         h_row.addStretch()
 
-        for title, w in [("倍率", 42), ("缓存率", 44), ("TTFT", 42), ("成功率", 56), ("实测图", 36)]:
+        for title, w in [("真实倍率", 48), ("缓存率", 44), ("TTFT", 42), ("成功率", 56), ("实测图", 36)]:
             lbl = QLabel(title)
             lbl.setFixedWidth(w)
             lbl.setAlignment(Qt.AlignCenter)
@@ -644,10 +678,13 @@ class AIHubFilterDialog(QDialog):
             r_lay.addWidget(cb)
             r_lay.addStretch()
 
-            # Multiplier badge
-            mult_lbl = QLabel(p.get("multiplier_str", "--"))
-            mult_lbl.setFixedWidth(42)
+            # Multiplier badge (shows real effective multiplier, tooltip shows both)
+            eff_mult = p.get("effective_multiplier_str") or p.get("multiplier_str", "--")
+            nom_mult = p.get("multiplier_str", "--")
+            mult_lbl = QLabel(eff_mult)
+            mult_lbl.setFixedWidth(48)
             mult_lbl.setAlignment(Qt.AlignCenter)
+            mult_lbl.setToolTip(f"真实倍率: {eff_mult} (含实际缓存计费折算)\n名义倍率: {nom_mult}")
             mult_lbl.setStyleSheet("""
                 background: rgba(16, 185, 129, 0.18);
                 color: #34D399;

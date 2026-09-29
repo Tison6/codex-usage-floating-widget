@@ -148,6 +148,16 @@ class AIHubClient:
                 sr_percent = 100.0
                 sr_str = "100.0%"
 
+            # Real / Effective Multiplier (official AIHub effective_multiplier factoring in caching)
+            eff_mult = it.get("effective_multiplier")
+            eff_ready = bool(it.get("effective_multiplier_ready", False))
+            if eff_mult is not None and isinstance(eff_mult, (int, float)):
+                eff_mult_val = float(eff_mult)
+                eff_mult_str = f"{eff_mult_val:.2f}x"
+            else:
+                eff_mult_val = float(mult)
+                eff_mult_str = f"{mult:.2f}x"
+
             # Detection media / image
             dm = it.get("detection_media") or {}
             pres = dm.get("presentation") or {}
@@ -161,6 +171,9 @@ class AIHubClient:
                 "group_id": group_id,
                 "rate_multiplier": mult,
                 "multiplier_str": f"{mult:.2f}x",
+                "effective_multiplier": eff_mult_val,
+                "effective_multiplier_str": eff_mult_str,
+                "effective_multiplier_ready": eff_ready,
                 "cache_hit_rate": cache_hit_str,
                 "ttft_str": ttft_str,
                 "ttft_ms": ttft_ms or 99999,

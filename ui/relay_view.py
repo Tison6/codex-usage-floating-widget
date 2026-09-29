@@ -125,7 +125,7 @@ class ThumbDownloadTask(QRunnable):
             if resp.status_code == 200 and resp.content:
                 qimg = QImage()
                 if qimg.loadFromData(resp.content):
-                    scaled = qimg.scaled(30, 16, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    scaled = qimg.scaled(70, 34, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     _IN_MEM_THUMB_QIMAGE[self.url] = scaled
                     self.signals.loaded.emit(self.url, scaled)
         except Exception:
@@ -133,13 +133,13 @@ class ThumbDownloadTask(QRunnable):
 
 
 class ClickableThumbnail(QLabel):
-    """Mini clickable thumbnail image representing a provider's detection artifact."""
+    """Clickable thumbnail image representing a provider's detection artifact."""
     clicked = pyqtSignal(dict)  # emits provider_dict
 
     def __init__(self, provider_item: Dict[str, Any], parent=None):
         super().__init__(parent)
         self.provider_item = provider_item
-        self.setFixedSize(30, 16)
+        self.setFixedSize(72, 36)
         self.setAlignment(Qt.AlignCenter)
         self.setCursor(Qt.PointingHandCursor)
         self.setToolTip("点击在线查看该供应商全部历史鹈鹕图")
@@ -153,29 +153,30 @@ class ClickableThumbnail(QLabel):
                 self.setPixmap(pix)
                 self.setStyleSheet("""
                     QLabel {
-                        background: rgba(0, 0, 0, 0.3);
-                        border: 1px solid rgba(16, 185, 129, 0.4);
-                        border-radius: 3px;
+                        background: rgba(0, 0, 0, 0.4);
+                        border: 1px solid rgba(16, 185, 129, 0.45);
+                        border-radius: 4px;
                     }
                     QLabel:hover {
                         border-color: #34D399;
+                        border-width: 1.5px;
                     }
                 """)
                 return
 
-            self.setText("实测")
+            self.setText("📷 实测")
             self.setStyleSheet("""
                 QLabel {
-                    background: rgba(16, 185, 129, 0.15);
+                    background: rgba(16, 185, 129, 0.12);
                     border: 1px solid rgba(16, 185, 129, 0.4);
-                    border-radius: 3px;
+                    border-radius: 4px;
                     color: #34D399;
-                    font-size: 8px;
+                    font-size: 9px;
                     font-weight: 700;
                 }
                 QLabel:hover {
-                    background: rgba(16, 185, 129, 0.35);
-                    border-color: rgba(16, 185, 129, 0.7);
+                    background: rgba(16, 185, 129, 0.28);
+                    border-color: rgba(16, 185, 129, 0.8);
                 }
             """)
             self._signals = ThumbLoadSignals()
@@ -183,19 +184,19 @@ class ClickableThumbnail(QLabel):
             task = ThumbDownloadTask(img_url, self._signals)
             QThreadPool.globalInstance().start(task)
         elif has_img:
-            self.setText("实测")
+            self.setText("📷 实测")
             self.setStyleSheet("""
                 QLabel {
-                    background: rgba(16, 185, 129, 0.15);
+                    background: rgba(16, 185, 129, 0.12);
                     border: 1px solid rgba(16, 185, 129, 0.4);
-                    border-radius: 3px;
+                    border-radius: 4px;
                     color: #34D399;
-                    font-size: 8px;
+                    font-size: 9px;
                     font-weight: 700;
                 }
                 QLabel:hover {
-                    background: rgba(16, 185, 129, 0.35);
-                    border-color: rgba(16, 185, 129, 0.7);
+                    background: rgba(16, 185, 129, 0.28);
+                    border-color: rgba(16, 185, 129, 0.8);
                 }
             """)
         else:
@@ -204,9 +205,9 @@ class ClickableThumbnail(QLabel):
                 QLabel {
                     background: rgba(255, 255, 255, 0.03);
                     border: 1px solid rgba(255, 255, 255, 0.06);
-                    border-radius: 3px;
+                    border-radius: 4px;
                     color: #64748B;
-                    font-size: 8px;
+                    font-size: 9px;
                 }
             """)
 
@@ -218,12 +219,13 @@ class ClickableThumbnail(QLabel):
             self.setPixmap(pix)
             self.setStyleSheet("""
                 QLabel {
-                    background: rgba(0, 0, 0, 0.3);
-                    border: 1px solid rgba(16, 185, 129, 0.4);
-                    border-radius: 3px;
+                    background: rgba(0, 0, 0, 0.4);
+                    border: 1px solid rgba(16, 185, 129, 0.45);
+                    border-radius: 4px;
                 }
                 QLabel:hover {
                     border-color: #34D399;
+                    border-width: 1.5px;
                 }
             """)
 
@@ -394,8 +396,8 @@ class RelayStationView(QWidget):
         # Scroll Area for Square Monitored Rows
         self.sq_scroll = QScrollArea()
         self.sq_scroll.setWidgetResizable(True)
-        self.sq_scroll.setFixedHeight(235)
-        self.sq_scroll.setMinimumWidth(320)
+        self.sq_scroll.setFixedHeight(260)
+        self.sq_scroll.setMinimumWidth(340)
         self.sq_scroll.setStyleSheet(SCROLL_STYLE)
         self.sq_scroll.viewport().setStyleSheet("background: transparent; border: none;")
         self.sq_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -452,8 +454,8 @@ class RelayStationView(QWidget):
         # Scroll Area for Providers Table
         self.aihub_scroll = QScrollArea()
         self.aihub_scroll.setWidgetResizable(True)
-        self.aihub_scroll.setFixedHeight(235)
-        self.aihub_scroll.setMinimumWidth(320)
+        self.aihub_scroll.setFixedHeight(260)
+        self.aihub_scroll.setMinimumWidth(340)
         self.aihub_scroll.setStyleSheet(SCROLL_STYLE)
         self.aihub_scroll.viewport().setStyleSheet("background: transparent; border: none;")
         self.aihub_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -463,7 +465,7 @@ class RelayStationView(QWidget):
         self.aihub_grid = QGridLayout(self.aihub_scroll_content)
         self.aihub_grid.setContentsMargins(1, 1, 6, 1)
         self.aihub_grid.setHorizontalSpacing(4)
-        self.aihub_grid.setVerticalSpacing(3)
+        self.aihub_grid.setVerticalSpacing(4)
         self.aihub_scroll.setWidget(self.aihub_scroll_content)
         p_layout.addWidget(self.aihub_scroll)
 
@@ -497,8 +499,8 @@ class RelayStationView(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
-        # Header Titles: 分组, 倍率, 速度, 首字, 延迟, 成功率
-        h_titles = ["分组", "倍率", "速度", "首字", "延迟", "成功率"]
+        # Header Titles: 分组 / 关注模型, 倍率, 速度, 首字, 延迟, 成功率
+        h_titles = ["分组 / 关注模型", "倍率", "速度", "首字", "延迟", "成功率"]
         h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight]
         for col_idx, (title, align) in enumerate(zip(h_titles, h_aligns)):
             h_lbl = QLabel(title)
@@ -515,19 +517,35 @@ class RelayStationView(QWidget):
             for row_idx, r in enumerate(monitored_rows, start=1):
                 color = r.get("color", "#10B981")
                 short_g = r.get("short_name", r["group_name"][:6])
+                focus_m = r.get("focus_model_display") or r.get("focus_model") or ""
+
+                # Combined Group + Focus Model display
+                g_box = QWidget()
+                g_lay = QVBoxLayout(g_box)
+                g_lay.setContentsMargins(0, 1, 0, 1)
+                g_lay.setSpacing(1)
 
                 g_lbl = QLabel(short_g)
+                g_lbl.setStyleSheet(f"font-size: 9px; font-weight: 700; color: {color};")
+                g_lay.addWidget(g_lbl)
+
+                if focus_m:
+                    m_lbl = QLabel(focus_m)
+                    m_lbl.setStyleSheet("font-size: 8px; color: #94A3B8;")
+                    g_lay.addWidget(m_lbl)
+
                 # Rich tooltip with group name, monitored models, and calculation breakdown
                 breakdowns = [m.get("breakdown") for m in r.get("models", []) if m.get("breakdown")]
-                calc_str = ("\n官网计费折算:\n  • " + "\n  • ".join(breakdowns)) if breakdowns else ""
+                calc_str = ("\n折算明细:\n  • " + "\n  • ".join(breakdowns)) if breakdowns else ""
                 tip_text = (
                     f"分组: {r['group_name']}\n"
-                    f"分组倍率: {r.get('ratio_str', '--')}\n"
+                    f"关注模型: {focus_m}\n"
+                    f"分组基准倍率: {r.get('ratio_str', '--')}\n"
+                    f"综合折算倍率: {r.get('effective_ratio_str', '--')}\n"
                     f"官方说明: {r.get('desc', '稳定可用')}"
                     f"{calc_str}"
                 )
-                g_lbl.setToolTip(tip_text)
-                g_lbl.setStyleSheet(f"font-size: 9px; font-weight: 700; color: {color};")
+                g_box.setToolTip(tip_text)
 
                 mult_lbl = QLabel(r.get("ratio_str", "--"))
                 mult_lbl.setToolTip(tip_text)
@@ -551,7 +569,7 @@ class RelayStationView(QWidget):
                 sr_val = float(r.get("success_rate", 100.0))
                 bar_widget = SuccessRateBarWidget(count=bar_cnt, success_rate=sr_val)
 
-                self.sq_grid.addWidget(g_lbl, row_idx, 0)
+                self.sq_grid.addWidget(g_box, row_idx, 0)
                 self.sq_grid.addWidget(mult_lbl, row_idx, 1)
                 self.sq_grid.addWidget(tps_lbl, row_idx, 2)
                 self.sq_grid.addWidget(ttft_lbl, row_idx, 3)
@@ -563,13 +581,23 @@ class RelayStationView(QWidget):
         self.card.adjustSize()
 
     def update_aihub_data(self, data: Dict[str, Any]):
-        """Render AIHub monitored providers with performance parameters and right-aligned thumbnails."""
+        """Render AIHub monitored providers with prominent pelican thumbnails and effective multipliers."""
         self._aihub_data = data
         if not data.get("success"):
             self.aihub_status_lbl.setText("⚠️ 获取失败")
             return
 
-        self.aihub_status_lbl.setText(f"{data.get('updated_at', '刚刚')}")
+        monitored = data.get("monitored_providers") or data.get("top_groups", [])
+
+        # Display average TTFT and success rate on the top header per user suggestion
+        if monitored:
+            valid_tts = [g["ttft_ms"] for g in monitored if g.get("ttft_ms") and g["ttft_ms"] < 90000]
+            avg_ttft = f"{sum(valid_tts)/len(valid_tts)/1000:.1f}s" if valid_tts else "--"
+            valid_srs = [g["success_rate"] for g in monitored if g.get("success_rate") is not None]
+            avg_sr = f"{sum(valid_srs)/len(valid_srs):.1f}%" if valid_srs else "--"
+            self.aihub_status_lbl.setText(f"TTFT {avg_ttft} · 成功率 {avg_sr} · {data.get('updated_at', '')}")
+        else:
+            self.aihub_status_lbl.setText(f"{data.get('updated_at', '刚刚')}")
 
         # Clear grid
         while self.aihub_grid.count():
@@ -577,68 +605,60 @@ class RelayStationView(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
-        # Header: 供应商, 倍率, 缓存, TTFT, 成功率, 实测图
-        h_titles = ["供应商", "倍率", "缓存", "TTFT", "成功率", "实测图"]
-        h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight, Qt.AlignCenter]
+        # Header: 供应商, 真实倍率, 缓存率, 实测图 (TTFT and 成功率 removed from main table per user request)
+        h_titles = ["供应商", "真实倍率", "缓存率", "实测图"]
+        h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignRight, Qt.AlignCenter]
         for col_idx, (title, align) in enumerate(zip(h_titles, h_aligns)):
             h_lbl = QLabel(title)
             h_lbl.setAlignment(align | Qt.AlignVCenter)
             h_lbl.setStyleSheet("font-size: 8px; font-weight: 700; color: #64748B;")
             self.aihub_grid.addWidget(h_lbl, 0, col_idx)
 
-        monitored = data.get("monitored_providers") or data.get("top_groups", [])
+        # Set column proportions for spacious thumbnail view
+        self.aihub_grid.setColumnStretch(0, 5)
+        self.aihub_grid.setColumnStretch(1, 3)
+        self.aihub_grid.setColumnStretch(2, 3)
+        self.aihub_grid.setColumnStretch(3, 4)
+
         if not monitored:
             empty_lbl = QLabel("暂无勾选的供应商，请点击右上角 [⚙️ 勾选监控] 选择")
             empty_lbl.setStyleSheet("font-size: 9px; color: #94A3B8; padding: 10px;")
-            self.aihub_grid.addWidget(empty_lbl, 1, 0, 1, 6, Qt.AlignCenter)
+            self.aihub_grid.addWidget(empty_lbl, 1, 0, 1, 4, Qt.AlignCenter)
         else:
             for row_idx, g in enumerate(monitored, start=1):
                 c_name = QLabel(f"{row_idx}. {g['code']}")
+                eff_mult_str = g.get("effective_multiplier_str") or g.get("multiplier_str", "--")
+                nom_mult_str = g.get("multiplier_str", "--")
                 tip_text = (
                     f"供应商: {g['code']}\n"
-                    f"倍率: {g.get('multiplier_str', '--')}\n"
+                    f"真实倍率: {eff_mult_str} (含实际缓存计费折算)\n"
+                    f"名义倍率: {nom_mult_str}\n"
                     f"缓存命中率: {g.get('cache_hit_rate', '-')}\n"
-                    f"TTFT: {g.get('ttft_str', '--')}\n"
-                    f"输出速度: {g.get('tps_str', '--')}\n"
+                    f"首字延迟 (TTFT): {g.get('ttft_str', '--')}\n"
+                    f"输出速度 (TPS): {g.get('tps_str', '--')}\n"
                     f"实测成功率: {g.get('success_rate_str', '100.0%')}"
                 )
                 c_name.setToolTip(tip_text)
-                c_name.setStyleSheet("font-size: 8px; font-weight: 600; color: #CBD5E1;")
+                c_name.setStyleSheet("font-size: 9px; font-weight: 600; color: #CBD5E1;")
 
-                c_mult = QLabel(g.get("multiplier_str", "--"))
+                c_mult = QLabel(eff_mult_str)
+                c_mult.setToolTip(tip_text)
                 c_mult.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-                c_mult.setStyleSheet("font-size: 8px; font-weight: 700; color: #34D399;")
+                c_mult.setStyleSheet("font-size: 9px; font-weight: 700; color: #34D399;")
 
                 c_hit = QLabel(g.get("cache_hit_rate", "-"))
+                c_hit.setToolTip(tip_text)
                 c_hit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 c_hit.setStyleSheet("font-size: 8px; color: #94A3B8;")
 
-                c_ttft = QLabel(g.get("ttft_str", "--"))
-                c_ttft.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                c_ttft.setStyleSheet("font-size: 8px; color: #64748B;")
-
-                # Success rate with warning color if low
-                sr_val = float(g.get("success_rate", 100.0))
-                c_sr = QLabel(g.get("success_rate_str", "--"))
-                c_sr.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                if sr_val >= 90.0:
-                    sr_style = "font-size: 8px; font-weight: 600; color: #10B981;"
-                elif sr_val >= 50.0:
-                    sr_style = "font-size: 8px; font-weight: 600; color: #F59E0B;"
-                else:
-                    sr_style = "font-size: 8px; font-weight: 700; color: #EF4444;"
-                c_sr.setStyleSheet(sr_style)
-
-                # Right column: individual clickable thumbnail
+                # Prominent 72x36 clickable thumbnail
                 thumb = ClickableThumbnail(g, self.aihub_scroll_content)
                 thumb.clicked.connect(self.pelican_clicked.emit)
 
                 self.aihub_grid.addWidget(c_name, row_idx, 0)
                 self.aihub_grid.addWidget(c_mult, row_idx, 1)
                 self.aihub_grid.addWidget(c_hit, row_idx, 2)
-                self.aihub_grid.addWidget(c_ttft, row_idx, 3)
-                self.aihub_grid.addWidget(c_sr, row_idx, 4)
-                self.aihub_grid.addWidget(thumb, row_idx, 5, Qt.AlignCenter | Qt.AlignVCenter)
+                self.aihub_grid.addWidget(thumb, row_idx, 3, Qt.AlignCenter | Qt.AlignVCenter)
 
         self.aihub_scroll_content.adjustSize()
         self.stack.adjustSize()

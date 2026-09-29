@@ -45,23 +45,40 @@ MODEL_DISPLAY_NAMES = {
     "claude-ultra": "Claude Ultra",
 }
 
-# Real benchmarks matching Square system status
+# Default mapping of group to primary monitored focus model
+DEFAULT_GROUP_MODELS = {
+    "gpt-已过鹈鹕测试不降智": "gpt-6-astra",
+    "混池优惠": "gpt-6-astra",
+    "gpt-特惠分组": "gpt-6-astra",
+    "pro专享": "gpt-6-astra",
+    "terra分组": "gpt-6-astra",
+    "限制宽松gpt": "gpt-6-astra",
+    "ds-v4.1可用": "deepseek-v4.1-flash",
+    "ds-v4没有4.1，4.1有专门分组": "deepseek-v4.1-flash",
+    "ds-v4.1": "deepseek-v4.1-flash",
+    "cc1": "claude-opus-5-5",
+    "claude-ultra": "claude-ultra",
+    "官方max": "gpt-5.5",
+    "aws-cc": "claude-opus-5-5",
+}
+
+# Real benchmarks strictly matching Square official website modal data ([详情 >])
 PERFORMANCE_BENCHMARKS = {
     "gpt-已过鹈鹕测试不降智": {
         "short_name": "已过鹈鹕",
         "color": "#10B981",
-        "tps": "32.9 t/s",
-        "ttft": "7.63s",
-        "latency": "21.62s",
+        "tps": "35.6 t/s",
+        "ttft": "7.48s",
+        "latency": "26.39s",
         "success_rate": 100.0,
         "bar_count": 16,
     },
     "gpt-特惠分组": {
         "short_name": "特惠分组",
         "color": "#38BDF8",
-        "tps": "32.7 t/s",
-        "ttft": "4.59s",
-        "latency": "16.07s",
+        "tps": "32.5 t/s",
+        "ttft": "4.67s",
+        "latency": "21.19s",
         "success_rate": 100.0,
         "bar_count": 16,
     },
@@ -69,27 +86,36 @@ PERFORMANCE_BENCHMARKS = {
         "short_name": "pro专享",
         "color": "#F59E0B",
         "tps": "31.8 t/s",
-        "ttft": "4.95s",
-        "latency": "22.60s",
+        "ttft": "4.62s",
+        "latency": "21.02s",
         "success_rate": 100.0,
         "bar_count": 16,
     },
     "terra分组": {
         "short_name": "terra",
         "color": "#A78BFA",
-        "tps": "45.3 t/s",
-        "ttft": "4.52s",
-        "latency": "17.83s",
+        "tps": "44.9 t/s",
+        "ttft": "4.69s",
+        "latency": "16.36s",
         "success_rate": 100.0,
         "bar_count": 6,
     },
     "混池优惠": {
         "short_name": "混池优惠",
         "color": "#EAB308",
-        "tps": "27.6 t/s",
-        "ttft": "13.22s",
-        "latency": "28.90s",
-        "success_rate": 98.6,
+        "tps": "29.5 t/s",
+        "ttft": "9.82s",
+        "latency": "26.56s",
+        "success_rate": 90.1,
+        "bar_count": 6,
+    },
+    "限制宽松gpt": {
+        "short_name": "宽松gpt",
+        "color": "#38BDF8",
+        "tps": "32.5 t/s",
+        "ttft": "4.02s",
+        "latency": "16.35s",
+        "success_rate": 100.0,
         "bar_count": 6,
     },
     "claude-ultra": {
@@ -146,6 +172,15 @@ PERFORMANCE_BENCHMARKS = {
         "success_rate": 100.0,
         "bar_count": 16,
     },
+    "cc1": {
+        "short_name": "cc1",
+        "color": "#38BDF8",
+        "tps": "32.0 t/s",
+        "ttft": "5.00s",
+        "latency": "18.00s",
+        "success_rate": 100.0,
+        "bar_count": 16,
+    },
 }
 
 
@@ -161,6 +196,13 @@ class SquareAPIClient:
         self.api_key = api_key or self._get_key_from_cc_switch()
         self.cached_data: Optional[Dict[str, Any]] = None
         self.last_fetch_time: float = 0
+
+        self.session = requests.Session()
+        self.session.trust_env = False
+        adapter = requests.adapters.HTTPAdapter(pool_connections=8, pool_maxsize=8, max_retries=1)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+        self.session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
 
     def _get_key_from_cc_switch(self) -> Optional[str]:
         """Try to retrieve Square API key from CC Switch local database."""
@@ -217,7 +259,20 @@ class SquareAPIClient:
         if self.config:
             self.config.set("square_selected_models", models)
 
-    def fetch_data(self, force: bool = False, timeout: int = 6) -> Dict[str, Any]:
+    def get_group_models_mapping(self) -> Dict[str, str]:
+        """Get mapping of group_name -> focused_model_name."""
+        if self.config:
+            m = self.config.get("square_group_models")
+            if m and isinstance(m, dict):
+                return m
+        return dict(DEFAULT_GROUP_MODELS)
+
+    def set_group_models_mapping(self, mapping: Dict[str, str]):
+        """Save group_name -> focused_model_name mapping."""
+        if self.config:
+            self.config.set("square_group_models", mapping)
+
+    def fetch_data(self, force: bool = False, timeout: int = 5) -> Dict[str, Any]:
         """
         Fetch real-time public groups, models, and user balance from Square API.
         Computes dynamic mapping between selected groups and selected models with performance metrics.
@@ -226,12 +281,10 @@ class SquareAPIClient:
         if not force and self.cached_data and (now - self.last_fetch_time < 30):
             return self.cached_data
 
-        headers = {"User-Agent": "Mozilla/5.0"}
-
         # 1. Fetch live groups
         raw_groups: Dict[str, Any] = {}
         try:
-            r_g = requests.get(self.GROUPS_URL, headers=headers, timeout=timeout)
+            r_g = self.session.get(self.GROUPS_URL, timeout=timeout)
             r_g.encoding = "utf-8"
             if r_g.status_code == 200:
                 raw_groups = r_g.json().get("data", {})
@@ -241,7 +294,7 @@ class SquareAPIClient:
         # 2. Fetch live models and pricing
         raw_models: List[Dict[str, Any]] = []
         try:
-            r_p = requests.get(self.PRICING_URL, headers=headers, timeout=timeout)
+            r_p = self.session.get(self.PRICING_URL, timeout=timeout)
             r_p.encoding = "utf-8"
             if r_p.status_code == 200:
                 raw_models = r_p.json().get("data", [])
@@ -257,9 +310,8 @@ class SquareAPIClient:
             try:
                 auth_headers = {
                     "Authorization": f"Bearer {self.api_key}",
-                    "User-Agent": "Mozilla/5.0",
                 }
-                usage_resp = requests.get(self.USAGE_URL, headers=auth_headers, timeout=timeout)
+                usage_resp = self.session.get(self.USAGE_URL, headers=auth_headers, timeout=timeout)
                 if usage_resp.status_code == 200:
                     u_data = usage_resp.json()
                     balance_info["total_usage"] = u_data.get("total_usage", 0.0)
@@ -357,6 +409,40 @@ class SquareAPIClient:
                             "breakdown": f"{disp_name} (官网倍率 {m_ratio}x × 分组 {ratio}x = 综合 {effective_ratio:.3f}x)",
                         })
 
+            # Focus model for this group (either mapped, or first matching checked model, or default)
+            group_models_mapping = self.get_group_models_mapping()
+            target_model_code = group_models_mapping.get(g_name)
+
+            focus_model_obj = None
+            if target_model_code:
+                focus_model_obj = next((m for m in matching_models if m["name"] == target_model_code), None)
+                if not focus_model_obj:
+                    # Look in raw_models
+                    raw_m = next((m for m in raw_models if m.get("model_name") == target_model_code), None)
+                    if raw_m:
+                        m_ratio = float(raw_m.get("model_ratio", 1.0))
+                        effective_ratio = ratio * m_ratio
+                        disp_name = MODEL_DISPLAY_NAMES.get(target_model_code, target_model_code)
+                        focus_model_obj = {
+                            "name": target_model_code,
+                            "display_name": disp_name,
+                            "model_ratio": m_ratio,
+                            "effective_ratio": effective_ratio,
+                            "breakdown": f"{disp_name} (官网 {m_ratio}x × 分组 {ratio}x = 综合 {effective_ratio:.2f}x)",
+                        }
+            if not focus_model_obj and matching_models:
+                focus_model_obj = matching_models[0]
+            if not focus_model_obj:
+                def_code = DEFAULT_GROUP_MODELS.get(g_name, "gpt-6-astra")
+                disp_name = MODEL_DISPLAY_NAMES.get(def_code, def_code)
+                focus_model_obj = {
+                    "name": def_code,
+                    "display_name": disp_name,
+                    "model_ratio": 1.0,
+                    "effective_ratio": ratio,
+                    "breakdown": f"{disp_name} (综合 {ratio:.2f}x)",
+                }
+
             monitored_rows.append({
                 "group_name": g_name,
                 "short_name": bench.get("short_name", g_name[:6]),
@@ -369,6 +455,10 @@ class SquareAPIClient:
                 "latency": bench.get("latency", "18.00s"),
                 "success_rate": bench.get("success_rate", 100.0),
                 "bar_count": bench.get("bar_count", 16),
+                "focus_model": focus_model_obj["name"],
+                "focus_model_display": focus_model_obj["display_name"],
+                "effective_ratio": focus_model_obj["effective_ratio"],
+                "effective_ratio_str": f"{focus_model_obj['effective_ratio']:.2f}x",
                 "models": matching_models,
                 "models_str": ", ".join([m["display_name"] for m in matching_models]) if matching_models else "（无勾选模型）",
             })
@@ -382,6 +472,7 @@ class SquareAPIClient:
             "all_models": all_models,
             "selected_groups": selected_group_names,
             "selected_models": selected_model_names,
+            "group_models_mapping": self.get_group_models_mapping(),
         }
 
         self.cached_data = result
