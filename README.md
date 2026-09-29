@@ -1,7 +1,7 @@
 <div align="center">
 
 # ⚡ Codex Usage Floating Widget
-### A Vibe-Coding Companion for Windows: Real-Time Bluetooth Battery & ChatGPT/Codex Quota Radar
+### A Vibe-Coding Companion for Windows: Real-Time Bluetooth Battery, ChatGPT/Codex Quotas & AI Relay Benchmarks
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
@@ -13,17 +13,31 @@ English | [简体中文](README_zh.md)
 <br/>
 
 <p align="center">
-  <img src="assets/capsule-view.png" alt="Mini Capsule Mode" width="260" />
+  <img src="assets/capsule-view.png" alt="Mini Capsule Mode" width="280" />
 </p>
 <p align="center">
-  <em>Mini Capsule Mode (Click anywhere to expand seamlessly)</em>
+  <em>💊 Mini Capsule Mode (Pinned peripheral battery, dual quota remaining, status light)</em>
 </p>
 
 <p align="center">
-  <img src="assets/expanded-view.png" alt="Expanded Detailed Card" width="280" />
+  <img src="assets/square-view.png" alt="Square API Relay Mode" width="600" />
 </p>
 <p align="center">
-  <em>Expanded Card Mode with 7-Day Sparkline, Rate-Limit Burn Benchmarks & Real-Time Peripheral Battery</em>
+  <em>⚡ Expanded Dual-Panel Card (Square API Tab): Left panel for Bluetooth + 7-Day Sparkline rate limit burn, right panel for Square API 24h official model performance benchmarks</em>
+</p>
+
+<p align="center">
+  <img src="assets/aihub-view.png" alt="AIHub Relay Mode" width="600" />
+</p>
+<p align="center">
+  <em>🟢 Expanded Dual-Panel Card (AIHub Tab): Real multiplier, cache hit rate ranking, and embedded live Pelican test thumbnails</em>
+</p>
+
+<p align="center">
+  <img src="assets/pelican-viewer.png" alt="Pelican Image Viewer Dialog" width="600" />
+</p>
+<p align="center">
+  <em>🎨 Online Pelican Verification Gallery: 3-column responsive layout, live dynamic fetch, timestamps, and zero-disk in-memory rendering</em>
 </p>
 
 </div>
@@ -31,11 +45,12 @@ English | [简体中文](README_zh.md)
 ---
 
 ## 💡 Why This Widget? (The Vibe Coding Story)
-When pairing wireless microphones like the **DJI Mic Mini** or **DJI Mic** for **Vibe Coding** (voice-driven programming, AI dictation, and hands-free prompt generation) alongside ChatGPT / OpenAI Codex, developers encounter two recurring pain points:
+When pairing wireless microphones such as the **DJI Mic Mini** or **DJI Mic** for **Vibe Coding** (voice-driven programming, AI dictation, and hands-free prompt generation) alongside ChatGPT / OpenAI Codex, developers encounter three core pain points:
 1. **Microphone Battery Anxiety**: Mid-thought dictation is abruptly broken when the microphone unexpectedly runs out of power.
 2. **Opaque Rate Limits & Burn Rate**: Uncertainty about remaining 5-hour rolling windows and 7-day weekly quotas, lacking a visible pace guide.
+3. **Relay Provider Transparency & Model Degradation ("降智")**: Third-party relay stations often obfuscate real rate multipliers, suffer from high TTFT latencies, and risk model downgrading (unverified whether they pass the canonical "Pelican on a Bicycle" SVG benchmark).
 
-**`codex-usage-floating-widget`** solves both problems in a single, lightweight, dark-acrylic desktop companion.
+**`codex-usage-floating-widget`** solves all these challenges with an elegant, lightweight, dark-acrylic desktop companion.
 
 ---
 
@@ -61,7 +76,7 @@ When pairing wireless microphones like the **DJI Mic Mini** or **DJI Mic** for *
   - Structured coordinate frame with 7-day vertical division ticks (`1d`, `3d`, `5d`, `7d`);
   - 10% horizontal fine grid lines with a 50% halfway dashed guideline;
   - **Ideal diagonal pacing guide (100% → 0% across 7 days)** to immediately spot over-consumption;
-  - Reordered layout: Reset countdown (`倒计时`) on top, **bold exhaustion prediction** below (`font-weight: 700`);
+  - Reordered layout: Reset countdown on top, **bold exhaustion prediction** below (`font-weight: 700`);
   - Exact minute-level timestamps formatted as `倒计时: 3h13m (MM-DD HH:MM)` for both 5H and weekly windows;
 - **Turn-Lifecycle Status Indicator (Zero Jitter / No False Flashing)**:
   - Tracks native session event streams (`task_started` → `task_complete` / `turn_aborted`) from `~/.codex/state_5.sqlite` and session rollout logs;
@@ -69,21 +84,33 @@ When pairing wireless microphones like the **DJI Mic Mini** or **DJI Mic** for *
   - Instantly snaps back to a glowing emerald green dot (🟢) the millisecond the turn completes;
   - Immune to tool-execution latency gaps or CPU sampling noise—completely eliminating the status light "flicker/jitter" problem.
 
-### 3. 🌐 Relay Station Monitoring & CC Switch Seamless Compatibility
+### 3. 🌐 Relay Station Monitoring & Official Pelican Benchmarks
 - **CC Switch Official Quota Protection (Dual-Source SQLite Resolver)**:
   - Resolves the issue where switching profiles in CC Switch overwrites `~/.codex/auth.json` and causes official Codex quota to show error ("异常");
   - Features an automatic SQLite fallback parser reading `%USERPROFILE%\.cc-switch\cc-switch.db`: **ChatGPT Plus / Codex quota & countdown tracking remain 100% active regardless of which relay provider is currently active in CC Switch**;
 - **Square API Integration (`api.squarefaceicon.org`)**:
-  - Target model tracking for `gpt-6-astra` with group filtering: **`混池优惠`** (0.50x, $5.0 / $25.0 per 1M) and **`gpt-已过鹈鹕测试不降智`** (1.25x, $12.5 / $62.5 per 1M, with 🟢 Pelican verification badge);
-  - Real-time multiplier tracking for `gpt-5.5` (0.25x ~ 0.62x) and `deepseek-v4.1-flash` (0.08x ~ 0.10x);
-  - Automatic balance and usage calculation;
-- **AIHub Integration & Pelican Test Gallery (`aihub.top`)**:
-  - Live account balance (¥15.00) and concurrency monitoring;
-  - Smart filtering of **low-multiplier ($\le 0.2\times$) active groups** (e.g. `A015-Plus`, `A018-BugTeam`, `A025-BugTeam`), displaying rate multiplier, cache hit rate, and real-user TTFT latency;
-  - **Pelican (鹈鹕) Test Image Viewer**: Automatically scrapes and locally caches the **latest 5 Pelican model verification test images** with precise timestamps, viewable in a high-res gallery dialog.
+  - Crawls and aligns with official Square model plaza detail performance metrics (24h live benchmark);
+  - Displays group & focus model, effective multiplier, generation speed (t/s), first-token latency (TTFT), total latency, and reliability bar progress;
+  - Interactive modal dialog to toggle monitored groups and customize target focus models (`GPT-6 Astra`, `DS-v4.1 Flash`, `Claude Opus 5.5`, etc.);
+- **AIHub Relay & Pelican Test Gallery (`aihub.top`)**:
+  - Real-time provider list ranking, actual multiplier conversion, and cache hit rates;
+  - **Interactive Provider Selector**: Browse live stats and select candidate providers to monitor;
+  - **Pelican Verification Gallery Dialog**:
+    - Click any provider's thumbnail to pop up the full historical test gallery;
+    - Dynamically streams all past Pelican test images in a responsive 3-column layout with precise generation timestamps;
+    - **100% In-Memory QImage decoding**: No temporary junk files created on disk;
+    - Powered by an asynchronous daemon thread pool and thread-isolated HTTP sessions, completely immune to GIL deadlocks.
+
+<table align="center">
+  <tr>
+    <td align="center"><img src="assets/square-filter.png" width="340" /><br/><b>Square Focus Groups & Models Selector</b></td>
+    <td align="center"><img src="assets/aihub-filter.png" width="340" /><br/><b>AIHub Provider Parameter Filter</b></td>
+  </tr>
+</table>
 
 ### 4. 🪟 Fluid Desktop Interaction
 - **Dark Frosted Glassmorphism**: Subtle translucent blur, refined borders, and gentle depth drop-shadows;
+- **Side-by-Side Dual-Panel Layout**: Left panel for hardware & official quota, right panel for AI relay providers—rich information density without crowding;
 - **Click Anywhere to Expand**: Click any area of the mini capsule to instantly reveal the detailed card;
 - **Auto-Collapse on Focus Loss**: Clicking outside anywhere on the desktop automatically folds the widget back into capsule mode;
 - **Edge Magnetic Snapping**: Smoothly snaps to screen edges within a 25px threshold;
@@ -91,9 +118,20 @@ When pairing wireless microphones like the **DJI Mic Mini** or **DJI Mic** for *
 
 ---
 
+## 🔒 Privacy & Sanitization Notice
+
+- **Fully Sanitized Open-Source**: This repository contains **NO hardcoded personal tokens, API keys, passwords, or emails**;
+- **Local Credential Isolation**:
+  - All local user configurations reside in `config.json`, which is strictly ignored by `.gitignore` and never committed or uploaded;
+  - Refer to `config.example.json` to optionally provide your relay credentials;
+- **Read-Only Inspection**:
+  - All telemetry lookups are non-mutating, read-only requests. The application never initiates conversational inference requests that deplete your tokens.
+
+---
+
 ## 🚀 Getting Started
 
-### Prerequisites
+### 1. Prerequisites
 - Windows 10 or Windows 11
 - Python 3.8+ (Python 3.10 ~ 3.13 tested and supported)
 
@@ -103,58 +141,74 @@ cd codex-usage-floating-widget
 pip install -r requirements.txt
 ```
 
-### Launching
+### 2. Configuration (Optional)
+Copy the example config:
+```bash
+copy config.example.json config.json
+```
+Edit `config.json` as needed (all fields have sensible defaults and public fallback endpoints).
+
+### 3. Launching
 - **Silent Background Launch (No Console Window)**:
   Double-click **`run_silent.vbs`** or **`run.bat`**;
-- **Debug / Terminal Mode**:
-  Run **`run_debug.bat`** or execute:
+- **Terminal Launch (With Debug Logs)**:
+  Double-click **`run_debug.bat`** or execute:
   ```bash
   python main.py
   ```
 
 ---
 
-## ⚙️ Context Menu & Controls
+## ⚙️ Quick Actions & Context Menu
 
-Right-click the widget or the system tray icon to access:
+Right-click the floating widget or system tray icon:
 - **💊 Toggle Mini Capsule / Expanded Card**
-- **📏 UI Scaling** (Compact 85% / Standard 100% / Large 115%)
+- **📏 Scale Size** (Compact 85% / Standard 100% / Large 115%)
 - **📌 Always on Top**
-- **🔒 Lock Window Position** (prevents accidental drag)
-- **🔄 Refresh Now** (forces Bluetooth & Codex quota sync)
-- **⚙️ Preferences...** (adjust polling intervals, opacity, launch on startup)
+- **🔒 Lock Position (Prevent accidental dragging)**
+- **🔄 Refresh Now**
+- **⚙️ Preferences...** (Intervals, opacity, run at startup)
 - **🗕 Hide to Tray / ✕ Exit Application**
 
 ---
 
-## 📁 Project Structure
+## 📁 Repository Structure
 
 ```
 codex-usage-floating-widget/
-├── main.py                  # Application entry point & High-DPI handling
-├── config.example.json      # Default configuration template
-├── requirements.txt         # Python dependencies
+├── main.py                  # Entry point, single-instance lock & High-DPI scaling
+├── config.example.json      # Sanitized default configuration template
+├── requirements.txt         # Python package dependencies
 ├── run_silent.vbs           # Silent background VBS launcher
-├── run.bat                  # Portable Windows batch launcher
-├── run_debug.bat            # Console debug launcher with error prompts
+├── run.bat                  # Batch launcher
+├── run_debug.bat            # Debug launcher with output pause
 ├── LICENSE                  # MIT License
 ├── README.md                # English Documentation
-├── README_zh.md             # 中文说明文档
-├── assets/                  # Screenshot previews
-│   ├── capsule-view.png
-│   └── expanded-view.png
+├── README_zh.md             # Chinese Documentation
+├── assets/                  # Screenshot assets
+│   ├── capsule-view.png     # Capsule mode preview
+│   ├── square-view.png      # Square expanded view
+│   ├── aihub-view.png       # AIHub expanded view
+│   ├── pelican-viewer.png   # Pelican gallery dialog preview
+│   ├── square-filter.png    # Square filter dialog preview
+│   └── aihub-filter.png     # AIHub filter dialog preview
 ├── core/
 │   ├── bt_scanner.py        # Windows SetupAPI Bluetooth battery engine
-│   ├── codex_client.py      # ChatGPT /wham/usage rate limit parser
+│   ├── codex_client.py      # ChatGPT /wham/usage rate limit parser & CC Switch resolver
 │   ├── codex_activity_tracker.py # Turn-lifecycle state monitor (zero jitter)
 │   ├── config_manager.py    # Local registry & config management
-│   └── quota_tracker.py     # 7-day quota analytics & burn prediction
+│   ├── quota_tracker.py     # 7-day quota analytics & burn prediction
+│   ├── square_client.py     # Square API official 24h performance crawler
+│   └── aihub_client.py      # AIHub public provider & benchmark client
 └── ui/
-    ├── floating_widget.py   # Main frameless widget (snapping, auto-collapse)
+    ├── floating_widget.py   # Main frameless widget (dual-panel, auto-collapse, snap)
     ├── battery_view.py      # Bluetooth peripheral list view
     ├── codex_view.py        # AI quota card & countdown view
     ├── sparkline_widget.py  # 7-day coordinate grid & baseline chart
     ├── status_light.py      # Dual-state glowing & rotating light
+    ├── relay_view.py        # Tabbed relay station view with thumbnail manager
+    ├── square_filter_dialog.py # Interactive filter modals for Square & AIHub
+    ├── pelican_viewer.py    # Pelican gallery dialog & async download manager
     ├── settings_dialog.py   # Preference settings modal
     ├── tray_manager.py      # Windows system tray integration
     └── styles.py            # QSS dark glassmorphism stylesheet
@@ -167,7 +221,7 @@ codex-usage-floating-widget/
 <details>
 <summary><b>Q1: ChatGPT quota shows "Unauthorized" or failed to fetch?</b></summary>
 <br/>
-This widget reads your existing authorization credentials from <code>%USERPROFILE%\.codex\auth.json</code>. Ensure that you have installed the official Codex CLI or ChatGPT desktop application and logged in at least once so this file exists.
+This widget reads your existing authorization credentials from <code>%USERPROFILE%\.codex\auth.json</code>. Ensure that you have installed the official Codex CLI or ChatGPT desktop application and logged in at least once so this file exists. If you switched profiles via CC Switch, the widget will automatically restore official credentials from <code>%USERPROFILE%\.cc-switch\cc-switch.db</code>.
 </details>
 
 <details>
@@ -177,10 +231,15 @@ Windows natively supports battery queries for devices providing the standard Blu
 </details>
 
 <details>
-<summary><b>Q3: How to exit or move the widget?</b></summary>
+<summary><b>Q3: Does browsing Pelican test images write junk files to my disk?</b></summary>
 <br/>
-- <b>Move</b>: Left-click and drag anywhere on the widget to reposition. It will auto-snap when near the screen border.
+No. All full-size Pelican images and provider thumbnails are decoded in memory using dedicated worker threads. They are held in transient memory caches and cleanly discarded without generating disk clutter.
+</details>
+
+<details>
+<summary><b>Q4: How to exit or move the widget?</b></summary>
 <br/>
+- <b>Move</b>: Left-click and drag anywhere on the widget to reposition. It will auto-snap when near the screen border.<br/>
 - <b>Exit</b>: Right-click the system tray icon (or the widget itself) and select "✕ 退出程序" (Exit).
 </details>
 

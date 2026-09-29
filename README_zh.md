@@ -1,7 +1,7 @@
 <div align="center">
 
 # ⚡ Codex Usage Floating Widget
-### 专为语音编程（Vibe Coding）打造的 Windows 桌面悬浮雷达：外设电量与 ChatGPT/Codex 配额监控
+### 专为语音编程（Vibe Coding）打造的 Windows 桌面悬浮雷达：外设电量、ChatGPT/Codex 配额与 AI 中转站实时实测
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
@@ -13,17 +13,31 @@
 <br/>
 
 <p align="center">
-  <img src="assets/capsule-view.png" alt="Mini Capsule Mode" width="260" />
+  <img src="assets/capsule-view.png" alt="Mini Capsule Mode" width="280" />
 </p>
 <p align="center">
-  <em>迷你胶囊模式（点击任意区域秒级展开）</em>
+  <em>💊 迷你胶囊模式（鼠标停靠与桌面常驻，点击任意区域秒级展开）</em>
 </p>
 
 <p align="center">
-  <img src="assets/expanded-view.png" alt="Expanded Detailed Card" width="280" />
+  <img src="assets/square-view.png" alt="Square API Relay Mode" width="600" />
 </p>
 <p align="center">
-  <em>展开卡片视图：外设电量列表 + 7天限额消耗基准曲线 + 倒计时与耗尽预警</em>
+  <em>⚡ 双栏展开卡片（Square API 视图）：左侧外设电量 + 7天限额消耗基准曲线，右侧 Square API 24h 官方模型实测基准</em>
+</p>
+
+<p align="center">
+  <img src="assets/aihub-view.png" alt="AIHub Relay Mode" width="600" />
+</p>
+<p align="center">
+  <em>🟢 双栏展开卡片（AIHub 视图）：真实倍率、缓存命中率实时排序与右侧内嵌实测缩略图</em>
+</p>
+
+<p align="center">
+  <img src="assets/pelican-viewer.png" alt="Pelican Image Viewer Dialog" width="600" />
+</p>
+<p align="center">
+  <em>🎨 在线鹈鹕实测图画廊：3列自适应网格、实时在线分页加载、带精确生成时间戳与无缝缩放</em>
 </p>
 
 </div>
@@ -31,9 +45,10 @@
 ---
 
 ## 💡 为什么需要它？(The Vibe Coding Story)
-在使用 **大疆麦克风（DJI Mic Mini / DJI Mic）** 进行 **语音编程（Vibe Coding）**、灵感口述或高强度与 ChatGPT / OpenAI Codex 协同编写代码时，开发者最常遇到的两个痛点：
-1. **麦克风电量焦虑**：全神贯注编程时，麦克风突然没电断联，打断心流与口述进程；
-2. **AI 限额盲盒**：不知道 5 小时滚动限额或周限额何时耗尽，缺少平稳的消耗节奏指引。
+在使用 **大疆麦克风（DJI Mic Mini / DJI Mic）** 进行 **语音编程（Vibe Coding）**、灵感口述或高强度与 ChatGPT / OpenAI Codex 协同编写代码时，开发者最常遇到的痛点：
+1. **麦克风电量焦虑**：全神贯注口述编程时，无线麦克风突然没电断联，彻底打断心流；
+2. **AI 限额盲盒**：不知道 5 小时滚动限额或周限额何时耗尽，缺少平稳的消耗节奏指引；
+3. **中转站选型困难与模型降智担忧**：中转站供应商鱼龙混杂，倍率虚标、首字延迟（TTFT）飘忽，且担心模型被降智（是否通过经典“鹈鹕骑自行车”SVG 绘图测试难以查证）。
 
 **`codex-usage-floating-widget`** 正是为此而生的一款轻量、优雅、暗黑毛玻璃质感的 Windows 桌面小组件。
 
@@ -67,26 +82,50 @@
   - 一旦 Codex 完成回答并写入 `task_complete`，瞬间切回**稳定翡翠绿呼吸光（🟢 就绪）**；
   - 配套内存级 `(mtime, size)` 差值缓存，100% 免疫 CPU 采样噪点与工具延迟波动，日常检测零磁盘消耗。
 
-### 3. 🌐 中转站监控与 CC Switch 智能兼容
+### 3. 🌐 中转站监控、官方实测爬虫与鹈鹕画廊
 - **CC Switch 额度异常彻底解决（零冲突双源回退）**：
   - 针对使用 CC Switch 切换到第三方中转 API 时，`~/.codex/auth.json` 被覆盖导致官方 Codex 额度显示“异常”的问题，悬浮窗内置 SQLite 双源解析器；
-  - 自动从 `%USERPROFILE%\.cc-switch\cc-switch.db` 回退读取官方凭据，**无论 CC Switch 切到哪家中转站，悬浮窗顶部的官方 Codex 剩余额度与倒计时始终正常显示**；
-- **Square API 监控 (`api.squarefaceicon.org`)**：
-  - **`gpt-6-astra` 精准过滤**：实时解析 **`混池优惠`**（0.50x，输入 $5.0 / 输出 $25.0 每 1M）与 **`gpt-已过鹈鹕测试不降智`**（1.25x，输入 $12.5 / 输出 $62.5 每 1M，带 🟢 鹈鹕徽标）；
-  - 同步监控 `gpt-5.5`（0.25x ~ 0.62x）与 `deepseek-v4.1-flash`（0.08x ~ 0.10x 特惠组）；
-  - 自动读取 API Key 查询账户用量与余额。
-- **AIHub 监控与鹈鹕实测图库 (`aihub.top`)**：
-  - 实时显示账户余额与可用并发数；
-  - 智能过滤 **倍率 $\le 0.2\times$** 的最优可用分组（如 `A015-Plus`、`A018-BugTeam`、`A025-BugTeam`），显示倍率、缓存命中率与 TTFT 首字延迟；
-  - **鹈鹕 (Pelican) 实测图画廊**：自动抓取并本地缓存最新的 5 张鹈鹕模型检测实测图，点击按钮即可呼出全屏画廊弹窗，带清晰生成时间戳与模型归属。
+  - 自动从 `%USERPROFILE%\.cc-switch\cc-switch.db` 回退读取官方凭据，**无论 CC Switch 切到哪家中转站，悬浮窗左侧的官方 Codex 剩余额度与倒计时始终正常显示**；
+- **Square API 官方模型性能实测监控 (`api.squarefaceicon.org`)**：
+  - 实时爬取对齐 Square 官方定价与模型广场详情页中的 **24小时真实测速指标**；
+  - 精准展示：**分组与关注模型、综合倍率、生成速度 (t/s)、首字延迟 (TTFT)、总延迟及成功率柱状进度条**；
+  - 内置便捷勾选弹窗，可自由配置想要重点关注的分组及每个分组对应的具体模型（如 `GPT-6 Astra`、`DS-v4.1 Flash`、`Claude Opus 5.5` 等）；
+  - 支持查看分组基础倍率与模型倍率拆解。
+- **AIHub 供应商实测与鹈鹕图库 (`aihub.top`)**：
+  - 实时抓取各供应商的真实换算倍率、缓存命中率、TTFT 及最新实测缩略图；
+  - **交互式监控勾选**：可在弹窗中查看各供应商的真实参数，自由勾选需要重点监控的优质供应商；
+  - **鹈鹕实测图画廊（Pelican Viewer Dialog）**：
+    - 点击任意供应商的“📷 实测”缩略图，即可呼出全屏历史画廊；
+    - 在线动态拉取该供应商的历史实测记录，以 3 列网格排布，带清晰抓取时间戳；
+    - **完全在内存中异步解码展示，零落盘零垃圾文件**；
+    - 采用单例守护线程池与独立 Session 隔离，彻底消除 Qt/Python GIL 析构卡顿与死锁。
+
+<table align="center">
+  <tr>
+    <td align="center"><img src="assets/square-filter.png" width="340" /><br/><b>Square 关注分组与模型勾选器</b></td>
+    <td align="center"><img src="assets/aihub-filter.png" width="340" /><br/><b>AIHub 供应商参数筛选勾选器</b></td>
+  </tr>
+</table>
 
 ### 4. 🪟 自然沉浸的桌面交互美学
 - **暗黑毛玻璃质感**：高透半透明卡片、微光边框与动态深度阴影；
-- **点窗即开**：点击迷你胶囊任意位置即可瞬间展开完整卡片；
-- **失焦自动折叠**：点击桌面其他任意窗口，卡片自动收起为迷你胶囊；
+- **双栏并列视图**：左侧设备与官方配额，右侧中转站指标，信息密度极高且舒展不拥挤；
+- **点窗即开**：点击迷你胶囊任意位置即可瞬间展开完整双栏卡片；
+- **失焦自动折叠**：点击桌面其他任意窗口，卡片自动平滑收起为迷你胶囊；
 - **边缘智能吸附**：鼠标拖拽至屏幕边缘 25px 范围内自动磁吸贴边；
 - **任务栏免打扰**：采用 `Qt.Tool` 属性，不占用 Windows 任务栏位置，不干扰 `Alt+Tab`；
 - **纯粹关闭交互**：卡片内无误触叉号，日常安静常驻，退出统一在系统托盘右键完成。
+
+---
+
+## 🔒 隐私与凭证安全说明（Privacy & Sanitization）
+
+- **完全脱敏开源**：本项目代码仓库中**绝不包含任何硬编码的个人密钥、Token、密码或邮箱地址**；
+- **本地凭证隔离**：
+  - 本地运行时，您的配置保存于根目录的 `config.json`，该文件已被 `.gitignore` 严格忽略，不会被提交或上传；
+  - 您可以参考 `config.example.json` 按需填入中转站的 API Key 或配置项；
+- **只读查询机制**：
+  - 所有的 API 查询与图片抓取均为只读请求，绝不主动发起任何消耗额度的推理对话请求。
 
 ---
 
@@ -101,7 +140,14 @@ cd codex-usage-floating-widget
 pip install -r requirements.txt
 ```
 
-### 2. 运行启动
+### 2. 配置说明
+复制一份配置示例文件：
+```bash
+copy config.example.json config.json
+```
+根据需要编辑 `config.json`（非必填，均有优雅的空状态与公共接口回退）。
+
+### 3. 运行启动
 - **日常便捷启动（静默无黑框）**：
   双击运行 **`run_silent.vbs`** 或 **`run.bat`**；
 - **终端启动（查看调试日志）**：
@@ -129,8 +175,8 @@ pip install -r requirements.txt
 
 ```
 codex-usage-floating-widget/
-├── main.py                  # 应用入口与 High-DPI 缩放适配
-├── config.example.json      # 默认配置模板
+├── main.py                  # 应用入口、单例保护与 High-DPI 缩放适配
+├── config.example.json      # 脱敏默认配置模板
 ├── requirements.txt         # Python 依赖清单
 ├── run_silent.vbs           # 静默后台启动脚本（无黑色控制台窗口）
 ├── run.bat                  # 便携式批处理启动入口
@@ -139,20 +185,29 @@ codex-usage-floating-widget/
 ├── README.md                # 英文说明文档
 ├── README_zh.md             # 中文说明文档
 ├── assets/                  # 截图预览资源
-│   ├── capsule-view.png
-│   └── expanded-view.png
+│   ├── capsule-view.png     # 迷你胶囊外观
+│   ├── square-view.png      # Square 展开双栏视图
+│   ├── aihub-view.png       # AIHub 展开双栏视图
+│   ├── pelican-viewer.png   # 在线鹈鹕画廊弹窗
+│   ├── square-filter.png    # Square 关注项勾选弹窗
+│   └── aihub-filter.png     # AIHub 供应商筛选弹窗
 ├── core/
 │   ├── bt_scanner.py        # Windows SetupAPI 蓝牙电量扫描引擎
-│   ├── codex_client.py      # ChatGPT /wham/usage 配额解析器
+│   ├── codex_client.py      # ChatGPT /wham/usage 配额解析与 CC-Switch SQLite 回退
 │   ├── codex_activity_tracker.py # 原生轮次生命周期监控（无横跳指示灯）
 │   ├── config_manager.py    # 本地配置注册与管理
-│   └── quota_tracker.py     # 7天配额消耗分析与耗尽预测
+│   ├── quota_tracker.py     # 7天配额消耗分析与耗尽预测
+│   ├── square_client.py     # Square API 官方模型广场与 24h 性能爬虫
+│   └── aihub_client.py      # AIHub 公共供应商与实测接口客户端
 └── ui/
-    ├── floating_widget.py   # 无边框悬浮主窗体（磁吸贴边、失焦自动收起）
+    ├── floating_widget.py   # 无边框悬浮主窗体（双栏布局、磁吸贴边、失焦自动收起）
     ├── battery_view.py      # 蓝牙外设列表展示组件
     ├── codex_view.py        # AI 配额卡片与倒计时视图
     ├── sparkline_widget.py  # 7天坐标网格与理想基准折线图
     ├── status_light.py      # 双状态呼吸绿点与活力橙旋转指示灯
+    ├── relay_view.py        # 中转站双选项卡视图与缩略图管理器
+    ├── square_filter_dialog.py # Square & AIHub 交互式勾选对话框
+    ├── pelican_viewer.py    # 鹈鹕实测图在线画廊弹窗与单例异步管理器
     ├── settings_dialog.py   # 偏好设置弹窗
     ├── tray_manager.py      # Windows 系统托盘管理
     └── styles.py            # QSS 暗黑毛玻璃样式表
@@ -165,7 +220,7 @@ codex-usage-floating-widget/
 <details>
 <summary><b>Q1: ChatGPT 额度提示“未认证”或获取失败？</b></summary>
 <br/>
-本项目通过读取本地 OpenAI Codex CLI 或桌面客户端的本地认证文件获取额度数据。请确保已在终端运行过 <code>codex</code> 命令并完成登录，或检查 <code>%USERPROFILE%\.codex\auth.json</code> 文件是否存在。
+本项目通过读取本地 OpenAI Codex CLI 或桌面客户端的本地认证文件获取额度数据。请确保已在终端运行过 <code>codex</code> 命令并完成登录，或检查 <code>%USERPROFILE%\.codex\auth.json</code> 文件是否存在。若使用了 CC Switch 切换中转站，本工具会自动尝试从 <code>%USERPROFILE%\.cc-switch\cc-switch.db</code> 中找回官方原版凭据。
 </details>
 
 <details>
@@ -175,10 +230,15 @@ Windows 原生仅支持具备“电池服务（Battery Service GATT Profile）�
 </details>
 
 <details>
-<summary><b>Q3: 如何移动窗口或退出程序？</b></summary>
+<summary><b>Q3: 实测图加载会消耗本地磁盘吗？</b></summary>
 <br/>
-- <b>移动</b>：鼠标左键按住窗口任意空白区域拖拽即可，移至屏幕边缘时会自动磁吸吸附。
+不会。所有鹈鹕实测图片和缩略图均采用内存缓存（In-Memory QImage Decoding）机制，并在独立后台线程池中平滑解码，关闭弹窗自动安全释放，绝不在磁盘产生大量垃圾文件。
+</details>
+
+<details>
+<summary><b>Q4: 如何移动窗口或退出程序？</b></summary>
 <br/>
+- <b>移动</b>：鼠标左键按住窗口任意空白区域拖拽即可，移至屏幕边缘时会自动磁吸吸附。<br/>
 - <b>退出</b>：在系统托盘图标或窗口上点击鼠标右键，选择“✕ 退出程序”即可完全退出。
 </details>
 
