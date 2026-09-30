@@ -14,6 +14,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QCursor
 
 from core.square_client import DEFAULT_SELECTED_GROUPS, DEFAULT_SELECTED_MODELS, DEFAULT_GROUP_MODELS
+from core.aihub_client import DEFAULT_SELECTED_PROVIDERS
 
 SCROLL_STYLE = """
     QScrollArea {
@@ -480,6 +481,12 @@ class SquareFilterDialog(QDialog):
             cb.setChecked(name in DEFAULT_SELECTED_GROUPS)
         for name, cb in self.model_checkboxes.items():
             cb.setChecked(name in DEFAULT_SELECTED_MODELS)
+        for g_name, combo in self.group_model_combos.items():
+            cur_focus = DEFAULT_GROUP_MODELS.get(g_name)
+            if cur_focus:
+                idx = combo.findData(cur_focus)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
 
     def save_and_apply(self):
         selected_groups = [name for name, cb in self.group_checkboxes.items() if cb.isChecked()]
@@ -595,11 +602,11 @@ class AIHubFilterDialog(QDialog):
         act_row.addWidget(tip_lbl)
         act_row.addStretch()
 
-        btn_good = QPushButton("⭐ 优质预设")
+        btn_good = QPushButton("⭐ 推荐预设")
         btn_good.setFixedHeight(20)
         btn_good.setCursor(Qt.PointingHandCursor)
         btn_good.setStyleSheet("font-size: 10px; color: #34D399; background: transparent; border: none; font-weight: 600;")
-        btn_good.setToolTip("自动勾选倍率≤0.20且成功率≥90%的优质供应商")
+        btn_good.setToolTip("自动勾选推荐监控的优质供应商")
         btn_good.clicked.connect(self.apply_good_preset)
 
         btn_all = QPushButton("全选")
@@ -792,13 +799,7 @@ class AIHubFilterDialog(QDialog):
 
     def apply_good_preset(self):
         for code, cb in self.provider_checkboxes.items():
-            p = self.provider_data_map.get(code, {})
-            mult = float(p.get("rate_multiplier", 1.0))
-            sr = float(p.get("success_rate", 0.0))
-            avail = bool(p.get("available", False))
-            # Pick available providers with rate <= 0.20 and success rate >= 90%
-            is_good = avail and (mult <= 0.20) and (sr >= 90.0)
-            cb.setChecked(is_good)
+            cb.setChecked(code in DEFAULT_SELECTED_PROVIDERS)
         self.update_count_label()
 
     def save_and_apply(self):

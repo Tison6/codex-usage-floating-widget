@@ -13,9 +13,25 @@
   "square_api_key": "",
   "aihub_email": "",
   "aihub_password": "",
-  "square_selected_groups": ["混池优惠", "4.1可用", "已过鹈鹕", "cc1"],
-  "square_focus_models": {},
-  "aihub_selected_providers": ["A015-Plus", "A025-BugTeam", "A037-Pro", "A010-低权重号慢", "A031-Pro", "A033-Plus/Pro"],
+  "square_selected_groups": [
+    "混池优惠",
+    "ds-v4.1可用",
+    "terra分组",
+    "gpt-已过鹈鹕测试不降智",
+    "cc1"
+  ],
+  "square_selected_models": [
+    "claude-opus-5-5",
+    "deepseek-v4.1-flash",
+    "gpt-6-astra",
+    "gpt-6.1-sol"
+  ],
+  "aihub_selected_providers": [
+    "A010-低权重号慢",
+    "A015-Pro",
+    "A009-Pro",
+    "A009-Pro/Team"
+  ],
   "autostart": false,
   "scale": 1.0,
   "only_connected": true,

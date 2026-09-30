@@ -32,6 +32,15 @@ def format_iso_timestamp(iso_str: Optional[str]) -> str:
             return iso_str
 
 
+# Default recommended providers matching user selection
+DEFAULT_SELECTED_PROVIDERS = [
+    "A010-低权重号慢",
+    "A015-Pro",
+    "A009-Pro",
+    "A009-Pro/Team",
+]
+
+
 class AIHubClient:
     """Client for querying AIHub provider metrics, cache rate, success rate, and pelican test images."""
 
@@ -58,13 +67,13 @@ class AIHubClient:
         self.session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
         self.history_metadata_cache: Dict[int, Any] = {}
 
-    def get_selected_providers(self) -> Optional[List[str]]:
+    def get_selected_providers(self) -> List[str]:
         """Get list of user-selected provider codes."""
         if self.config:
             sel = self.config.get("aihub_selected_providers")
             if sel and isinstance(sel, list):
                 return sel
-        return None  # Will default to top stable candidates
+        return list(DEFAULT_SELECTED_PROVIDERS)
 
     def set_selected_providers(self, providers: List[str]):
         """Save user-selected provider codes."""

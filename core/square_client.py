@@ -35,53 +35,73 @@ def format_duration(ms: Optional[float]) -> str:
 
 # Default recommended groups to monitor if user hasn't configured
 DEFAULT_SELECTED_GROUPS = [
-    "gpt-已过鹈鹕测试不降智",
-    "gpt-特惠分组",
-    "pro专享",
-    "terra分组",
     "混池优惠",
-    "claude-ultra",
-    "官方max",
-    "aws-cc",
     "ds-v4.1可用",
-    "ds-v4.1",
+    "terra分组",
+    "gpt-已过鹈鹕测试不降智",
+    "cc1",
 ]
 
 # Default recommended models to monitor if user hasn't configured
 DEFAULT_SELECTED_MODELS = [
-    "gpt-6-astra",
     "claude-opus-5-5",
     "deepseek-v4.1-flash",
-    "gpt-5.5",
+    "gpt-6-astra",
+    "gpt-6.1-sol",
 ]
 
 # Friendly display names for common models
 MODEL_DISPLAY_NAMES = {
     "gpt-6-astra": "GPT-6 Astra",
+    "gpt-6.1-sol": "GPT-6.1 Sol",
     "claude-opus-5-5": "Claude Opus 5.5",
     "deepseek-v4.1-flash": "DS-v4.1 Flash",
     "gpt-5.5": "GPT-5.5",
     "claude-sonnet-5": "Claude Sonnet 5",
+    "claude-sonnet-5-5": "Claude Sonnet 5.5",
+    "claude-sonnet-4-6": "Claude Sonnet 4.6",
     "gpt-5.6-terra": "GPT-5.6 Terra",
+    "gpt-5.6-sol": "GPT-5.6 Sol",
+    "gpt-5.6-luna": "GPT-5.6 Luna",
     "gpt-6-sol": "GPT-6 Sol",
     "claude-ultra": "Claude Ultra",
+    "grok-4.7": "Grok 4.7",
+    "glm-5.3": "GLM-5.3",
+    "kimi-k3": "Kimi K3",
 }
 
 # Default mapping of group to primary monitored focus model
 DEFAULT_GROUP_MODELS = {
-    "gpt-已过鹈鹕测试不降智": "gpt-6-astra",
+    "cc-逆向": "claude-sonnet-4-6",
     "混池优惠": "gpt-6-astra",
-    "gpt-特惠分组": "gpt-6-astra",
-    "pro专享": "gpt-6-astra",
-    "terra分组": "gpt-6-astra",
-    "限制宽松gpt": "gpt-6-astra",
-    "ds-v4.1可用": "deepseek-v4.1-flash",
-    "ds-v4没有4.1，4.1有专门分组": "deepseek-v4.1-flash",
+    "deepseek-v4": "deepseek-v4-flash",
     "ds-v4.1": "deepseek-v4.1-flash",
+    "ds-v4.1可用": "deepseek-v4.1-flash",
+    "glm5.3与kimik3": "glm-5.3",
+    "grok": "grok-4.7",
+    "terra分组": "gpt-6-astra",
+    "华强北claude": "claude-fable-5",
+    "gpt-特惠分组": "gpt-6-astra",
+    "codex": "gpt-6-astra",
+    "codex-备用": "gpt-6-astra",
+    "codex-新": "gpt-6-astra",
+    "codex1": "gpt-6-astra",
+    "gemini": "gemini-3.7-flash",
+    "gpt-已过鹈鹕测试不降智": "gpt-6-astra",
+    "pro专享": "gpt-6-astra",
+    "限制宽松gpt": "gpt-6-astra",
+    "cc-kiro": "claude-fable-5",
     "cc1": "claude-opus-5-5",
-    "claude-ultra": "claude-ultra",
-    "官方max": "gpt-5.5",
+    "cc2": "claude-fable-5",
+    "default": "claude-fable-5",
     "aws-cc": "claude-opus-5-5",
+    "claude-ultra": "claude-fable-5",
+    "luna专用分组": "gpt-5.4-mini",
+    "官方max": "claude-fable-5",
+    "gpt-image-2": "gpt-image-2",
+    "按次分组": "claude-haiku4.5",
+    "4k-image": "gpt-image-1",
+    "image-4k超清": "gpt-image-2",
 }
 
 # Real benchmarks strictly matching Square official website modal data ([详情 >])
@@ -424,7 +444,7 @@ class SquareAPIClient:
             set(selected_model_names)
             | set(group_models_mapping.values())
             | set(DEFAULT_GROUP_MODELS.values())
-            | {"gpt-6-astra", "deepseek-v4.1-flash", "claude-opus-5-5", "gpt-5.5"}
+            | {"gpt-6-astra", "gpt-6.1-sol", "deepseek-v4.1-flash", "claude-opus-5-5", "gpt-5.5"}
         )
         needed_models.discard(None)
         needed_models.discard("")
@@ -507,11 +527,11 @@ class SquareAPIClient:
             short_name = static_def.get("short_name", g_name[:6])
             color = static_def.get("color") or ("#10B981" if ratio < 0.2 else ("#38BDF8" if ratio < 0.4 else "#F59E0B"))
 
-            # Find matching models that user checked AND that belong to this group
+            # Find matching models that user checked AND that belong to this group (in user's checked order)
             matching_models = []
-            for m in raw_models:
-                m_name = m.get("model_name", "")
-                if m_name in selected_model_names:
+            for m_name in selected_model_names:
+                m = next((item for item in raw_models if item.get("model_name") == m_name), None)
+                if m:
                     enable_groups = m.get("enable_groups", [])
                     if g_name in enable_groups:
                         m_ratio = float(m.get("model_ratio", 1.0))
@@ -525,61 +545,46 @@ class SquareAPIClient:
                             "breakdown": f"{disp_name} (官网倍率 {m_ratio}x × 分组 {ratio}x = 综合 {effective_ratio:.3f}x)",
                         })
 
-            # Focus model for this group (either mapped, or first matching checked model, or default)
-            target_model_code = group_models_mapping.get(g_name)
-
-            focus_model_obj = None
-            if target_model_code:
-                focus_model_obj = next((m for m in matching_models if m["name"] == target_model_code), None)
-                if not focus_model_obj:
-                    # Look in raw_models
-                    raw_m = next((m for m in raw_models if m.get("model_name") == target_model_code), None)
-                    if raw_m:
-                        m_ratio = float(raw_m.get("model_ratio", 1.0))
-                        effective_ratio = ratio * m_ratio
-                        disp_name = MODEL_DISPLAY_NAMES.get(target_model_code, target_model_code)
-                        focus_model_obj = {
-                            "name": target_model_code,
-                            "display_name": disp_name,
-                            "model_ratio": m_ratio,
-                            "effective_ratio": effective_ratio,
-                            "breakdown": f"{disp_name} (官网 {m_ratio}x × 分组 {ratio}x = 综合 {effective_ratio:.2f}x)",
-                        }
-            if not focus_model_obj and matching_models:
-                focus_model_obj = matching_models[0]
-            if not focus_model_obj:
-                def_code = DEFAULT_GROUP_MODELS.get(g_name, "gpt-6-astra")
-                disp_name = MODEL_DISPLAY_NAMES.get(def_code, def_code)
-                focus_model_obj = {
-                    "name": def_code,
+            # If user checked models that belong to this group, generate a row for EACH checked model!
+            if matching_models:
+                models_to_render = matching_models
+            else:
+                target_model_code = group_models_mapping.get(g_name) or DEFAULT_GROUP_MODELS.get(g_name, "gpt-6-astra")
+                disp_name = MODEL_DISPLAY_NAMES.get(target_model_code, target_model_code)
+                models_to_render = [{
+                    "name": target_model_code,
                     "display_name": disp_name,
                     "model_ratio": 1.0,
                     "effective_ratio": ratio,
                     "breakdown": f"{disp_name} (综合 {ratio:.2f}x)",
-                }
+                }]
 
-            live_bench = get_group_bench(g_name, target_model=focus_model_obj["name"])
+            for model_obj in models_to_render:
+                m_code = model_obj["name"]
+                m_disp = model_obj["display_name"]
+                live_bench = get_group_bench(g_name, target_model=m_code)
 
-            monitored_rows.append({
-                "group_name": g_name,
-                "short_name": short_name,
-                "color": color,
-                "ratio": ratio,
-                "ratio_str": f"{ratio:.2f}x",
-                "desc": desc,
-                "tps": live_bench.get("tps") or static_def.get("tps", "32.0 t/s"),
-                "ttft": live_bench.get("ttft") or static_def.get("ttft", "5.00s"),
-                "latency": live_bench.get("latency") or static_def.get("latency", "18.00s"),
-                "success_rate": live_bench.get("success_rate") if live_bench.get("success_rate") is not None else static_def.get("success_rate", 100.0),
-                "series": live_bench.get("series", []),
-                "bar_count": live_bench.get("bar_count", static_def.get("bar_count", 16)),
-                "focus_model": focus_model_obj["name"],
-                "focus_model_display": focus_model_obj["display_name"],
-                "effective_ratio": focus_model_obj["effective_ratio"],
-                "effective_ratio_str": f"{focus_model_obj['effective_ratio']:.2f}x",
-                "models": matching_models,
-                "models_str": ", ".join([m["display_name"] for m in matching_models]) if matching_models else "（无勾选模型）",
-            })
+                monitored_rows.append({
+                    "group_name": g_name,
+                    "short_name": short_name,
+                    "color": color,
+                    "ratio": ratio,
+                    "ratio_str": f"{ratio:.2f}x",
+                    "desc": desc,
+                    "tps": live_bench.get("tps") or static_def.get("tps", "32.0 t/s"),
+                    "ttft": live_bench.get("ttft") or static_def.get("ttft", "5.00s"),
+                    "latency": live_bench.get("latency") or static_def.get("latency", "18.00s"),
+                    "success_rate": live_bench.get("success_rate") if live_bench.get("success_rate") is not None else static_def.get("success_rate", 100.0),
+                    "series": live_bench.get("series", []),
+                    "bar_count": live_bench.get("bar_count", static_def.get("bar_count", 16)),
+                    "focus_model": m_code,
+                    "focus_model_display": m_disp,
+                    "effective_ratio": model_obj["effective_ratio"],
+                    "effective_ratio_str": f"{model_obj['effective_ratio']:.2f}x",
+                    "breakdown": model_obj.get("breakdown", ""),
+                    "models": matching_models,
+                    "models_str": ", ".join([m["display_name"] for m in matching_models]) if matching_models else "（无勾选模型）",
+                })
 
         result = {
             "success": True,
