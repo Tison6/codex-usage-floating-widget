@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Set, Optional
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QWidget, QScrollArea, QCheckBox, QFrame,
-    QGraphicsDropShadowEffect, QComboBox
+    QGraphicsDropShadowEffect, QComboBox, QLineEdit
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QCursor
@@ -76,7 +76,6 @@ class SquareFilterDialog(QDialog):
         self.square_client = square_client
         self.group_checkboxes: Dict[str, QCheckBox] = {}
         self.model_checkboxes: Dict[str, QCheckBox] = {}
-        self.group_model_combos: Dict[str, QComboBox] = {}
 
         self.init_window()
         self.init_ui()
@@ -258,10 +257,10 @@ class SquareFilterDialog(QDialog):
         h_row.addWidget(h_g)
         h_row.addStretch()
 
-        for title, w in [("关注模型", 115), ("倍率", 40), ("速度", 46), ("延迟", 44), ("成功率", 46)]:
+        for title, w in [("倍率", 44), ("速度", 50), ("延迟", 48), ("成功率", 52)]:
             lbl = QLabel(title)
             lbl.setFixedWidth(w)
-            lbl.setAlignment(Qt.AlignCenter if title in ["关注模型", "倍率", "成功率"] else Qt.AlignRight)
+            lbl.setAlignment(Qt.AlignCenter if title in ["倍率", "成功率"] else Qt.AlignRight)
             lbl.setStyleSheet("font-size: 9px; font-weight: 700; color: #64748B;")
             h_row.addWidget(lbl)
         layout.addLayout(h_row)
@@ -280,8 +279,6 @@ class SquareFilterDialog(QDialog):
         c_layout.setSpacing(4)
 
         all_groups = (self.square_client.cached_data or {}).get("all_groups", [])
-        all_models = (self.square_client.cached_data or {}).get("all_models", [])
-        mapping = self.square_client.get_group_models_mapping()
         cur_selected = set(self.square_client.get_selected_groups())
 
         if not all_groups:
@@ -311,42 +308,9 @@ class SquareFilterDialog(QDialog):
             r_lay.addWidget(cb)
             r_lay.addStretch()
 
-            # Focus Model Selector
-            combo = QComboBox()
-            combo.setFixedWidth(115)
-            combo.setFixedHeight(20)
-            combo.setStyleSheet("""
-                QComboBox {
-                    background: rgba(255, 255, 255, 0.08);
-                    border: 1px solid rgba(255, 255, 255, 0.15);
-                    border-radius: 3px;
-                    color: #F1F5F9;
-                    font-size: 9px;
-                    padding: 0px 4px;
-                }
-                QComboBox QAbstractItemView {
-                    background: #1E293B;
-                    color: #F8FAFC;
-                    selection-background-color: #3B82F6;
-                    font-size: 9px;
-                }
-            """)
-            models_to_use = all_models if all_models else [{"name": m, "display_name": m} for m in DEFAULT_SELECTED_MODELS]
-            en_models = [m for m in models_to_use if g_name in m.get("enable_groups", [])]
-            cand_models = en_models if en_models else models_to_use
-            for m in cand_models:
-                combo.addItem(m.get("display_name", m["name"]), m["name"])
-
-            cur_focus = mapping.get(g_name, DEFAULT_GROUP_MODELS.get(g_name, "gpt-6-astra"))
-            idx = combo.findData(cur_focus)
-            if idx >= 0:
-                combo.setCurrentIndex(idx)
-            self.group_model_combos[g_name] = combo
-            r_lay.addWidget(combo)
-
             # Multiplier badge
             ratio_lbl = QLabel(g.get("ratio_str", "--"))
-            ratio_lbl.setFixedWidth(40)
+            ratio_lbl.setFixedWidth(44)
             ratio_lbl.setAlignment(Qt.AlignCenter)
             ratio_lbl.setStyleSheet("""
                 background: rgba(59, 130, 246, 0.2);
@@ -360,14 +324,14 @@ class SquareFilterDialog(QDialog):
 
             # Speed
             tps_lbl = QLabel(g.get("tps", "--"))
-            tps_lbl.setFixedWidth(46)
+            tps_lbl.setFixedWidth(50)
             tps_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             tps_lbl.setStyleSheet("font-size: 9px; color: #CBD5E1;")
             r_lay.addWidget(tps_lbl)
 
             # Latency
             lat_lbl = QLabel(g.get("latency", "--"))
-            lat_lbl.setFixedWidth(44)
+            lat_lbl.setFixedWidth(48)
             lat_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             lat_lbl.setStyleSheet("font-size: 9px; color: #94A3B8;")
             r_lay.addWidget(lat_lbl)
@@ -375,7 +339,7 @@ class SquareFilterDialog(QDialog):
             # Success rate
             sr_val = g.get("success_rate", 100.0)
             sr_lbl = QLabel(f"{sr_val:.1f}%")
-            sr_lbl.setFixedWidth(46)
+            sr_lbl.setFixedWidth(52)
             sr_lbl.setAlignment(Qt.AlignCenter)
             sr_lbl.setStyleSheet("font-size: 9px; font-weight: 700; color: #10B981;")
             r_lay.addWidget(sr_lbl)
@@ -481,24 +445,13 @@ class SquareFilterDialog(QDialog):
             cb.setChecked(name in DEFAULT_SELECTED_GROUPS)
         for name, cb in self.model_checkboxes.items():
             cb.setChecked(name in DEFAULT_SELECTED_MODELS)
-        for g_name, combo in self.group_model_combos.items():
-            cur_focus = DEFAULT_GROUP_MODELS.get(g_name)
-            if cur_focus:
-                idx = combo.findData(cur_focus)
-                if idx >= 0:
-                    combo.setCurrentIndex(idx)
 
     def save_and_apply(self):
         selected_groups = [name for name, cb in self.group_checkboxes.items() if cb.isChecked()]
         selected_models = [name for name, cb in self.model_checkboxes.items() if cb.isChecked()]
 
-        new_mapping = {}
-        for g_name, combo in self.group_model_combos.items():
-            new_mapping[g_name] = combo.currentData() or combo.currentText()
-
         self.square_client.set_selected_groups(selected_groups)
         self.square_client.set_selected_models(selected_models)
-        self.square_client.set_group_models_mapping(new_mapping)
 
         # Force re-computation of monitored rows
         self.square_client.fetch_data(force=True)
@@ -540,7 +493,7 @@ class AIHubFilterDialog(QDialog):
         self.setWindowTitle("AIHub 供应商监控项筛选")
         self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.resize(560, 520)
+        self.resize(590, 530)
 
     def init_ui(self):
         root = QVBoxLayout(self)
@@ -626,7 +579,102 @@ class AIHubFilterDialog(QDialog):
         act_row.addWidget(btn_none)
         layout.addLayout(act_row)
 
-        # Table Column Header
+        # 2. Numeric Composite Filter Bar (Filtering by success rate, cache rate, effective & nominal multiplier)
+        f_frame = QFrame()
+        f_frame.setStyleSheet("""
+            QFrame {
+                background: rgba(255, 255, 255, 0.03);
+                border: 1px solid rgba(255, 255, 255, 0.08);
+                border-radius: 6px;
+            }
+            QLabel {
+                font-size: 10px;
+                color: #CBD5E1;
+            }
+        """)
+        f_lay = QHBoxLayout(f_frame)
+        f_lay.setContentsMargins(8, 4, 8, 4)
+        f_lay.setSpacing(5)
+
+        lbl_f = QLabel("复合筛选:")
+        lbl_f.setStyleSheet("font-size: 10px; font-weight: 700; color: #38BDF8;")
+        f_lay.addWidget(lbl_f)
+
+        input_style = """
+            QLineEdit {
+                background: rgba(0, 0, 0, 0.45);
+                border: 1px solid rgba(255, 255, 255, 0.16);
+                border-radius: 3px;
+                color: #F8FAFC;
+                font-size: 10px;
+                font-weight: 600;
+                padding: 1px 3px;
+            }
+            QLineEdit:focus {
+                border-color: #38BDF8;
+            }
+        """
+
+        # 1. 成功率 >=
+        f_lay.addWidget(QLabel("成功率≥"))
+        self.edit_min_sr = QLineEdit("90")
+        self.edit_min_sr.setFixedWidth(34)
+        self.edit_min_sr.setAlignment(Qt.AlignCenter)
+        self.edit_min_sr.setStyleSheet(input_style)
+        f_lay.addWidget(self.edit_min_sr)
+        f_lay.addWidget(QLabel("%"))
+
+        # 2. 缓存率 >=
+        f_lay.addWidget(QLabel("缓存率≥"))
+        self.edit_min_cache = QLineEdit("90")
+        self.edit_min_cache.setFixedWidth(34)
+        self.edit_min_cache.setAlignment(Qt.AlignCenter)
+        self.edit_min_cache.setStyleSheet(input_style)
+        f_lay.addWidget(self.edit_min_cache)
+        f_lay.addWidget(QLabel("%"))
+
+        # 3. 真实倍率 <=
+        f_lay.addWidget(QLabel("真实倍率≤"))
+        self.edit_max_eff = QLineEdit("0.25")
+        self.edit_max_eff.setFixedWidth(40)
+        self.edit_max_eff.setAlignment(Qt.AlignCenter)
+        self.edit_max_eff.setStyleSheet(input_style)
+        f_lay.addWidget(self.edit_max_eff)
+
+        # 4. 标准倍率 <=
+        f_lay.addWidget(QLabel("标准倍率≤"))
+        self.edit_max_nom = QLineEdit("0.25")
+        self.edit_max_nom.setFixedWidth(40)
+        self.edit_max_nom.setAlignment(Qt.AlignCenter)
+        self.edit_max_nom.setStyleSheet(input_style)
+        f_lay.addWidget(self.edit_max_nom)
+
+        f_lay.addStretch()
+
+        btn_filter = QPushButton("确定筛选")
+        btn_filter.setCursor(Qt.PointingHandCursor)
+        btn_filter.setFixedHeight(22)
+        btn_filter.setStyleSheet("""
+            QPushButton {
+                background: rgba(59, 130, 246, 0.25);
+                border: 1px solid rgba(59, 130, 246, 0.5);
+                border-radius: 4px;
+                color: #93C5FD;
+                font-size: 10px;
+                font-weight: 700;
+                padding: 1px 8px;
+            }
+            QPushButton:hover {
+                background: rgba(59, 130, 246, 0.45);
+                color: #FFFFFF;
+            }
+        """)
+        btn_filter.clicked.connect(self.apply_numeric_filter)
+        f_lay.addWidget(btn_filter)
+
+        layout.addWidget(f_frame)
+
+        # 3. Table Column Header
         h_row = QHBoxLayout()
         h_row.setContentsMargins(8, 2, 8, 2)
         h_prov = QLabel("供应商代码")
@@ -634,7 +682,7 @@ class AIHubFilterDialog(QDialog):
         h_row.addWidget(h_prov)
         h_row.addStretch()
 
-        for title, w in [("真实倍率", 48), ("缓存率", 44), ("TTFT", 42), ("成功率", 56), ("实测图", 36)]:
+        for title, w in [("倍率", 40), ("真实倍率", 46), ("缓存率", 44), ("TTFT", 40), ("成功率", 52), ("实测图", 36)]:
             lbl = QLabel(title)
             lbl.setFixedWidth(w)
             lbl.setAlignment(Qt.AlignCenter)
@@ -642,7 +690,7 @@ class AIHubFilterDialog(QDialog):
             h_row.addWidget(lbl)
         layout.addLayout(h_row)
 
-        # Scroll Area for Providers
+        # 4. Scroll Area for Providers
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet(SCROLL_STYLE)
@@ -685,18 +733,33 @@ class AIHubFilterDialog(QDialog):
             r_lay.addWidget(cb)
             r_lay.addStretch()
 
-            # Multiplier badge (shows real effective multiplier, tooltip shows both)
-            eff_mult = p.get("effective_multiplier_str") or p.get("multiplier_str", "--")
+            # Multipliers: Standard/Nominal and Real/Effective
             nom_mult = p.get("multiplier_str", "--")
+            eff_mult = p.get("effective_multiplier_str") or nom_mult
+
+            nom_lbl = QLabel(nom_mult)
+            nom_lbl.setFixedWidth(40)
+            nom_lbl.setAlignment(Qt.AlignCenter)
+            nom_lbl.setToolTip(f"标准/原始倍率: {nom_mult}")
+            nom_lbl.setStyleSheet("""
+                background: rgba(59, 130, 246, 0.15);
+                color: #60A5FA;
+                border-radius: 3px;
+                padding: 1px 2px;
+                font-size: 9px;
+                font-weight: 600;
+            """)
+            r_lay.addWidget(nom_lbl)
+
             mult_lbl = QLabel(eff_mult)
-            mult_lbl.setFixedWidth(48)
+            mult_lbl.setFixedWidth(46)
             mult_lbl.setAlignment(Qt.AlignCenter)
             mult_lbl.setToolTip(f"真实倍率: {eff_mult} (含实际缓存计费折算)\n名义倍率: {nom_mult}")
             mult_lbl.setStyleSheet("""
                 background: rgba(16, 185, 129, 0.18);
                 color: #34D399;
                 border-radius: 3px;
-                padding: 1px 3px;
+                padding: 1px 2px;
                 font-size: 9px;
                 font-weight: 700;
             """)
@@ -711,7 +774,7 @@ class AIHubFilterDialog(QDialog):
 
             # TTFT
             ttft_lbl = QLabel(p.get("ttft_str", "--"))
-            ttft_lbl.setFixedWidth(42)
+            ttft_lbl.setFixedWidth(40)
             ttft_lbl.setAlignment(Qt.AlignCenter)
             ttft_lbl.setStyleSheet("font-size: 9px; color: #64748B;")
             r_lay.addWidget(ttft_lbl)
@@ -720,7 +783,7 @@ class AIHubFilterDialog(QDialog):
             sr_val = float(p.get("success_rate", 100.0))
             sr_text = p.get("success_rate_str", "--")
             sr_lbl = QLabel()
-            sr_lbl.setFixedWidth(56)
+            sr_lbl.setFixedWidth(52)
             sr_lbl.setAlignment(Qt.AlignCenter)
 
             if sr_val < 50.0:
@@ -795,6 +858,51 @@ class AIHubFilterDialog(QDialog):
     def toggle_all(self, checked: bool):
         for cb in self.provider_checkboxes.values():
             cb.setChecked(checked)
+        self.update_count_label()
+
+    def apply_numeric_filter(self):
+        """Filter provider checkboxes based on numeric threshold inputs."""
+        def parse_val(text: str) -> Optional[float]:
+            t = text.strip().replace("%", "").replace("x", "")
+            if not t:
+                return None
+            try:
+                return float(t)
+            except ValueError:
+                return None
+
+        min_sr = parse_val(self.edit_min_sr.text())
+        min_cache = parse_val(self.edit_min_cache.text())
+        max_eff = parse_val(self.edit_max_eff.text())
+        max_nom = parse_val(self.edit_max_nom.text())
+
+        for code, p in self.provider_data_map.items():
+            cb = self.provider_checkboxes.get(code)
+            if not cb:
+                continue
+
+            sr = float(p.get("success_rate", 100.0))
+            if min_sr is not None and sr < min_sr:
+                cb.setChecked(False)
+                continue
+
+            cache_val = p.get("cache_hit_val", 0.0)
+            if min_cache is not None and cache_val < min_cache:
+                cb.setChecked(False)
+                continue
+
+            eff_mult = float(p.get("effective_multiplier", p.get("rate_multiplier", 1.0)))
+            if max_eff is not None and eff_mult > max_eff:
+                cb.setChecked(False)
+                continue
+
+            nom_mult = float(p.get("rate_multiplier", 1.0))
+            if max_nom is not None and nom_mult > max_nom:
+                cb.setChecked(False)
+                continue
+
+            cb.setChecked(True)
+
         self.update_count_label()
 
     def apply_good_preset(self):

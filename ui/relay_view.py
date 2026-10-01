@@ -170,7 +170,7 @@ class ThumbnailDownloadManager(QObject):
             if resp.status_code == 200 and resp.content:
                 qimg = QImage()
                 if qimg.loadFromData(resp.content):
-                    scaled = qimg.scaled(70, 34, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    scaled = qimg.scaled(86, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     self.cache[url] = scaled
                     self.thumb_loaded.emit(url, scaled)
         except Exception:
@@ -186,7 +186,7 @@ class ClickableThumbnail(QLabel):
     def __init__(self, provider_item: Dict[str, Any], parent=None):
         super().__init__(parent)
         self.provider_item = provider_item
-        self.setFixedSize(72, 36)
+        self.setFixedSize(88, 42)
         self.setAlignment(Qt.AlignCenter)
         self.setCursor(Qt.PointingHandCursor)
         self.setToolTip("点击在线查看该供应商全部历史鹈鹕图")
@@ -484,8 +484,8 @@ class RelayStationView(QWidget):
         # Scroll Area for Providers Table
         self.aihub_scroll = QScrollArea()
         self.aihub_scroll.setWidgetResizable(True)
-        self.aihub_scroll.setFixedHeight(260)
-        self.aihub_scroll.setMinimumWidth(340)
+        self.aihub_scroll.setFixedHeight(275)
+        self.aihub_scroll.setMinimumWidth(370)
         self.aihub_scroll.setStyleSheet(SCROLL_STYLE)
         self.aihub_scroll.viewport().setStyleSheet("background: transparent; border: none;")
         self.aihub_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -493,9 +493,9 @@ class RelayStationView(QWidget):
         self.aihub_scroll_content = QWidget()
         self.aihub_scroll_content.setStyleSheet("background: transparent;")
         self.aihub_grid = QGridLayout(self.aihub_scroll_content)
-        self.aihub_grid.setContentsMargins(1, 1, 6, 1)
-        self.aihub_grid.setHorizontalSpacing(4)
-        self.aihub_grid.setVerticalSpacing(4)
+        self.aihub_grid.setContentsMargins(1, 1, 4, 1)
+        self.aihub_grid.setHorizontalSpacing(3)
+        self.aihub_grid.setVerticalSpacing(2)
         self.aihub_scroll.setWidget(self.aihub_scroll_content)
         p_layout.addWidget(self.aihub_scroll)
 
@@ -637,9 +637,9 @@ class RelayStationView(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
-        # Header: 供应商, 真实倍率, 缓存率, 实测图 (TTFT and 成功率 removed from main table per user request)
-        h_titles = ["供应商", "真实倍率", "缓存率", "实测图"]
-        h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignRight, Qt.AlignCenter]
+        # Header: 供应商, 倍率, 真实倍率, 缓存率, 实测图
+        h_titles = ["供应商", "倍率", "真实倍率", "缓存率", "实测图"]
+        h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignCenter, Qt.AlignRight, Qt.AlignCenter]
         for col_idx, (title, align) in enumerate(zip(h_titles, h_aligns)):
             h_lbl = QLabel(title)
             h_lbl.setAlignment(align | Qt.AlignVCenter)
@@ -647,15 +647,16 @@ class RelayStationView(QWidget):
             self.aihub_grid.addWidget(h_lbl, 0, col_idx)
 
         # Set column proportions for spacious thumbnail view
-        self.aihub_grid.setColumnStretch(0, 5)
-        self.aihub_grid.setColumnStretch(1, 3)
+        self.aihub_grid.setColumnStretch(0, 4)
+        self.aihub_grid.setColumnStretch(1, 2)
         self.aihub_grid.setColumnStretch(2, 3)
-        self.aihub_grid.setColumnStretch(3, 4)
+        self.aihub_grid.setColumnStretch(3, 2)
+        self.aihub_grid.setColumnStretch(4, 5)
 
         if not monitored:
             empty_lbl = QLabel("暂无勾选的供应商，请点击右上角 [⚙️ 勾选监控] 选择")
             empty_lbl.setStyleSheet("font-size: 9px; color: #94A3B8; padding: 10px;")
-            self.aihub_grid.addWidget(empty_lbl, 1, 0, 1, 4, Qt.AlignCenter)
+            self.aihub_grid.addWidget(empty_lbl, 1, 0, 1, 5, Qt.AlignCenter)
         else:
             for row_idx, g in enumerate(monitored, start=1):
                 c_name = QLabel(f"{row_idx}. {g['code']}")
@@ -663,8 +664,8 @@ class RelayStationView(QWidget):
                 nom_mult_str = g.get("multiplier_str", "--")
                 tip_text = (
                     f"供应商: {g['code']}\n"
+                    f"标准倍率: {nom_mult_str}\n"
                     f"真实倍率: {eff_mult_str} (含实际缓存计费折算)\n"
-                    f"名义倍率: {nom_mult_str}\n"
                     f"缓存命中率: {g.get('cache_hit_rate', '-')}\n"
                     f"首字延迟 (TTFT): {g.get('ttft_str', '--')}\n"
                     f"输出速度 (TPS): {g.get('tps_str', '--')}\n"
@@ -672,6 +673,11 @@ class RelayStationView(QWidget):
                 )
                 c_name.setToolTip(tip_text)
                 c_name.setStyleSheet("font-size: 9px; font-weight: 600; color: #CBD5E1;")
+
+                c_nom = QLabel(nom_mult_str)
+                c_nom.setToolTip(tip_text)
+                c_nom.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+                c_nom.setStyleSheet("font-size: 9px; font-weight: 600; color: #60A5FA;")
 
                 c_mult = QLabel(eff_mult_str)
                 c_mult.setToolTip(tip_text)
@@ -681,16 +687,17 @@ class RelayStationView(QWidget):
                 c_hit = QLabel(g.get("cache_hit_rate", "-"))
                 c_hit.setToolTip(tip_text)
                 c_hit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                c_hit.setStyleSheet("font-size: 8px; color: #94A3B8;")
+                c_hit.setStyleSheet("font-size: 9px; color: #94A3B8;")
 
-                # Prominent 72x36 clickable thumbnail
+                # Prominent 88x42 clickable thumbnail
                 thumb = ClickableThumbnail(g, self.aihub_scroll_content)
                 thumb.clicked.connect(self.pelican_clicked.emit)
 
                 self.aihub_grid.addWidget(c_name, row_idx, 0)
-                self.aihub_grid.addWidget(c_mult, row_idx, 1)
-                self.aihub_grid.addWidget(c_hit, row_idx, 2)
-                self.aihub_grid.addWidget(thumb, row_idx, 3, Qt.AlignCenter | Qt.AlignVCenter)
+                self.aihub_grid.addWidget(c_nom, row_idx, 1)
+                self.aihub_grid.addWidget(c_mult, row_idx, 2)
+                self.aihub_grid.addWidget(c_hit, row_idx, 3)
+                self.aihub_grid.addWidget(thumb, row_idx, 4, Qt.AlignCenter | Qt.AlignVCenter)
 
         self.aihub_scroll_content.adjustSize()
         self.stack.adjustSize()

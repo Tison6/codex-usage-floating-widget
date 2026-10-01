@@ -68,8 +68,6 @@ class CodexUsageClient:
         If auth.json is missing tokens (e.g. CC Switch swapped to third-party proxy),
         fall back to CC Switch SQLite database (~/.cc-switch/cc-switch.db).
         """
-        token_found = False
-        
         # 1. First try reading auth.json
         if os.path.exists(self.auth_path):
             try:
@@ -86,12 +84,15 @@ class CodexUsageClient:
                         self._account_id = acct_id
                         self._auth_mtime = mtime
                         self.last_error = None
-                        token_found = True
+                        return True
+                    else:
+                        # auth.json exists but has no valid access_token (swapped by CC Switch)
+                        self._access_token = None
+                elif self._access_token:
+                    # Token already active and file has not changed
+                    return True
             except Exception:
                 pass
-        
-        if token_found:
-            return True
             
         # 2. If token not in auth.json, fallback to CC Switch database
         fb = self._get_fallback_tokens_from_cc_switch()
@@ -178,6 +179,8 @@ class CodexUsageClient:
                 return parsed
             elif resp.status_code == 401:
                 self.last_error = "登录凭证失效 (401)"
+                self._access_token = None
+                self._auth_mtime = 0
                 return {"success": False, "error": self.last_error, "plan_type": "未登录"}
             elif resp.status_code == 429:
                 self.last_error = "请求频繁 (429)"

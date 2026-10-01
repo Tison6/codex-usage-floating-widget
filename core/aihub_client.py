@@ -123,15 +123,25 @@ class AIHubClient:
             if mult is None:
                 continue
 
+            # Exclude providers that are hidden from the provider hall or offline (e.g. B005)
+            if it.get("visible_in_hall") is False or it.get("available") is False:
+                continue
+
             is_avail = bool(it.get("available", False))
 
             # Cache hit rate
             cache_hit = it.get("cache_hit_rate", "-")
             cache_hit_str = "-"
+            cache_hit_val = 0.0
             if isinstance(cache_hit, (float, int)):
-                cache_hit_str = f"{cache_hit*100:.1f}%"
+                cache_hit_val = float(cache_hit) * 100.0 if float(cache_hit) <= 1.0 else float(cache_hit)
+                cache_hit_str = f"{cache_hit_val:.1f}%"
             elif isinstance(cache_hit, str) and "%" in cache_hit:
-                cache_hit_str = cache_hit
+                try:
+                    cache_hit_val = float(cache_hit.replace("%", "").strip())
+                    cache_hit_str = f"{cache_hit_val:.1f}%"
+                except Exception:
+                    pass
 
             # TTFT
             stat = stats_by_code.get(code, {})
@@ -184,6 +194,7 @@ class AIHubClient:
                 "effective_multiplier_str": eff_mult_str,
                 "effective_multiplier_ready": eff_ready,
                 "cache_hit_rate": cache_hit_str,
+                "cache_hit_val": cache_hit_val,
                 "ttft_str": ttft_str,
                 "ttft_ms": ttft_ms or 99999,
                 "tps_str": tps_str,
