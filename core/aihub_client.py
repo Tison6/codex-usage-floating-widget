@@ -34,18 +34,17 @@ def format_iso_timestamp(iso_str: Optional[str]) -> str:
 
 # Default recommended providers matching user selection
 DEFAULT_SELECTED_PROVIDERS = [
-    "A010-低权重号慢",
-    "A015-Pro",
-    "A009-Pro",
-    "A009-Pro/Team",
+    "A018-Plus/K12",
+    "A031-Pro",
 ]
 
 
 class AIHubClient:
     """Client for querying AIHub provider metrics, cache rate, success rate, and pelican test images."""
 
-    PROVIDERS_URL = "https://aihub.top/api/v1/public/providers"
-    USAGE_STATS_URL = "https://aihub.top/api/v1/public/groups/usage-stats"
+    BASE_URL = "https://aihub.dog"
+    PROVIDERS_URL = "https://aihub.dog/api/v1/public/providers"
+    USAGE_STATS_URL = "https://aihub.dog/api/v1/public/groups/usage-stats"
 
     def __init__(self, config=None, cache_dir: Optional[str] = None, email: Optional[str] = None, password: Optional[str] = None, **kwargs):
         self.config = config
@@ -182,7 +181,7 @@ class AIHubClient:
             pres = dm.get("presentation") or {}
             img = pres.get("image") or {}
             img_url = img.get("url")
-            full_img_url = ("https://aihub.top" + img_url) if img_url else ""
+            full_img_url = (f"{self.BASE_URL}{img_url}") if img_url else ""
             group_id = it.get("group_id")
 
             all_parsed_providers.append({
@@ -249,7 +248,7 @@ class AIHubClient:
             if now - ts < ttl:
                 return cached_items
 
-        url = f"https://aihub.top/api/v2/public/providers/{group_id}/images"
+        url = f"{self.BASE_URL}/api/v2/public/providers/{group_id}/images"
         all_items = []
         cursor = None
         try:
@@ -270,7 +269,7 @@ class AIHubClient:
                             "id": str(it.get("id")),
                             "published_at": it.get("published_at"),
                             "published_at_str": format_iso_timestamp(it.get("published_at")),
-                            "url": "https://aihub.top" + img_u,
+                            "url": f"{self.BASE_URL}{img_u}",
                             "title": dm.get("title", {}).get("zh", "鹈鹕"),
                         })
                 cursor = data.get("next_cursor")

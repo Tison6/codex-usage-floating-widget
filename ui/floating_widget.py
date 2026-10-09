@@ -24,6 +24,7 @@ from core.quota_tracker import QuotaTracker
 from core.codex_activity_tracker import CodexActivityTracker
 from core.square_client import SquareAPIClient
 from core.aihub_client import AIHubClient
+from core.server_monitor import MultiServerMonitor, get_hex_for_cpu
 from ui.battery_view import BatteryView
 from ui.codex_view import CodexQuotaView
 from ui.status_light import CodexStatusLight
@@ -131,6 +132,11 @@ class FloatingWidget(QWidget):
             email=self.cfg.get("aihub_email", ""),
             password=self.cfg.get("aihub_password", ""),
         )
+        
+        # Multi-Server CPU Monitor (quad, e5, 8375c)
+        self.server_monitor = MultiServerMonitor(self.cfg.get("servers", None))
+        self.server_monitor.servers_updated.connect(self.on_server_cpu_updated)
+        self.server_monitor.start()
         
         # Window setup
         self.init_window_flags()
@@ -282,13 +288,41 @@ class FloatingWidget(QWidget):
         # Status light placed on the right
         self.mini_status_light = CodexStatusLight(self.mini_container, size=13)
         
+        # Server CPU utilization labels (quad / e5 / 8375c)
+        mini_sep2 = QLabel("|", self.mini_container)
+        mini_sep2.setStyleSheet("color: rgba(255,255,255,0.2);")
+
+        self.mini_srv_icon = QLabel("🖥️", self.mini_container)
+        self.mini_srv_icon.setStyleSheet("font-size: 10px;")
+
+        self.mini_srv_quad = QLabel("--%", self.mini_container)
+        self.mini_srv_quad.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
+
+        self.mini_srv_e5 = QLabel("--%", self.mini_container)
+        self.mini_srv_e5.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
+
+        self.mini_srv_8375c = QLabel("--%", self.mini_container)
+        self.mini_srv_8375c.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
+
+        self.mini_srv_labels = {
+            "quad": self.mini_srv_quad,
+            "e5": self.mini_srv_e5,
+            "8375c": self.mini_srv_8375c,
+        }
+
         self.mini_layout.addWidget(self.mini_bt_lbl)
         self.mini_layout.addWidget(mini_sep)
         self.mini_layout.addWidget(self.mini_cdx_lbl)
         self.mini_layout.addWidget(self.mini_status_light)
+        self.mini_layout.addWidget(mini_sep2)
+        self.mini_layout.addWidget(self.mini_srv_icon)
+        self.mini_layout.addWidget(self.mini_srv_quad)
+        self.mini_layout.addWidget(self.mini_srv_e5)
+        self.mini_layout.addWidget(self.mini_srv_8375c)
         
         # Ensure clicks anywhere on labels or status light trigger container expand
-        for w in (self.mini_bt_lbl, mini_sep, self.mini_cdx_lbl, self.mini_status_light):
+        for w in (self.mini_bt_lbl, mini_sep, self.mini_cdx_lbl, self.mini_status_light,
+                  mini_sep2, self.mini_srv_icon, self.mini_srv_quad, self.mini_srv_e5, self.mini_srv_8375c):
             w.setAttribute(Qt.WA_TransparentForMouseEvents, True)
             
         self.mini_container.mousePressEvent = self.mousePressEvent
@@ -337,7 +371,7 @@ class FloatingWidget(QWidget):
         if self.is_mini:
             self.expanded_container.hide()
             self.mini_container.show()
-            self.setFixedSize(int(215 * self.widget_scale), int(42 * self.widget_scale))
+            self.setFixedSize(int(330 * self.widget_scale), int(42 * self.widget_scale))
         else:
             self.mini_container.hide()
             self.expanded_container.show()
@@ -361,7 +395,7 @@ class FloatingWidget(QWidget):
         """Restore saved window coordinates or place near top-right."""
         pos = self.cfg.get("window_pos")
         screen = QApplication.primaryScreen().availableGeometry()
-        expected_w = int(760 * self.widget_scale) if not self.is_mini else int(215 * self.widget_scale)
+        expected_w = int(760 * self.widget_scale) if not self.is_mini else int(330 * self.widget_scale)
         if pos and len(pos) == 2:
             x = max(screen.left() + 10, min(pos[0], screen.right() - expected_w))
             y = max(screen.top() + 10, min(pos[1], screen.bottom() - 150))
@@ -564,6 +598,30 @@ class FloatingWidget(QWidget):
             tip_lines.append(f"• 周限额 剩余: {wk_rem}% (倒计时: {weekly.get('reset_countdown','')})")
         self.mini_cdx_lbl.setToolTip("\n".join(tip_lines))
 
+    def on_server_cpu_updated(self, data: Dict[str, float]):
+        """Update mini capsule with 3 server CPU utilization values (quad, e5, 8375c)."""
+        tip_parts = []
+        for sid in ["quad", "e5", "8375c"]:
+            val = data.get(sid, -1.0)
+            lbl = self.mini_srv_labels.get(sid)
+            if not lbl:
+                continue
+            if val < 0:
+                lbl.setText("--%")
+                lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
+                tip_parts.append(f"{sid}: 离线")
+            else:
+                pct_str = f"{int(round(val))}%"
+                color = get_hex_for_cpu(val)
+                lbl.setText(pct_str)
+                lbl.setStyleSheet(f"font-size: 10px; font-weight: 700; color: {color};")
+                tip_parts.append(f"{sid}: {val:.1f}%")
+
+        tooltip = "服务器CPU利用率 (quad / e5 / 8375c)\n" + " | ".join(tip_parts)
+        self.mini_srv_icon.setToolTip(tooltip)
+        for lbl in self.mini_srv_labels.values():
+            lbl.setToolTip(tooltip)
+
     # -------------------------------------------------------------
     # Mouse Dragging & Click-to-Expand Interaction
     # -------------------------------------------------------------
@@ -664,7 +722,7 @@ class FloatingWidget(QWidget):
         act_hide.triggered.connect(self.hide)
         
         act_exit = menu.addAction("✕ 退出程序")
-        act_exit.triggered.connect(QApplication.instance().quit)
+        act_exit.triggered.connect(self.close)
         
         menu.exec_(QCursor.pos())
 
@@ -702,3 +760,12 @@ class FloatingWidget(QWidget):
         
         self.codex_client = CodexUsageClient(self.cfg.get("auth_file_path"))
         self.refresh_all_data(force=True)
+
+    def closeEvent(self, event):
+        """Clean shutdown of background threads on close."""
+        if hasattr(self, "server_monitor") and self.server_monitor:
+            try:
+                self.server_monitor.stop()
+            except Exception:
+                pass
+        super().closeEvent(event)

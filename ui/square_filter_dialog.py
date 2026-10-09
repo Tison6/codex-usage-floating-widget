@@ -486,6 +486,12 @@ class AIHubFilterDialog(QDialog):
         self.provider_checkboxes: Dict[str, QCheckBox] = {}
         self.provider_data_map: Dict[str, Dict[str, Any]] = {}
 
+        if not self.aihub_client.cached_data:
+            try:
+                self.aihub_client.fetch_data()
+            except Exception:
+                pass
+
         self.init_window()
         self.init_ui()
 
@@ -617,7 +623,7 @@ class AIHubFilterDialog(QDialog):
 
         # 1. 成功率 >=
         f_lay.addWidget(QLabel("成功率≥"))
-        self.edit_min_sr = QLineEdit("90")
+        self.edit_min_sr = QLineEdit("80")
         self.edit_min_sr.setFixedWidth(34)
         self.edit_min_sr.setAlignment(Qt.AlignCenter)
         self.edit_min_sr.setStyleSheet(input_style)
@@ -626,7 +632,7 @@ class AIHubFilterDialog(QDialog):
 
         # 2. 缓存率 >=
         f_lay.addWidget(QLabel("缓存率≥"))
-        self.edit_min_cache = QLineEdit("90")
+        self.edit_min_cache = QLineEdit("80")
         self.edit_min_cache.setFixedWidth(34)
         self.edit_min_cache.setAlignment(Qt.AlignCenter)
         self.edit_min_cache.setStyleSheet(input_style)

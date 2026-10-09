@@ -27,13 +27,37 @@
     "gpt-6.1-sol"
   ],
   "aihub_selected_providers": [
-    "A010-低权重号慢",
-    "A015-Pro",
-    "A009-Pro",
-    "A009-Pro/Team"
+    "A018-Plus/K12",
+    "A031-Pro"
   ],
   "autostart": false,
   "scale": 1.0,
   "only_connected": true,
-  "mini_quota_mode": 0
+  "mini_quota_mode": 0,
+  "servers": [
+    {
+      "id": "quad",
+      "name": "server-quad",
+      "host": "server-quad",
+      "port": 22,
+      "user": "admin",
+      "password": ""
+    },
+    {
+      "id": "e5",
+      "name": "server-e5",
+      "host": "server-e5",
+      "port": 22,
+      "user": "admin",
+      "password": ""
+    },
+    {
+      "id": "8375c",
+      "name": "server-8375c",
+      "host": "server-8375c",
+      "port": 22,
+      "user": "admin",
+      "password": ""
+    }
+  ]
 }
