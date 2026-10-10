@@ -5,11 +5,53 @@ Supports user-defined group and model filtering with full metrics.
 """
 
 import os
+import re
 import json
 import time
 from typing import Dict, Any, Optional, List, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
+
+
+def parse_output_price(m: Optional[Dict[str, Any]]) -> Tuple[str, str]:
+    """
+    Parse output / completion token price per 1M tokens matching official Square calculation.
+    If tiered pricing expression exists, extracts Tier 1 (第一档, as requested by user).
+    Returns (display_str, tooltip_str).
+    """
+    if not m:
+        return "—", "输出价格未知"
+    expr = m.get("billing_expr")
+    mode = m.get("billing_mode")
+    price = m.get("model_price")
+    ratio = m.get("model_ratio")
+    comp_ratio = m.get("completion_ratio")
+
+    # 1. Tiered expression
+    if mode == "tiered_expr" and expr:
+        tier_matches = re.findall(r'tier\(\s*"([^"]*)"\s*,\s*([^)]+)\)', expr)
+        if tier_matches:
+            first_tier_label, first_tier_body = tier_matches[0]
+            c_match = re.search(r'\bc\s*\*\s*([\d.eE+-]+)', first_tier_body)
+            if c_match:
+                val = float(c_match.group(1))
+                return f"${val:g}", f"输出: ${val:g}/1M (第1档: {first_tier_label})"
+        c_match = re.search(r'\bc\s*\*\s*([\d.eE+-]+)', expr)
+        if c_match:
+            val = float(c_match.group(1))
+            return f"${val:g}", f"输出: ${val:g}/1M"
+
+    # 2. Per-request pricing
+    if price is not None and price > 0:
+        return f"${price:g}/次", f"按次计费: ${price:g} / 次"
+
+    # 3. Standard ratio pricing: output = 2.0 * model_ratio * completion_ratio
+    if ratio is not None:
+        cr = comp_ratio if comp_ratio is not None else 1.0
+        val = 2.0 * float(ratio) * float(cr)
+        return f"${val:g}", f"输出: ${val:g}/1M (折算: $2 × {ratio}x × {cr})"
+
+    return "—", "输出价格未知"
 
 
 def format_tps(val: Optional[float]) -> str:
@@ -537,11 +579,14 @@ class SquareAPIClient:
                         m_ratio = float(m.get("model_ratio", 1.0))
                         effective_ratio = ratio * m_ratio
                         disp_name = MODEL_DISPLAY_NAMES.get(m_name, m_name)
+                        out_price_disp, out_price_tip = parse_output_price(m)
                         matching_models.append({
                             "name": m_name,
                             "display_name": disp_name,
                             "model_ratio": m_ratio,
                             "effective_ratio": effective_ratio,
+                            "output_price": out_price_disp,
+                            "output_price_tip": out_price_tip,
                             "breakdown": f"{disp_name} (官网倍率 {m_ratio}x × 分组 {ratio}x = 综合 {effective_ratio:.3f}x)",
                         })
 
@@ -551,11 +596,15 @@ class SquareAPIClient:
             else:
                 target_model_code = group_models_mapping.get(g_name) or DEFAULT_GROUP_MODELS.get(g_name, "gpt-6-astra")
                 disp_name = MODEL_DISPLAY_NAMES.get(target_model_code, target_model_code)
+                target_raw = next((item for item in raw_models if item.get("model_name") == target_model_code), None)
+                out_price_disp, out_price_tip = parse_output_price(target_raw)
                 models_to_render = [{
                     "name": target_model_code,
                     "display_name": disp_name,
                     "model_ratio": 1.0,
                     "effective_ratio": ratio,
+                    "output_price": out_price_disp,
+                    "output_price_tip": out_price_tip,
                     "breakdown": f"{disp_name} (综合 {ratio:.2f}x)",
                 }]
 
@@ -581,6 +630,8 @@ class SquareAPIClient:
                     "focus_model_display": m_disp,
                     "effective_ratio": model_obj["effective_ratio"],
                     "effective_ratio_str": f"{model_obj['effective_ratio']:.2f}x",
+                    "output_price": model_obj.get("output_price", "—"),
+                    "output_price_tip": model_obj.get("output_price_tip", ""),
                     "breakdown": model_obj.get("breakdown", ""),
                     "models": matching_models,
                     "models_str": ", ".join([m["display_name"] for m in matching_models]) if matching_models else "（无勾选模型）",

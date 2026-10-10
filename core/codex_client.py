@@ -63,6 +63,11 @@ class CodexUsageClient:
         self._access_token: Optional[str] = None
         self._account_id: Optional[str] = None
 
+        self.session = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(pool_connections=8, pool_maxsize=8, max_retries=1)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+
     def reload_auth_if_needed(self) -> bool:
         """Check if auth.json was modified and reload tokens.
         If auth.json is missing tokens (e.g. CC Switch swapped to third-party proxy),
@@ -138,7 +143,48 @@ class CodexUsageClient:
             pass
         return None
 
-    def fetch_usage(self, force: bool = False, timeout: int = 8) -> Dict[str, Any]:
+    def refresh_access_token(self) -> bool:
+        """Attempt to refresh OAuth access token using refresh_token against auth.openai.com."""
+        if not os.path.exists(self.auth_path):
+            return False
+        try:
+            with open(self.auth_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            tokens = data.get("tokens", {})
+            rt = tokens.get("refresh_token")
+            if not rt:
+                return False
+
+            url = "https://auth.openai.com/oauth/token"
+            payload = {
+                "client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
+                "grant_type": "refresh_token",
+                "refresh_token": rt,
+            }
+            resp = self.session.post(url, data=payload, timeout=12)
+            if resp.status_code == 200:
+                res_json = resp.json()
+                new_at = res_json.get("access_token")
+                new_rt = res_json.get("refresh_token") or rt
+                new_id = res_json.get("id_token") or tokens.get("id_token")
+                if new_at:
+                    tokens["access_token"] = new_at
+                    tokens["refresh_token"] = new_rt
+                    if new_id:
+                        tokens["id_token"] = new_id
+                    data["tokens"] = tokens
+                    data["last_refresh"] = datetime.utcnow().isoformat() + "Z"
+                    with open(self.auth_path, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=2)
+                    self._access_token = new_at
+                    self._auth_mtime = os.path.getmtime(self.auth_path)
+                    self.last_error = None
+                    return True
+        except Exception as e:
+            self.last_error = f"刷新凭证失败: {e}"
+        return False
+
+    def fetch_usage(self, force: bool = False, timeout: int = 15) -> Dict[str, Any]:
         """
         Fetch ChatGPT / Codex usage stats from backend-api/wham/usage.
         Returns parsed structured dictionary.
@@ -169,7 +215,7 @@ class CodexUsageClient:
             headers["ChatGPT-Account-Id"] = self._account_id
 
         try:
-            resp = requests.get(url, headers=headers, timeout=timeout)
+            resp = self.session.get(url, headers=headers, timeout=timeout)
             if resp.status_code == 200:
                 raw = resp.json()
                 self.last_error = None
@@ -178,6 +224,18 @@ class CodexUsageClient:
                 self.last_fetch_time = now
                 return parsed
             elif resp.status_code == 401:
+                # Try refreshing token once if 401 occurs
+                if self.refresh_access_token():
+                    headers["Authorization"] = f"Bearer {self._access_token}"
+                    retry_resp = self.session.get(url, headers=headers, timeout=timeout)
+                    if retry_resp.status_code == 200:
+                        raw = retry_resp.json()
+                        self.last_error = None
+                        parsed = self._parse_response(raw)
+                        self.cached_data = parsed
+                        self.last_fetch_time = now
+                        return parsed
+
                 self.last_error = "登录凭证失效 (401)"
                 self._access_token = None
                 self._auth_mtime = 0
@@ -192,16 +250,29 @@ class CodexUsageClient:
                 if self.cached_data:
                     return self.cached_data
                 return {"success": False, "error": self.last_error, "plan_type": "错误"}
-        except requests.exceptions.Timeout:
-            self.last_error = "网络超时"
+        except (requests.exceptions.Timeout, requests.exceptions.RequestException) as e:
+            # Quick 1-time retry for transient network / proxy hiccup
+            try:
+                time.sleep(0.5)
+                retry_resp = self.session.get(url, headers=headers, timeout=timeout)
+                if retry_resp.status_code == 200:
+                    raw = retry_resp.json()
+                    self.last_error = None
+                    parsed = self._parse_response(raw)
+                    self.cached_data = parsed
+                    self.last_fetch_time = now
+                    return parsed
+            except Exception:
+                pass
+
+            err_str = "网络超时" if isinstance(e, requests.exceptions.Timeout) else f"请求失败: {e}"
+            self.last_error = err_str
             if self.cached_data:
-                return self.cached_data
-            return {"success": False, "error": self.last_error, "plan_type": "超时"}
-        except Exception as e:
-            self.last_error = f"请求失败: {e}"
-            if self.cached_data:
-                return self.cached_data
-            return {"success": False, "error": self.last_error, "plan_type": "异常"}
+                res = dict(self.cached_data)
+                res["stale"] = True
+                res["warning"] = self.last_error
+                return res
+            return {"success": False, "error": self.last_error, "plan_type": "超时" if "超时" in err_str else "异常"}
 
     def _parse_window(self, win: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Helper to parse a rate limit window object."""

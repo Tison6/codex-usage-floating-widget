@@ -554,6 +554,67 @@ class AIHubFilterDialog(QDialog):
         header.addWidget(btn_close)
         layout.addLayout(header)
 
+        # 1. Mode Selection Row: [🤖 自动模式 (按阈值动态筛选)] vs [✋ 手动模式 (按勾选项)]
+        mode_frame = QFrame()
+        mode_frame.setStyleSheet("""
+            QFrame {
+                background: rgba(255, 255, 255, 0.03);
+                border: 1px solid rgba(255, 255, 255, 0.06);
+                border-radius: 6px;
+            }
+        """)
+        mode_lay = QHBoxLayout(mode_frame)
+        mode_lay.setContentsMargins(8, 4, 8, 4)
+        mode_lay.setSpacing(8)
+
+        lbl_mode_title = QLabel("监控模式:")
+        lbl_mode_title.setStyleSheet("font-size: 10px; font-weight: 700; color: #E2E8F0;")
+        mode_lay.addWidget(lbl_mode_title)
+
+        mode_btn_style = """
+            QPushButton {
+                background: rgba(255, 255, 255, 0.05);
+                color: #94A3B8;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 4px;
+                padding: 2px 8px;
+                font-size: 10px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: rgba(255, 255, 255, 0.1);
+                color: #F8FAFC;
+            }
+            QPushButton:checked {
+                background: rgba(16, 185, 129, 0.2);
+                border-color: #10B981;
+                color: #34D399;
+                font-weight: 700;
+            }
+        """
+
+        self.btn_dlg_auto = QPushButton("🤖 自动模式 (按默认阈值每分钟动态更新)")
+        self.btn_dlg_auto.setCheckable(True)
+        self.btn_dlg_auto.setCursor(Qt.PointingHandCursor)
+        self.btn_dlg_auto.setStyleSheet(mode_btn_style)
+
+        self.btn_dlg_manual = QPushButton("✋ 手动模式 (按勾选的供应商)")
+        self.btn_dlg_manual.setCheckable(True)
+        self.btn_dlg_manual.setCursor(Qt.PointingHandCursor)
+        self.btn_dlg_manual.setStyleSheet(mode_btn_style)
+
+        cur_auto = self.aihub_client.get_auto_mode()
+        self.btn_dlg_auto.setChecked(cur_auto)
+        self.btn_dlg_manual.setChecked(not cur_auto)
+
+        self.btn_dlg_auto.clicked.connect(self._on_dlg_auto_clicked)
+        self.btn_dlg_manual.clicked.connect(self._on_dlg_manual_clicked)
+
+        mode_lay.addWidget(self.btn_dlg_auto)
+        mode_lay.addWidget(self.btn_dlg_manual)
+        mode_lay.addStretch()
+        layout.addWidget(mode_frame)
+
         # Subtitle & Action bar
         act_row = QHBoxLayout()
         tip_lbl = QLabel("查看各供应商实时倍率、缓存率与成功率，低成功率(<50%)已高亮标红")
@@ -911,12 +972,25 @@ class AIHubFilterDialog(QDialog):
 
         self.update_count_label()
 
+    def _on_dlg_auto_clicked(self):
+        self.btn_dlg_auto.setChecked(True)
+        self.btn_dlg_manual.setChecked(False)
+
+    def _on_dlg_manual_clicked(self):
+        self.btn_dlg_auto.setChecked(False)
+        self.btn_dlg_manual.setChecked(True)
+
     def apply_good_preset(self):
         for code, cb in self.provider_checkboxes.items():
             cb.setChecked(code in DEFAULT_SELECTED_PROVIDERS)
         self.update_count_label()
 
     def save_and_apply(self):
+        # Save mode
+        is_auto = self.btn_dlg_auto.isChecked()
+        self.aihub_client.set_auto_mode(is_auto)
+
+        # Save selected providers
         selected_codes = [code for code, cb in self.provider_checkboxes.items() if cb.isChecked()]
         self.aihub_client.set_selected_providers(selected_codes)
 

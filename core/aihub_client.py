@@ -38,6 +38,12 @@ DEFAULT_SELECTED_PROVIDERS = [
     "A031-Pro",
 ]
 
+# Default filter thresholds for automatic mode (按默认值)
+DEFAULT_FILTER_MIN_SR = 80.0
+DEFAULT_FILTER_MIN_CACHE = 80.0
+DEFAULT_FILTER_MAX_EFF = 0.25
+DEFAULT_FILTER_MAX_NOM = 0.25
+
 
 class AIHubClient:
     """Client for querying AIHub provider metrics, cache rate, success rate, and pelican test images."""
@@ -65,6 +71,23 @@ class AIHubClient:
         self.session.mount("http://", adapter)
         self.session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
         self.history_metadata_cache: Dict[int, Any] = {}
+        self._auto_mode_override: Optional[bool] = None
+
+    def get_auto_mode(self) -> bool:
+        """Get whether AIHub is in automatic filter mode (vs manual selection)."""
+        if self._auto_mode_override is not None:
+            return self._auto_mode_override
+        if self.config:
+            val = self.config.get("aihub_auto_mode")
+            if val is not None:
+                return bool(val)
+        return True  # Default to auto mode
+
+    def set_auto_mode(self, auto: bool):
+        """Set whether AIHub is in automatic filter mode."""
+        self._auto_mode_override = bool(auto)
+        if self.config:
+            self.config.set("aihub_auto_mode", bool(auto))
 
     def get_selected_providers(self) -> List[str]:
         """Get list of user-selected provider codes."""
@@ -207,24 +230,37 @@ class AIHubClient:
         # Sort all providers: available first, then lower rate multiplier ascending
         all_parsed_providers.sort(key=lambda x: (not x["available"], x["rate_multiplier"]))
 
-        # User-selected providers
-        selected_codes = self.get_selected_providers()
-        if selected_codes is None:
-            # Default: select up to 10 low-cost candidates, prioritizing those with >= 50% success rate
-            stable_candidates = [p["code"] for p in all_parsed_providers if p["available"] and p["success_rate"] >= 50.0][:10]
-            if len(stable_candidates) >= 5:
-                selected_codes = stable_candidates
-            else:
-                selected_codes = [p["code"] for p in all_parsed_providers[:10]]
-            self.set_selected_providers(selected_codes)
+        # Determine monitored rows based on auto/manual mode
+        is_auto = self.get_auto_mode()
+        selected_codes = self.get_selected_providers() or []
 
-        # Monitored rows are those checked by user (in multiplier order)
-        monitored_rows = [p for p in all_parsed_providers if p["code"] in selected_codes]
-        if not monitored_rows:
-            monitored_rows = all_parsed_providers[:10]
+        if is_auto:
+            # Automatic mode: dynamically filter matching default thresholds (updated every minute)
+            # 成功率 >= 80%, 缓存率 >= 80%, 真实倍率 <= 0.25, 标准倍率 <= 0.25
+            matched_providers = [
+                p for p in all_parsed_providers
+                if p["available"]
+                and p["success_rate"] >= DEFAULT_FILTER_MIN_SR
+                and p["cache_hit_val"] >= DEFAULT_FILTER_MIN_CACHE
+                and p["effective_multiplier"] <= DEFAULT_FILTER_MAX_EFF
+                and p["rate_multiplier"] <= DEFAULT_FILTER_MAX_NOM
+            ]
+            if matched_providers:
+                monitored_rows = matched_providers
+            else:
+                # Graceful fallback: pick top available providers with high SR
+                monitored_rows = [p for p in all_parsed_providers if p["available"] and p["success_rate"] >= DEFAULT_FILTER_MIN_SR][:5]
+                if not monitored_rows:
+                    monitored_rows = all_parsed_providers[:5]
+        else:
+            # Manual mode: use user's checked providers
+            monitored_rows = [p for p in all_parsed_providers if p["code"] in selected_codes]
+            if not monitored_rows:
+                monitored_rows = all_parsed_providers[:5]
 
         result = {
             "success": True,
+            "auto_mode": is_auto,
             "all_providers": all_parsed_providers,
             "monitored_providers": monitored_rows,
             "top_groups": monitored_rows,

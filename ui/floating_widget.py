@@ -255,6 +255,7 @@ class FloatingWidget(QWidget):
         self.relay_view.pelican_clicked.connect(self.open_pelican_viewer)
         self.relay_view.filter_dialog_requested.connect(self.open_square_filter_dialog)
         self.relay_view.aihub_filter_requested.connect(self.open_aihub_filter_dialog)
+        self.relay_view.aihub_mode_toggled.connect(self.on_aihub_mode_toggled)
         self.relay_view.refresh_requested.connect(lambda: self.fetch_relay_async(force=True))
         right_layout.addWidget(self.relay_view)
         right_layout.addStretch()
@@ -411,9 +412,9 @@ class FloatingWidget(QWidget):
         bt_sec = max(3, int(self.cfg.get("bt_interval_sec", 10)))
         self.bt_timer.start(bt_sec * 1000)
         
-        # 2. Codex Quota timer
+        # 2. Codex Quota timer (every minute)
         self.codex_timer = QTimer(self)
-        self.codex_timer.timeout.connect(lambda: self.fetch_codex_async(force=False))
+        self.codex_timer.timeout.connect(lambda: self.fetch_codex_async(force=True))
         cdx_sec = max(20, int(self.cfg.get("codex_interval_sec", 60)))
         self.codex_timer.start(cdx_sec * 1000)
         
@@ -422,9 +423,9 @@ class FloatingWidget(QWidget):
         self.activity_timer.timeout.connect(self.check_codex_activity_fast)
         self.activity_timer.start(1000)
 
-        # 4. Relay Station timer (Square API & AIHub)
+        # 4. Relay Station timer (Square API & AIHub, every minute)
         self.relay_timer = QTimer(self)
-        self.relay_timer.timeout.connect(lambda: self.fetch_relay_async(force=False))
+        self.relay_timer.timeout.connect(lambda: self.fetch_relay_async(force=True))
         relay_sec = max(20, int(self.cfg.get("relay_interval_sec", 60)))
         self.relay_timer.start(relay_sec * 1000)
 
@@ -502,6 +503,10 @@ class FloatingWidget(QWidget):
         self._current_codex_data = data
         self.codex_view.update_data(data)
         self.update_mini_quota_display()
+        
+        # If fetch failed (transient network or proxy hiccup), schedule a fast retry in 5s
+        if not data.get("success"):
+            QTimer.singleShot(5000, lambda: self.fetch_codex_async(force=True))
             
         if not self.is_mini:
             self.adjustSize()
@@ -527,6 +532,11 @@ class FloatingWidget(QWidget):
         self.relay_view.update_aihub_data(data)
         if not self.is_mini:
             self.adjustSize()
+
+    def on_aihub_mode_toggled(self, new_mode: bool):
+        """Handle user toggling between AIHub automatic filter mode and manual checked mode."""
+        self.aihub_client.set_auto_mode(new_mode)
+        self.fetch_relay_async(force=True)
 
     def open_pelican_viewer(self, provider_item_or_images=None, code=""):
         """Open Pelican Test Image Viewer dialog with all historical images loaded dynamically online."""

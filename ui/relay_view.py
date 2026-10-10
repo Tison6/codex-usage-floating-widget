@@ -274,6 +274,7 @@ class RelayStationView(QWidget):
     filter_dialog_requested = pyqtSignal()
     aihub_filter_requested = pyqtSignal()
     refresh_requested = pyqtSignal()
+    aihub_mode_toggled = pyqtSignal(bool)  # emits new auto_mode boolean (True=auto, False=manual)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -451,6 +452,27 @@ class RelayStationView(QWidget):
         self.aihub_title_lbl = QLabel("🟢 AIHub 供应商实测")
         self.aihub_title_lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #10B981;")
 
+        # Mode button (Auto vs Manual)
+        self.btn_aihub_mode = QPushButton("🤖 自动")
+        self.btn_aihub_mode.setCursor(Qt.PointingHandCursor)
+        self.btn_aihub_mode.setToolTip("点击切换：自动筛选(按默认阈值每分钟更新) / 手动勾选")
+        self.btn_aihub_mode.setStyleSheet("""
+            QPushButton {
+                background: rgba(16, 185, 129, 0.18);
+                border: 1px solid rgba(16, 185, 129, 0.4);
+                border-radius: 3px;
+                color: #34D399;
+                font-size: 8px;
+                font-weight: 700;
+                padding: 1px 4px;
+            }
+            QPushButton:hover {
+                background: rgba(16, 185, 129, 0.32);
+                color: #6EE7B7;
+            }
+        """)
+        self.btn_aihub_mode.clicked.connect(self.toggle_aihub_mode)
+
         self.btn_aihub_filter = QPushButton("⚙ 勾选")
         self.btn_aihub_filter.setCursor(Qt.PointingHandCursor)
         self.btn_aihub_filter.setToolTip("手动勾选想要监控的 AIHub 供应商")
@@ -474,9 +496,10 @@ class RelayStationView(QWidget):
         self.aihub_status_lbl = QLabel("实时更新")
         self.aihub_status_lbl.setStyleSheet("font-size: 8px; color: #94A3B8;")
 
-        sub_hdr.setSpacing(6)
+        sub_hdr.setSpacing(4)
         sub_hdr.addWidget(self.aihub_title_lbl)
         sub_hdr.addStretch()
+        sub_hdr.addWidget(self.btn_aihub_mode)
         sub_hdr.addWidget(self.btn_aihub_filter)
         sub_hdr.addWidget(self.aihub_status_lbl)
         p_layout.addLayout(sub_hdr)
@@ -499,6 +522,12 @@ class RelayStationView(QWidget):
         self.aihub_scroll.setWidget(self.aihub_scroll_content)
         p_layout.addWidget(self.aihub_scroll)
 
+    def toggle_aihub_mode(self):
+        """Toggle between AIHub automatic threshold filter mode and manual checked selection mode."""
+        cur_auto = self._aihub_data.get("auto_mode", True)
+        new_mode = not cur_auto
+        self.aihub_mode_toggled.emit(new_mode)
+
     def switch_tab(self, index: int):
         self.current_tab = index
         self.stack.setCurrentIndex(index)
@@ -510,7 +539,7 @@ class RelayStationView(QWidget):
             self.parentWidget().adjustSize()
 
     def update_square_data(self, data: Dict[str, Any]):
-        """Render Square API real-time monitored performance benchmark table."""
+        """Render Square API real-time monitored performance benchmark table with output/M token price."""
         self._square_data = data
         if not data.get("success"):
             self.sq_status_lbl.setText(f"⚠️ {data.get('error', '获取失败')}")
@@ -529,9 +558,9 @@ class RelayStationView(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
-        # Header Titles: 分组 / 关注模型, 倍率, 速度, 首字, 延迟, 成功率
-        h_titles = ["分组 / 关注模型", "倍率", "速度", "首字", "延迟", "成功率"]
-        h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight]
+        # Header Titles: 分组 / 关注模型, 倍率, 输出/M, 速度, 首字, 延迟, 成功率
+        h_titles = ["分组 / 关注模型", "倍率", "输出/M", "速度", "首字", "延迟", "成功率"]
+        h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignCenter, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight]
         for col_idx, (title, align) in enumerate(zip(h_titles, h_aligns)):
             h_lbl = QLabel(title)
             h_lbl.setAlignment(align | Qt.AlignVCenter)
@@ -542,7 +571,7 @@ class RelayStationView(QWidget):
         if not monitored_rows:
             empty_lbl = QLabel("暂无勾选的分组，请点击右上角 [⚙️ 勾选监控] 选择")
             empty_lbl.setStyleSheet("font-size: 9px; color: #94A3B8; padding: 10px;")
-            self.sq_grid.addWidget(empty_lbl, 1, 0, 1, 6, Qt.AlignCenter)
+            self.sq_grid.addWidget(empty_lbl, 1, 0, 1, 7, Qt.AlignCenter)
         else:
             for row_idx, r in enumerate(monitored_rows, start=1):
                 color = r.get("color", "#10B981")
@@ -572,6 +601,7 @@ class RelayStationView(QWidget):
                     f"关注模型: {focus_m}\n"
                     f"分组基准倍率: {r.get('ratio_str', '--')}\n"
                     f"综合折算倍率: {r.get('effective_ratio_str', '--')}\n"
+                    f"输出价格: {r.get('output_price_tip', r.get('output_price', '--'))}\n"
                     f"官方说明: {r.get('desc', '稳定可用')}"
                     f"{calc_str}"
                 )
@@ -581,6 +611,12 @@ class RelayStationView(QWidget):
                 mult_lbl.setToolTip(tip_text)
                 mult_lbl.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
                 mult_lbl.setStyleSheet("font-size: 8px; font-weight: 600; color: #60A5FA;")
+
+                # Output Price per 1M tokens (first tier if tiered)
+                out_price_lbl = QLabel(r.get("output_price", "—"))
+                out_price_lbl.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+                out_price_lbl.setStyleSheet("font-size: 8px; font-weight: 700; color: #F59E0B;")
+                out_price_lbl.setToolTip(r.get("output_price_tip") or "输出 token 价格")
 
                 tps_lbl = QLabel(r.get("tps", "--"))
                 tps_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -603,10 +639,11 @@ class RelayStationView(QWidget):
 
                 self.sq_grid.addWidget(g_box, row_idx, 0)
                 self.sq_grid.addWidget(mult_lbl, row_idx, 1)
-                self.sq_grid.addWidget(tps_lbl, row_idx, 2)
-                self.sq_grid.addWidget(ttft_lbl, row_idx, 3)
-                self.sq_grid.addWidget(lat_lbl, row_idx, 4)
-                self.sq_grid.addWidget(bar_widget, row_idx, 5, Qt.AlignRight | Qt.AlignVCenter)
+                self.sq_grid.addWidget(out_price_lbl, row_idx, 2)
+                self.sq_grid.addWidget(tps_lbl, row_idx, 3)
+                self.sq_grid.addWidget(ttft_lbl, row_idx, 4)
+                self.sq_grid.addWidget(lat_lbl, row_idx, 5)
+                self.sq_grid.addWidget(bar_widget, row_idx, 6, Qt.AlignRight | Qt.AlignVCenter)
 
         self.sq_scroll_content.adjustSize()
         self.stack.adjustSize()
@@ -618,6 +655,45 @@ class RelayStationView(QWidget):
         if not data.get("success"):
             self.aihub_status_lbl.setText("⚠️ 获取失败")
             return
+
+        # Update mode button appearance
+        is_auto = bool(data.get("auto_mode", True))
+        if is_auto:
+            self.btn_aihub_mode.setText("🤖 自动")
+            self.btn_aihub_mode.setStyleSheet("""
+                QPushButton {
+                    background: rgba(16, 185, 129, 0.2);
+                    border: 1px solid rgba(16, 185, 129, 0.5);
+                    border-radius: 3px;
+                    color: #34D399;
+                    font-size: 8px;
+                    font-weight: 700;
+                    padding: 1px 4px;
+                }
+                QPushButton:hover {
+                    background: rgba(16, 185, 129, 0.35);
+                    color: #6EE7B7;
+                }
+            """)
+            self.btn_aihub_mode.setToolTip("当前为【自动模式】(按默认阈值每分钟动态更新)\n点击切换为【手动模式】")
+        else:
+            self.btn_aihub_mode.setText("✋ 手动")
+            self.btn_aihub_mode.setStyleSheet("""
+                QPushButton {
+                    background: rgba(59, 130, 246, 0.2);
+                    border: 1px solid rgba(59, 130, 246, 0.5);
+                    border-radius: 3px;
+                    color: #60A5FA;
+                    font-size: 8px;
+                    font-weight: 700;
+                    padding: 1px 4px;
+                }
+                QPushButton:hover {
+                    background: rgba(59, 130, 246, 0.35);
+                    color: #93C5FD;
+                }
+            """)
+            self.btn_aihub_mode.setToolTip("当前为【手动模式】(按勾选项监控)\n点击切换为【自动模式】")
 
         monitored = data.get("monitored_providers") or data.get("top_groups", [])
 
