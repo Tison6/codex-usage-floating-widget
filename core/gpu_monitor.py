@@ -121,6 +121,9 @@ class GPULiveWorker(QThread):
             for r in rows:
                 ip, idx, raw_model, mem_u, mem_t, util, p_draw, p_lim, user, t = r
                 sid = get_server_id(ip)
+                if sid not in ("8", "7"):
+                    continue
+
                 if sid not in servers:
                     servers[sid] = {
                         "sid": sid,
@@ -159,39 +162,38 @@ class GPULiveWorker(QThread):
                 else:
                     sinfo["max_vram_pct"] = 0.0
 
-            # Sort server order: Prefer 8, 7, 6, 4
-            custom_order = ["8", "7", "6", "4"]
-            server_order = sorted(servers.keys(), key=lambda x: custom_order.index(x) if x in custom_order else 99)
+            server_order = [s for s in ["8", "7"] if s in servers]
 
-            # Build mini stats for Server 7 and Server 8
-            def make_mini_stat(target_sid: str) -> Dict[str, Any]:
+            # Build 5 individual GPU cards list (7号 3 cards + 8号 2 cards)
+            five_cards = []
+            tt_lines = ["GPU 显存占用 (7号 L40S x3 · 8号 A100 x2):"]
+
+            for target_sid in ["7", "8"]:
                 s = servers.get(target_sid)
-                if not s or not s["cards"]:
-                    return {"val": -1.0, "pct_str": "--%", "color": "#64748B", "tooltip": f"{target_sid}号: 离线"}
-                val = s["max_vram_pct"]
-                col = get_hex_for_gpu_vram(val)
-                card_descs = []
-                for c in s["cards"]:
-                    u_str = f" [{c['display_user']}]" if c["is_busy"] else ""
-                    card_descs.append(f"Card {c['index']}: {c['memory_used_gb']}/{c['memory_total_gb']}G ({c['vram_pct']}%, {c['power_draw']}/{c['power_limit']}W, Util: {c['utilization']}%){u_str}")
-                tt = f"{target_sid}号 ({s['model']}) 最大显存: {val:.1f}%\n" + "\n".join(card_descs)
-                return {
-                    "val": val,
-                    "pct_str": f"{int(round(val))}%",
-                    "color": col,
-                    "tooltip": tt
-                }
-
-            mini_stats = {
-                "7": make_mini_stat("7"),
-                "8": make_mini_stat("8")
-            }
+                if s:
+                    for c in s["cards"]:
+                        val = c["vram_pct"]
+                        col = get_hex_for_gpu_vram(val)
+                        u_str = f"[{c['display_user']}]" if c["is_busy"] else "[空闲]"
+                        desc = f"{target_sid}号·{s['model']}[{c['index']}]: {val:.0f}% ({c['memory_used_gb']}/{c['memory_total_gb']}G, {c['power_draw']}/{c['power_limit']}W) {u_str}"
+                        tt_lines.append(f"• {desc}")
+                        five_cards.append({
+                            "sid": target_sid,
+                            "index": c["index"],
+                            "label": f"{target_sid}-{c['index']}",
+                            "model": s["model"],
+                            "pct_str": f"{int(round(val))}%",
+                            "val": val,
+                            "color": col,
+                            "tooltip": desc
+                        })
 
             return {
                 "success": True,
                 "servers": servers,
                 "server_order": server_order,
-                "mini_stats": mini_stats,
+                "five_cards": five_cards,
+                "five_cards_tt": "\n".join(tt_lines),
                 "db_size_mb": get_db_size_mb(self.db_path),
                 "last_update": datetime.datetime.now().strftime("%H:%M:%S")
             }
@@ -238,7 +240,9 @@ class GPUHistoryWorker(QThread):
             from collections import defaultdict
             grouped = defaultdict(list)
             for r in rows:
-                grouped[(r[1], r[2])].append(r)
+                sid = get_server_id(r[1])
+                if sid in ("8", "7"):
+                    grouped[(r[1], r[2])].append(r)
 
             intervals: List[Dict[str, Any]] = []
             for (ip, gpu_idx), group in grouped.items():

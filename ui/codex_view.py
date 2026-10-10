@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal
 from ui.sparkline_widget import QuotaSparklineWidget
 from ui.status_light import CodexStatusLight
+from ui.icons import get_openai_pixmap
 from core.quota_tracker import QuotaTracker
 
 
@@ -30,9 +31,12 @@ class CodexQuotaView(QWidget):
         # Header
         self.header_layout = QHBoxLayout()
         self.header_layout.setContentsMargins(2, 0, 2, 0)
-        self.header_layout.setSpacing(6)
+        self.header_layout.setSpacing(5)
         
-        self.title_lbl = QLabel("🤖 ChatGPT", self)
+        self.logo_lbl = QLabel(self)
+        self.logo_lbl.setPixmap(get_openai_pixmap(13))
+        
+        self.title_lbl = QLabel("ChatGPT", self)
         self.title_lbl.setProperty("class", "SectionHeader")
         
         self.plan_badge = QLabel("PLUS", self)
@@ -46,6 +50,7 @@ class CodexQuotaView(QWidget):
         self.refresh_btn.setToolTip("点击立即刷新 ChatGPT 用量")
         self.refresh_btn.clicked.connect(self.refresh_requested.emit)
         
+        self.header_layout.addWidget(self.logo_lbl)
         self.header_layout.addWidget(self.title_lbl)
         self.header_layout.addWidget(self.plan_badge)
         self.header_layout.addWidget(self.status_light)

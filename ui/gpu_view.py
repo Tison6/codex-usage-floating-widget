@@ -1,102 +1,76 @@
 """
 GPU Server View Component.
-Displays real-time multi-server GPU status (matching Streamlit card layout)
-and historical Gantt-style usage timeline natively in PyQt5.
+Redesigned with unified Dark Glassmorphism aesthetic matching the left column.
+Displays 5 GPUs (8号 A100 x2, 7号 L40S x3) in a sleek vertical stack and native history timeline.
 """
 
 from typing import Dict, Any, List, Optional
 import datetime
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFrame, QScrollArea, QGridLayout, QProgressBar, QComboBox,
-    QStackedWidget, QToolTip
+    QFrame, QScrollArea, QProgressBar, QComboBox, QStackedWidget
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QRectF, QPoint
-from PyQt5.QtGui import QColor, QPainter, QBrush, QPen, QFont, QLinearGradient
+from PyQt5.QtCore import Qt, pyqtSignal, QRectF
+from PyQt5.QtGui import QColor, QPainter, QBrush, QPen, QFont
 
 from core.gpu_monitor import (
     GPUMonitor, get_hex_for_gpu_vram, clean_gpu_name, get_cn_name
 )
+from ui.icons import get_nvidia_pixmap
 
 
-class VerticalModelLabel(QLabel):
-    """Vertical model text label rendered via QPainter for crisp layout."""
-    def __init__(self, text: str, parent=None):
+class GPUCardRow(QFrame):
+    """Sleek dark card for a single GPU card matching the left Bluetooth/Codex aesthetic."""
+    def __init__(self, sid: str, model: str, index: str, parent=None):
         super().__init__(parent)
-        self.raw_text = text
-        self.setFixedWidth(28)
+        self.sid = sid
+        self.model = model
+        self.index = index
 
-    def setModelText(self, text: str):
-        self.raw_text = text
-        self.update()
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.setPen(QColor("#E2E8F0"))
-        font = QFont("Segoe UI", 8, QFont.Bold)
-        painter.setFont(font)
-
-        painter.save()
-        # Rotate 90 degrees clockwise (standard book-spine top-to-bottom reading)
-        painter.translate(self.width() / 2, self.height() / 2)
-        painter.rotate(90)
-        text_rect = QRectF(-self.height() / 2, -self.width() / 2, self.height(), self.width())
-        painter.drawText(text_rect, Qt.AlignCenter, self.raw_text)
-        painter.restore()
-
-
-class GPUCardWidget(QFrame):
-    """Single GPU card status card matching the layout in 图3."""
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setObjectName("GPUCard")
+        self.setObjectName("GPUCardRow")
         self.setStyleSheet("""
-            QFrame#GPUCard {
-                background-color: rgba(30, 41, 59, 0.75);
-                border: 1px solid rgba(255, 255, 255, 0.08);
+            QFrame#GPUCardRow {
+                background-color: rgba(255, 255, 255, 0.035);
+                border: 1px solid rgba(255, 255, 255, 0.06);
                 border-radius: 6px;
             }
-            QFrame#GPUCard:hover {
-                background-color: rgba(30, 41, 59, 0.95);
-                border: 1px solid rgba(118, 185, 0, 0.45);
+            QFrame#GPUCardRow:hover {
+                background-color: rgba(255, 255, 255, 0.065);
+                border: 1px solid rgba(118, 185, 0, 0.35);
             }
         """)
-        
+
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 4, 5, 4)
-        layout.setSpacing(3)
+        layout.setContentsMargins(7, 6, 7, 6)
+        layout.setSpacing(4)
 
-        # 1. Header: Left [Model - Index], Right [User / Idle]
-        header = QHBoxLayout()
-        header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(3)
+        # 1. Top Row: Title badge & User / Idle status
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setSpacing(4)
 
-        self.lbl_name = QLabel("A100 - 0", self)
-        self.lbl_name.setStyleSheet("""
-            background-color: #334155;
+        self.lbl_title = QLabel(f"{sid}号 · {model} [{index}]", self)
+        self.lbl_title.setStyleSheet("""
             color: #E2E8F0;
-            padding: 1px 4px;
-            border-radius: 3px;
-            font-size: 9px;
+            font-size: 10px;
             font-weight: 700;
         """)
 
-        self.lbl_user = QLabel("🟢 Idle", self)
+        self.lbl_user = QLabel("🟢 空闲", self)
         self.lbl_user.setStyleSheet("""
+            color: #10B981;
             font-size: 9px;
             font-weight: 700;
-            color: #10B981;
         """)
 
-        header.addWidget(self.lbl_name)
-        header.addStretch()
-        header.addWidget(self.lbl_user)
-        layout.addLayout(header)
+        top_row.addWidget(self.lbl_title)
+        top_row.addStretch()
+        top_row.addWidget(self.lbl_user)
+        layout.addLayout(top_row)
 
         # 2. VRAM Progress Bar
         self.prog_bar = QProgressBar(self)
-        self.prog_bar.setFixedHeight(5)
+        self.prog_bar.setFixedHeight(4)
         self.prog_bar.setTextVisible(False)
         self.prog_bar.setRange(0, 100)
         self.prog_bar.setValue(0)
@@ -113,60 +87,60 @@ class GPUCardWidget(QFrame):
         """)
         layout.addWidget(self.prog_bar)
 
-        # 3. Bottom Row: Memory, Power, Utilization
-        stats = QHBoxLayout()
-        stats.setContentsMargins(0, 0, 0, 0)
-        stats.setSpacing(4)
+        # 3. Bottom Stats Row: Memory, Power, Utilization
+        stats_row = QHBoxLayout()
+        stats_row.setContentsMargins(0, 0, 0, 0)
+        stats_row.setSpacing(4)
 
-        self.lbl_mem = QLabel("🧠 0.0/80G", self)
-        self.lbl_mem.setStyleSheet("font-size: 9px; color: #CBD5E1;")
+        self.lbl_mem = QLabel("🧠 0.0 / 0G (0%)", self)
+        self.lbl_mem.setStyleSheet("font-size: 9px; color: #CBD5E1; font-family: 'Consolas', monospace;")
         self.lbl_mem.setToolTip("显存占用")
 
-        self.lbl_power = QLabel("⚡ 0/300W", self)
-        self.lbl_power.setStyleSheet("font-size: 9px; color: #94A3B8;")
-        self.lbl_power.setToolTip("当前功率 / 额定功率")
+        self.lbl_power = QLabel("⚡ 0/0W", self)
+        self.lbl_power.setStyleSheet("font-size: 9px; color: #94A3B8; font-family: 'Consolas', monospace;")
+        self.lbl_power.setToolTip("功耗 / 额定")
 
         self.lbl_util = QLabel("⚙️ 0%", self)
-        self.lbl_util.setStyleSheet("font-size: 9px; color: #94A3B8;")
-        self.lbl_util.setToolTip("GPU 利用率")
+        self.lbl_util.setStyleSheet("font-size: 9px; color: #94A3B8; font-family: 'Consolas', monospace;")
+        self.lbl_util.setToolTip("利用率")
 
-        stats.addWidget(self.lbl_mem)
-        stats.addStretch()
-        stats.addWidget(self.lbl_power)
-        stats.addWidget(self.lbl_util)
-        layout.addLayout(stats)
+        stats_row.addWidget(self.lbl_mem)
+        stats_row.addStretch()
+        stats_row.addWidget(self.lbl_power)
+        stats_row.addWidget(self.lbl_util)
+        layout.addLayout(stats_row)
 
-    def update_card(self, card_data: Dict[str, Any]):
-        """Render GPU card metrics."""
-        gpu_name = card_data.get("name", "GPU")
-        idx = card_data.get("index", "0")
-        self.lbl_name.setText(f"{gpu_name} - {idx}")
+    def update_data(self, cdata: Dict[str, Any], model_name: str):
+        """Update GPU metrics."""
+        self.model = model_name
+        self.lbl_title.setText(f"{self.sid}号 · {model_name} [{self.index}]")
 
-        is_busy = card_data.get("is_busy", False)
-        display_user = card_data.get("display_user", "Idle")
+        is_busy = cdata.get("is_busy", False)
+        display_user = cdata.get("display_user", "Idle")
 
         if is_busy:
             self.lbl_user.setText(f"👤 {display_user}")
             self.lbl_user.setStyleSheet("""
-                background-color: rgba(239, 68, 68, 0.2);
+                background-color: rgba(239, 68, 68, 0.18);
                 color: #F87171;
-                padding: 1px 4px;
-                border-radius: 3px;
-                font-size: 10px;
+                border: 1px solid rgba(239, 68, 68, 0.35);
+                border-radius: 4px;
+                padding: 1px 5px;
+                font-size: 9px;
                 font-weight: 700;
             """)
         else:
-            self.lbl_user.setText("🟢 Idle")
+            self.lbl_user.setText("🟢 空闲")
             self.lbl_user.setStyleSheet("""
                 color: #10B981;
-                font-size: 10px;
+                font-size: 9px;
                 font-weight: 700;
+                background: transparent;
+                border: none;
             """)
 
-        vram_pct = card_data.get("vram_pct", 0.0)
+        vram_pct = cdata.get("vram_pct", 0.0)
         self.prog_bar.setValue(int(round(vram_pct)))
-
-        # Update progress chunk color based on threshold (<10% green, 10-30% orange, >=30% red)
         chunk_col = get_hex_for_gpu_vram(vram_pct)
         self.prog_bar.setStyleSheet(f"""
             QProgressBar {{
@@ -180,97 +154,21 @@ class GPUCardWidget(QFrame):
             }}
         """)
 
-        mem_u_gb = card_data.get("memory_used_gb", 0.0)
-        mem_t_gb = card_data.get("memory_total_gb", 0.0)
-        self.lbl_mem.setText(f"🧠 {mem_u_gb}/{int(mem_t_gb)}G")
-        self.lbl_mem.setToolTip(f"显存: {card_data.get('memory_used', 0)} / {card_data.get('memory_total', 0)} MB ({vram_pct}%)")
+        mem_u = cdata.get("memory_used_gb", 0.0)
+        mem_t = cdata.get("memory_total_gb", 0.0)
+        self.lbl_mem.setText(f"🧠 {mem_u:.1f}/{int(mem_t)}G ({vram_pct:.0f}%)")
+        self.lbl_mem.setToolTip(f"显存: {cdata.get('memory_used', 0)} / {cdata.get('memory_total', 0)} MB")
 
-        p_draw = card_data.get("power_draw", "0")
-        p_lim = card_data.get("power_limit", "0")
+        p_draw = cdata.get("power_draw", "0")
+        p_lim = cdata.get("power_limit", "0")
         self.lbl_power.setText(f"⚡ {p_draw}/{p_lim}W")
 
-        util = card_data.get("utilization", 0)
+        util = cdata.get("utilization", 0)
         self.lbl_util.setText(f"⚙️ {util}%")
 
 
-class ServerBlockWidget(QWidget):
-    """Server block: Left red server ID + dark model strip; Right grid of GPU cards."""
-    def __init__(self, sid: str, model: str, parent=None):
-        super().__init__(parent)
-        self.sid = sid
-        self.model = model
-
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 6)
-        layout.setSpacing(6)
-
-        # 1. Left Badge Column
-        left_box = QWidget(self)
-        left_box.setFixedWidth(28)
-        left_layout = QVBoxLayout(left_box)
-        left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(0)
-
-        # Red ID header
-        self.id_box = QLabel(sid, left_box)
-        self.id_box.setFixedHeight(24)
-        self.id_box.setAlignment(Qt.AlignCenter)
-        self.id_box.setStyleSheet("""
-            background-color: #EF4444;
-            color: #FFFFFF;
-            font-size: 13px;
-            font-weight: 800;
-            border-top-left-radius: 5px;
-            border-top-right-radius: 5px;
-        """)
-        left_layout.addWidget(self.id_box)
-
-        # Dark model strip
-        self.model_bar = VerticalModelLabel(model, left_box)
-        self.model_bar.setStyleSheet("""
-            background-color: #1E293B;
-            border-bottom-left-radius: 5px;
-            border-bottom-right-radius: 5px;
-        """)
-        left_layout.addWidget(self.model_bar, 1)
-
-        layout.addWidget(left_box)
-
-        # 2. Right Cards Grid
-        self.cards_grid_widget = QWidget(self)
-        self.cards_grid = QGridLayout(self.cards_grid_widget)
-        self.cards_grid.setContentsMargins(0, 0, 0, 0)
-        self.cards_grid.setSpacing(6)
-
-        layout.addWidget(self.cards_grid_widget, 1)
-
-        self.cards_map: Dict[str, GPUCardWidget] = {}
-
-    def update_server(self, sinfo: Dict[str, Any]):
-        """Update cards inside this server block."""
-        self.model = sinfo.get("model", self.model)
-        self.model_bar.setModelText(self.model)
-
-        cards = sinfo.get("cards", [])
-        columns_per_row = 2 if len(cards) <= 2 else 3
-
-        for i, cdata in enumerate(cards):
-            idx = cdata.get("index", str(i))
-            if idx not in self.cards_map:
-                card_w = GPUCardWidget(self.cards_grid_widget)
-                row = i // columns_per_row
-                col = i % columns_per_row
-                self.cards_grid.addWidget(card_w, row, col)
-                self.cards_map[idx] = card_w
-
-            self.cards_map[idx].update_card(cdata)
-
-
 class GanttTimelineCanvas(QWidget):
-    """
-    Native PyQt5 Gantt Chart Canvas.
-    Visualizes user occupancy sessions on GPU cards over past N days.
-    """
+    """Native PyQt5 Gantt Chart Canvas for 7号 & 8号 server GPU history."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.intervals: List[Dict[str, Any]] = []
@@ -278,7 +176,6 @@ class GanttTimelineCanvas(QWidget):
         self.setMinimumHeight(160)
         self.setStyleSheet("background-color: rgba(15, 23, 42, 0.6); border-radius: 6px;")
 
-        # User distinct color generator
         self.user_palette = [
             "#3B82F6", "#10B981", "#F59E0B", "#EC4899",
             "#8B5CF6", "#06B6D4", "#E11D48", "#14B8A6"
@@ -286,12 +183,11 @@ class GanttTimelineCanvas(QWidget):
         self.user_color_map: Dict[str, str] = {}
 
     def set_data(self, intervals: List[Dict[str, Any]], days: int = 1):
-        self.intervals = intervals
+        # Filter only 7号 and 8号
+        self.intervals = [x for x in intervals if x.get("sid") in ("7", "8")]
         self.days = days
-        
-        # Calculate needed canvas height dynamically based on active unique cards
-        unique_tasks = sorted(list(set(x["task"] for x in intervals)))
-        needed_h = max(180, len(unique_tasks) * 28 + 40)
+        unique_tasks = sorted(list(set(x["task"] for x in self.intervals)))
+        needed_h = max(160, len(unique_tasks) * 28 + 36)
         self.setFixedHeight(needed_h)
         self.update()
 
@@ -322,9 +218,9 @@ class GanttTimelineCanvas(QWidget):
 
         unique_tasks = sorted(list(set(x["task"] for x in self.intervals)), reverse=True)
         row_h = 26
-        header_h = 24
+        header_h = 22
         label_w = 110
-        chart_w = w - label_w - 15
+        chart_w = w - label_w - 12
 
         # Draw time header
         painter.setPen(QColor("#94A3B8"))
@@ -335,23 +231,20 @@ class GanttTimelineCanvas(QWidget):
             tick_time = start_time + datetime.timedelta(seconds=total_seconds * t_frac)
             x = label_w + chart_w * t_frac
             time_str = tick_time.strftime("%m-%d %H:%M" if self.days > 1 else "%H:%M")
-            painter.drawText(int(x - 25), 14, 50, 12, Qt.AlignCenter, time_str)
-            # Vertical gridline
+            painter.drawText(int(x - 25), 12, 50, 12, Qt.AlignCenter, time_str)
             painter.setPen(QPen(QColor(255, 255, 255, 12), 1, Qt.DashLine))
-            painter.drawLine(int(x), header_h, int(x), h - 5)
+            painter.drawLine(int(x), header_h, int(x), h - 4)
             painter.setPen(QColor("#94A3B8"))
 
         # Draw task rows
         for r_idx, task_name in enumerate(unique_tasks):
             y = header_h + r_idx * row_h
-            # Row background
             if r_idx % 2 == 1:
                 painter.fillRect(label_w, y, int(chart_w), row_h, QColor(255, 255, 255, 4))
 
-            # Task label (e.g. 8号 A100 [0])
             painter.setPen(QColor("#E2E8F0"))
             painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
-            painter.drawText(6, y + 4, label_w - 10, row_h - 8, Qt.AlignVCenter | Qt.AlignLeft, task_name)
+            painter.drawText(6, y + 3, label_w - 10, row_h - 6, Qt.AlignVCenter | Qt.AlignLeft, task_name)
 
         # Draw intervals
         for itv in self.intervals:
@@ -378,7 +271,6 @@ class GanttTimelineCanvas(QWidget):
             painter.setPen(Qt.NoPen)
             painter.drawRoundedRect(QRectF(x1, y, bar_w, row_h - 6), 3, 3)
 
-            # Draw username if width fits
             if bar_w > 32:
                 painter.setPen(QColor("#FFFFFF"))
                 painter.setFont(QFont("Segoe UI", 7, QFont.Bold))
@@ -388,11 +280,7 @@ class GanttTimelineCanvas(QWidget):
 class GPUServerView(QWidget):
     """
     Complete GPU Server Monitoring View.
-    Includes:
-    - Top Status Bar (Refresh, Timestamp, DB badge)
-    - Tab Switcher (⚡ 实时状态, 📅 历史占用)
-    - Tab 1: Real-time Multi-server GPU cards matching 图3
-    - Tab 2: Historical Gantt timeline visualization & occupancy session log
+    Unified dark glassmorphism styling, single vertical stack of 5 GPUs (8号 x2, 7号 x3).
     """
     refresh_requested = pyqtSignal()
 
@@ -401,30 +289,30 @@ class GPUServerView(QWidget):
         self.monitor = monitor
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(4, 4, 4, 4)
+        root.setContentsMargins(4, 2, 4, 4)
         root.setSpacing(6)
 
-        # 1. Header Bar
+        # 1. Header Bar: Title with NVIDIA logo, Refresh, Timestamp, DB badge
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(6)
 
-        self.title_icon = QLabel("🟢", self)
-        self.title_icon.setStyleSheet("font-size: 11px;")
+        self.title_icon = QLabel(self)
+        self.title_icon.setPixmap(get_nvidia_pixmap(14))
 
-        self.title_lbl = QLabel("GPU服务器监控", self)
+        self.title_lbl = QLabel("GPU 服务器", self)
         self.title_lbl.setStyleSheet("font-size: 11px; font-weight: 800; color: #FFFFFF;")
 
-        self.btn_refresh = QPushButton("↻ 刷新", self)
-        self.btn_refresh.setFixedSize(50, 20)
+        self.btn_refresh = QPushButton("🔄", self)
+        self.btn_refresh.setFixedSize(20, 20)
+        self.btn_refresh.setToolTip("点击刷新 GPU 实时状态")
         self.btn_refresh.setStyleSheet("""
             QPushButton {
                 background-color: rgba(255, 255, 255, 0.08);
                 color: #E2E8F0;
-                border: 1px solid rgba(255, 255, 255, 0.15);
+                border: 1px solid rgba(255, 255, 255, 0.12);
                 border-radius: 4px;
-                font-size: 9px;
-                font-weight: 600;
+                font-size: 10px;
             }
             QPushButton:hover {
                 background-color: #0284C7;
@@ -436,29 +324,19 @@ class GPUServerView(QWidget):
 
         self.badge_time = QLabel("🕒 --:--:--", self)
         self.badge_time.setStyleSheet("""
-            background-color: rgba(255, 255, 255, 0.06);
+            background-color: rgba(255, 255, 255, 0.05);
             color: #94A3B8;
-            padding: 1px 5px;
+            padding: 1px 4px;
             border-radius: 3px;
             font-size: 9px;
+            font-family: 'Consolas', monospace;
         """)
-
-        self.badge_db = QLabel("📡 0.0 M", self)
-        self.badge_db.setStyleSheet("""
-            background-color: rgba(255, 255, 255, 0.06);
-            color: #94A3B8;
-            padding: 1px 5px;
-            border-radius: 3px;
-            font-size: 9px;
-        """)
-        self.badge_db.setToolTip(f"数据库文件: {self.monitor.db_path}")
 
         header.addWidget(self.title_icon)
         header.addWidget(self.title_lbl)
         header.addWidget(self.btn_refresh)
         header.addStretch()
         header.addWidget(self.badge_time)
-        header.addWidget(self.badge_db)
         root.addLayout(header)
 
         # 2. Tab Bar: [⚡ 实时状态] | [📅 历史占用]
@@ -484,15 +362,19 @@ class GPUServerView(QWidget):
         # 3. Stacked View
         self.stack = QStackedWidget(self)
 
-        # --- View 0: Real-time Live Cards ---
+        # --- View 0: Real-time Live Cards (Single Vertical Stack) ---
         self.scroll_live = QScrollArea(self)
         self.scroll_live.setWidgetResizable(True)
         self.scroll_live.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_live.viewport().setAutoFillBackground(False)
         self.scroll_live.setStyleSheet("""
-            QScrollArea { border: none; background: transparent; }
+            QScrollArea, QScrollArea > QWidget, QScrollArea > QWidget > QWidget {
+                border: none;
+                background: transparent;
+            }
             QScrollBar:vertical {
                 background: rgba(255, 255, 255, 0.02);
-                width: 5px;
+                width: 4px;
                 border-radius: 2px;
             }
             QScrollBar::handle:vertical {
@@ -502,9 +384,28 @@ class GPUServerView(QWidget):
         """)
 
         self.live_container = QWidget()
+        self.live_container.setStyleSheet("background: transparent;")
         self.live_layout = QVBoxLayout(self.live_container)
-        self.live_layout.setContentsMargins(2, 2, 2, 2)
-        self.live_layout.setSpacing(6)
+        self.live_layout.setContentsMargins(0, 2, 2, 2)
+        self.live_layout.setSpacing(5)
+
+        # Pre-create the 5 GPU card rows in order: 7号(3卡) + 8号(2卡)
+        self.card_rows: Dict[str, GPUCardRow] = {}
+
+        # 7号 cards (L40S - 0, 1, 2)
+        for idx in ["0", "1", "2"]:
+            key = f"7-{idx}"
+            row = GPUCardRow("7", "L40S", idx, self.live_container)
+            self.live_layout.addWidget(row)
+            self.card_rows[key] = row
+
+        # 8号 cards (A100 - 0, 1)
+        for idx in ["0", "1"]:
+            key = f"8-{idx}"
+            row = GPUCardRow("8", "A100", idx, self.live_container)
+            self.live_layout.addWidget(row)
+            self.card_rows[key] = row
+
         self.live_layout.addStretch()
         self.scroll_live.setWidget(self.live_container)
         self.stack.addWidget(self.scroll_live)
@@ -512,7 +413,7 @@ class GPUServerView(QWidget):
         # --- View 1: History Gantt & Timeline ---
         self.hist_container = QWidget(self)
         hist_layout = QVBoxLayout(self.hist_container)
-        hist_layout.setContentsMargins(2, 2, 2, 2)
+        hist_layout.setContentsMargins(0, 2, 0, 2)
         hist_layout.setSpacing(6)
 
         hist_ctrl_row = QHBoxLayout()
@@ -530,7 +431,7 @@ class GPUServerView(QWidget):
             QComboBox {
                 background-color: #1E293B;
                 color: #E2E8F0;
-                border: 1px solid rgba(255, 255, 255, 0.15);
+                border: 1px solid rgba(255, 255, 255, 0.12);
                 border-radius: 4px;
                 padding: 1px 6px;
                 font-size: 10px;
@@ -549,7 +450,7 @@ class GPUServerView(QWidget):
             QPushButton {
                 background-color: rgba(255, 255, 255, 0.08);
                 color: #E2E8F0;
-                border: 1px solid rgba(255, 255, 255, 0.15);
+                border: 1px solid rgba(255, 255, 255, 0.12);
                 border-radius: 4px;
                 font-size: 9px;
             }
@@ -566,7 +467,6 @@ class GPUServerView(QWidget):
         hist_ctrl_row.addStretch()
         hist_layout.addLayout(hist_ctrl_row)
 
-        # Scroll area for Gantt canvas
         self.scroll_hist = QScrollArea(self.hist_container)
         self.scroll_hist.setWidgetResizable(True)
         self.scroll_hist.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -574,7 +474,7 @@ class GPUServerView(QWidget):
             QScrollArea { border: none; background: transparent; }
             QScrollBar:vertical {
                 background: rgba(255, 255, 255, 0.02);
-                width: 5px;
+                width: 4px;
                 border-radius: 2px;
             }
             QScrollBar::handle:vertical {
@@ -589,13 +489,8 @@ class GPUServerView(QWidget):
         self.stack.addWidget(self.hist_container)
         root.addWidget(self.stack, 1)
 
-        # Server widgets mapping
-        self.server_widgets: Dict[str, ServerBlockWidget] = {}
-
-        # Set default tab styling
         self.switch_tab(0)
 
-        # Hook monitor signals
         self.monitor.realtime_updated.connect(self.update_live_data)
         self.monitor.history_updated.connect(self.update_history_data)
 
@@ -640,7 +535,6 @@ class GPUServerView(QWidget):
                 font-weight: 600;
                 padding: 2px 10px;
             """)
-            # Trigger history query when opening history tab for the first time
             if not self.gantt_canvas.intervals:
                 days = self.combo_days.currentData()
                 self.monitor.fetch_history_async(days=days)
@@ -658,25 +552,23 @@ class GPUServerView(QWidget):
         self.monitor.fetch_history_async(days=days)
 
     def update_live_data(self, data: Dict[str, Any]):
-        """Render live GPU cards."""
+        """Render live GPU cards in single vertical column."""
         if not data.get("success"):
             return
 
         self.badge_time.setText(f"🕒 {data.get('last_update', '')}")
-        self.badge_db.setText(f"📡 {data.get('db_size_mb', '0.0')} M")
 
         servers = data.get("servers", {})
-        server_order = data.get("server_order", list(servers.keys()))
-
-        for sid in server_order:
-            sinfo = servers[sid]
-            if sid not in self.server_widgets:
-                sb = ServerBlockWidget(sid, sinfo.get("model", "GPU"), self.live_container)
-                # Insert before the trailing stretch
-                self.live_layout.insertWidget(self.live_layout.count() - 1, sb)
-                self.server_widgets[sid] = sb
-
-            self.server_widgets[sid].update_server(sinfo)
+        for sid in ["8", "7"]:
+            sinfo = servers.get(sid)
+            if not sinfo:
+                continue
+            model_name = sinfo.get("model", "GPU")
+            for cdata in sinfo.get("cards", []):
+                idx = cdata.get("index", "0")
+                key = f"{sid}-{idx}"
+                if key in self.card_rows:
+                    self.card_rows[key].update_data(cdata, model_name)
 
     def update_history_data(self, intervals: List[Dict[str, Any]]):
         """Render history Gantt visualization."""

@@ -33,7 +33,7 @@ from ui.settings_dialog import SettingsDialog
 from ui.relay_view import RelayStationView
 from ui.gpu_view import GPUServerView
 from ui.pelican_viewer import PelicanViewerDialog
-from ui.icons import get_openai_pixmap, get_intel_pixmap, get_nvidia_pixmap
+from ui.icons import get_openai_pixmap, get_cpu_pixmap, get_nvidia_pixmap
 from ui.styles import MAIN_STYLESHEET
 
 
@@ -276,9 +276,9 @@ class FloatingWidget(QWidget):
         v_sep2.setStyleSheet("background-color: rgba(255, 255, 255, 0.08); width: 1px; border: none;")
         cols_layout.addWidget(v_sep2)
 
-        # --- Right Column: GPU Servers (matching Streamlit card layout) ---
+        # --- Right Column: GPU Servers (matching dark aesthetic of left column) ---
         right_col = QWidget(self.cols_widget)
-        right_col.setFixedWidth(int(550 * self.widget_scale))
+        right_col.setFixedWidth(int(275 * self.widget_scale))
         right_layout = QVBoxLayout(right_col)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(6)
@@ -291,91 +291,104 @@ class FloatingWidget(QWidget):
         self.root_layout.addWidget(self.expanded_container)
         
         # -------------------------------------------------------------
-        # 2. Mini Mode Container (Click anywhere to expand)
+        # 2. Mini Mode Container (2-row compact layout, click anywhere to expand)
         # -------------------------------------------------------------
         self.mini_container = QWidget(self)
         self.mini_container.setObjectName("MiniWidget")
         self.mini_container.setCursor(Qt.PointingHandCursor)
         self.mini_container.setToolTip("点击展开状态小组件 (按住可自由拖拽)")
         
-        self.mini_layout = QHBoxLayout(self.mini_container)
-        self.mini_layout.setContentsMargins(8, 4, 8, 4)
-        self.mini_layout.setSpacing(5)
-        
+        self.mini_vbox = QVBoxLayout(self.mini_container)
+        self.mini_vbox.setContentsMargins(8, 4, 8, 4)
+        self.mini_vbox.setSpacing(2)
+
+        # === Row 1 (Top): 1 BT + 5 GPUs (Total 6 units) ===
+        row1_layout = QHBoxLayout()
+        row1_layout.setContentsMargins(0, 0, 0, 0)
+        row1_layout.setSpacing(4)
+
         self.mini_bt_lbl = QLabel("📶 --%", self.mini_container)
         self.mini_bt_lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #10B981;")
-        
-        mini_sep = QLabel("|", self.mini_container)
-        mini_sep.setStyleSheet("color: rgba(255,255,255,0.2);")
-        
-        # OpenAI Logo + Clean dual quota: 100% · 84%
+
+        mini_sep1 = QLabel("|", self.mini_container)
+        mini_sep1.setStyleSheet("color: rgba(255,255,255,0.2);")
+
+        self.mini_nvidia_icon = QLabel(self.mini_container)
+        self.mini_nvidia_icon.setPixmap(get_nvidia_pixmap(13))
+        self.mini_nvidia_icon.setToolTip("GPU 显存占用 (7号 L40S x3 · 8号 A100 x2)")
+
+        # 5 GPU card labels (7号: 0, 1, 2; 8号: 0, 1)
+        self.mini_gpu_0 = QLabel("--%", self.mini_container)
+        self.mini_gpu_1 = QLabel("--%", self.mini_container)
+        self.mini_gpu_2 = QLabel("--%", self.mini_container)
+        self.mini_gpu_3 = QLabel("--%", self.mini_container)
+        self.mini_gpu_4 = QLabel("--%", self.mini_container)
+
+        self.mini_gpu_labels = [
+            self.mini_gpu_0, self.mini_gpu_1, self.mini_gpu_2,
+            self.mini_gpu_3, self.mini_gpu_4
+        ]
+        for lbl in self.mini_gpu_labels:
+            lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
+
+        row1_layout.addWidget(self.mini_bt_lbl)
+        row1_layout.addWidget(mini_sep1)
+        row1_layout.addWidget(self.mini_nvidia_icon)
+        for lbl in self.mini_gpu_labels:
+            row1_layout.addWidget(lbl)
+        row1_layout.addStretch()
+        self.mini_vbox.addLayout(row1_layout)
+
+        # === Row 2 (Bottom): 2 OpenAI Quotas + Spinner + 3 CPUs (Total 6 units) ===
+        row2_layout = QHBoxLayout()
+        row2_layout.setContentsMargins(0, 0, 0, 0)
+        row2_layout.setSpacing(4)
+
         self.mini_openai_icon = QLabel(self.mini_container)
         self.mini_openai_icon.setPixmap(get_openai_pixmap(13))
         self.mini_openai_icon.setToolTip("ChatGPT / Codex 剩余限额")
 
         self.mini_cdx_lbl = QLabel("--% · --%", self.mini_container)
         self.mini_cdx_lbl.setStyleSheet("font-size: 10px; font-weight: 700;")
-        
-        # Status light placed next to quota
+
         self.mini_status_light = CodexStatusLight(self.mini_container, size=13)
-        
-        # Server CPU utilization with Intel logo (quad / e5 / 8375c)
+
         mini_sep2 = QLabel("|", self.mini_container)
         mini_sep2.setStyleSheet("color: rgba(255,255,255,0.2);")
 
-        self.mini_intel_icon = QLabel(self.mini_container)
-        self.mini_intel_icon.setPixmap(get_intel_pixmap(13))
-        self.mini_intel_icon.setToolTip("服务器 CPU 利用率 (quad / e5 / 8375c)")
+        self.mini_cpu_icon = QLabel(self.mini_container)
+        self.mini_cpu_icon.setPixmap(get_cpu_pixmap(13))
+        self.mini_cpu_icon.setToolTip("服务器 CPU 利用率 (quad / e5 / 8375c)")
 
         self.mini_srv_quad = QLabel("--%", self.mini_container)
-        self.mini_srv_quad.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
-
         self.mini_srv_e5 = QLabel("--%", self.mini_container)
-        self.mini_srv_e5.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
-
         self.mini_srv_8375c = QLabel("--%", self.mini_container)
-        self.mini_srv_8375c.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
 
         self.mini_srv_labels = {
             "quad": self.mini_srv_quad,
             "e5": self.mini_srv_e5,
             "8375c": self.mini_srv_8375c,
         }
+        for lbl in self.mini_srv_labels.values():
+            lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
 
-        # GPU Server VRAM with NVIDIA logo (7号 L40S / 8号 A100)
-        mini_sep3 = QLabel("|", self.mini_container)
-        mini_sep3.setStyleSheet("color: rgba(255,255,255,0.2);")
+        row2_layout.addWidget(self.mini_openai_icon)
+        row2_layout.addWidget(self.mini_cdx_lbl)
+        row2_layout.addWidget(self.mini_status_light)
+        row2_layout.addWidget(mini_sep2)
+        row2_layout.addWidget(self.mini_cpu_icon)
+        row2_layout.addWidget(self.mini_srv_quad)
+        row2_layout.addWidget(self.mini_srv_e5)
+        row2_layout.addWidget(self.mini_srv_8375c)
+        row2_layout.addStretch()
+        self.mini_vbox.addLayout(row2_layout)
 
-        self.mini_nvidia_icon = QLabel(self.mini_container)
-        self.mini_nvidia_icon.setPixmap(get_nvidia_pixmap(13))
-        self.mini_nvidia_icon.setToolTip("GPU 服务器显存占用 (7号 L40S / 8号 A100)")
-
-        self.mini_gpu_7 = QLabel("--%", self.mini_container)
-        self.mini_gpu_7.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
-
-        self.mini_gpu_8 = QLabel("--%", self.mini_container)
-        self.mini_gpu_8.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
-
-        self.mini_layout.addWidget(self.mini_bt_lbl)
-        self.mini_layout.addWidget(mini_sep)
-        self.mini_layout.addWidget(self.mini_openai_icon)
-        self.mini_layout.addWidget(self.mini_cdx_lbl)
-        self.mini_layout.addWidget(self.mini_status_light)
-        self.mini_layout.addWidget(mini_sep2)
-        self.mini_layout.addWidget(self.mini_intel_icon)
-        self.mini_layout.addWidget(self.mini_srv_quad)
-        self.mini_layout.addWidget(self.mini_srv_e5)
-        self.mini_layout.addWidget(self.mini_srv_8375c)
-        self.mini_layout.addWidget(mini_sep3)
-        self.mini_layout.addWidget(self.mini_nvidia_icon)
-        self.mini_layout.addWidget(self.mini_gpu_7)
-        self.mini_layout.addWidget(self.mini_gpu_8)
-        
         # Ensure clicks anywhere on labels or status light trigger container expand
-        for w in (self.mini_bt_lbl, mini_sep, self.mini_openai_icon, self.mini_cdx_lbl,
-                  self.mini_status_light, mini_sep2, self.mini_intel_icon,
-                  self.mini_srv_quad, self.mini_srv_e5, self.mini_srv_8375c,
-                  mini_sep3, self.mini_nvidia_icon, self.mini_gpu_7, self.mini_gpu_8):
+        for w in (self.mini_bt_lbl, mini_sep1, self.mini_nvidia_icon,
+                  self.mini_gpu_0, self.mini_gpu_1, self.mini_gpu_2, self.mini_gpu_3, self.mini_gpu_4,
+                  self.mini_openai_icon, self.mini_cdx_lbl, self.mini_status_light,
+                  mini_sep2, self.mini_cpu_icon,
+                  self.mini_srv_quad, self.mini_srv_e5, self.mini_srv_8375c):
             w.setAttribute(Qt.WA_TransparentForMouseEvents, True)
             
         self.mini_container.mousePressEvent = self.mousePressEvent
@@ -420,11 +433,11 @@ class FloatingWidget(QWidget):
 
     def update_mode_visibility(self):
         """Instant toggle between mini and expanded views with zero lag."""
-        base_w = int(1270 * self.widget_scale)
+        base_w = int(1005 * self.widget_scale)
         if self.is_mini:
             self.expanded_container.hide()
             self.mini_container.show()
-            self.setFixedSize(int(415 * self.widget_scale), int(42 * self.widget_scale))
+            self.setFixedSize(int(258 * self.widget_scale), int(50 * self.widget_scale))
         else:
             self.mini_container.hide()
             self.expanded_container.show()
@@ -448,7 +461,7 @@ class FloatingWidget(QWidget):
         """Restore saved window coordinates or place near top-right."""
         pos = self.cfg.get("window_pos")
         screen = QApplication.primaryScreen().availableGeometry()
-        expected_w = int(1270 * self.widget_scale) if not self.is_mini else int(415 * self.widget_scale)
+        expected_w = int(1005 * self.widget_scale) if not self.is_mini else int(258 * self.widget_scale)
         if pos and len(pos) == 2:
             x = max(screen.left() + 10, min(pos[0], screen.right() - expected_w))
             y = max(screen.top() + 10, min(pos[1], screen.bottom() - 150))
@@ -683,35 +696,34 @@ class FloatingWidget(QWidget):
                 tip_parts.append(f"{sid}: {val:.1f}%")
 
         tooltip = "服务器CPU利用率 (quad / e5 / 8375c)\n" + " | ".join(tip_parts)
-        self.mini_intel_icon.setToolTip(tooltip)
+        self.mini_cpu_icon.setToolTip(tooltip)
         for lbl in self.mini_srv_labels.values():
             lbl.setToolTip(tooltip)
 
     def on_gpu_data_updated(self, data: Dict[str, Any]):
         """Render GPU mini stats and refresh expanded view."""
         if not data.get("success"):
-            self.mini_gpu_7.setText("--%")
-            self.mini_gpu_7.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
-            self.mini_gpu_8.setText("--%")
-            self.mini_gpu_8.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
+            for lbl in self.mini_gpu_labels:
+                lbl.setText("--%")
+                lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
+                lbl.setToolTip("GPU: 离线")
+            self.mini_nvidia_icon.setToolTip("GPU 服务器: 离线")
             return
 
-        mini_stats = data.get("mini_stats", {})
-        st7 = mini_stats.get("7", {})
-        st8 = mini_stats.get("8", {})
+        five_cards = data.get("five_cards", [])
+        for i, lbl in enumerate(self.mini_gpu_labels):
+            if i < len(five_cards):
+                c = five_cards[i]
+                lbl.setText(c.get("pct_str", "--%"))
+                lbl.setStyleSheet(f"font-size: 10px; font-weight: 700; color: {c.get('color', '#64748B')};")
+                lbl.setToolTip(c.get("tooltip", ""))
+            else:
+                lbl.setText("--%")
+                lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
+                lbl.setToolTip("GPU: 无数据")
 
-        self.mini_gpu_7.setText(st7.get("pct_str", "--%"))
-        self.mini_gpu_7.setStyleSheet(f"font-size: 10px; font-weight: 700; color: {st7.get('color', '#64748B')};")
-        self.mini_gpu_7.setToolTip(st7.get("tooltip", "7号: 离线"))
-
-        self.mini_gpu_8.setText(st8.get("pct_str", "--%"))
-        self.mini_gpu_8.setStyleSheet(f"font-size: 10px; font-weight: 700; color: {st8.get('color', '#64748B')};")
-        self.mini_gpu_8.setToolTip(st8.get("tooltip", "8号: 离线"))
-
-        tt7 = st7.get("tooltip", "7号: 离线")
-        tt8 = st8.get("tooltip", "8号: 离线")
-        combined_tt = f"GPU显存占用 (7号 L40S / 8号 A100)\n\n• {tt7}\n\n• {tt8}"
-        self.mini_nvidia_icon.setToolTip(combined_tt)
+        tt = data.get("five_cards_tt", "GPU 显存占用 (7号 L40S x3 · 8号 A100 x2)")
+        self.mini_nvidia_icon.setToolTip(tt)
 
         if not self.is_mini:
             self.adjustSize()

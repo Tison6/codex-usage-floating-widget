@@ -117,6 +117,12 @@ QProgressBar::chunk {
     border-radius: 2px;
 }
 
+/* Scroll Areas */
+QScrollArea, QScrollArea > QWidget, QScrollArea > QWidget > QWidget {
+    background: transparent;
+    border: none;
+}
+
 /* Tooltip & Menu */
 QToolTip {
     background-color: #181E2C;
