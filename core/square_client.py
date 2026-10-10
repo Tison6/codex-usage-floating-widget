@@ -13,9 +13,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 
 
-def parse_output_price(m: Optional[Dict[str, Any]]) -> Tuple[str, str]:
+def parse_output_price(m: Optional[Dict[str, Any]], group_multiplier: float = 1.0) -> Tuple[str, str]:
     """
-    Parse output / completion token price per 1M tokens matching official Square calculation.
+    Parse output / completion token price per 1M tokens multiplied by group ratio,
+    matching official Square user billing calculation.
     If tiered pricing expression exists, extracts Tier 1 (第一档, as requested by user).
     Returns (display_str, tooltip_str).
     """
@@ -27,6 +28,8 @@ def parse_output_price(m: Optional[Dict[str, Any]]) -> Tuple[str, str]:
     ratio = m.get("model_ratio")
     comp_ratio = m.get("completion_ratio")
 
+    mult = float(group_multiplier) if group_multiplier and group_multiplier > 0 else 1.0
+
     # 1. Tiered expression
     if mode == "tiered_expr" and expr:
         tier_matches = re.findall(r'tier\(\s*"([^"]*)"\s*,\s*([^)]+)\)', expr)
@@ -34,22 +37,27 @@ def parse_output_price(m: Optional[Dict[str, Any]]) -> Tuple[str, str]:
             first_tier_label, first_tier_body = tier_matches[0]
             c_match = re.search(r'\bc\s*\*\s*([\d.eE+-]+)', first_tier_body)
             if c_match:
-                val = float(c_match.group(1))
-                return f"${val:g}", f"输出: ${val:g}/1M (第1档: {first_tier_label})"
+                base_val = float(c_match.group(1))
+                eff_val = round(base_val * mult, 4)
+                return f"${eff_val:g}", f"实付输出: ${eff_val:g}/1M (基准 ${base_val:g} × 倍率 {mult:g}x, 第1档: {first_tier_label})"
         c_match = re.search(r'\bc\s*\*\s*([\d.eE+-]+)', expr)
         if c_match:
-            val = float(c_match.group(1))
-            return f"${val:g}", f"输出: ${val:g}/1M"
+            base_val = float(c_match.group(1))
+            eff_val = round(base_val * mult, 4)
+            return f"${eff_val:g}", f"实付输出: ${eff_val:g}/1M (基准 ${base_val:g} × 倍率 {mult:g}x)"
 
     # 2. Per-request pricing
     if price is not None and price > 0:
-        return f"${price:g}/次", f"按次计费: ${price:g} / 次"
+        base_val = float(price)
+        eff_val = round(base_val * mult, 4)
+        return f"${eff_val:g}/次", f"按次计费: ${eff_val:g}/次 (基准 ${base_val:g} × 倍率 {mult:g}x)"
 
-    # 3. Standard ratio pricing: output = 2.0 * model_ratio * completion_ratio
+    # 3. Standard ratio pricing: output = 2.0 * model_ratio * completion_ratio * group_multiplier
     if ratio is not None:
         cr = comp_ratio if comp_ratio is not None else 1.0
-        val = 2.0 * float(ratio) * float(cr)
-        return f"${val:g}", f"输出: ${val:g}/1M (折算: $2 × {ratio}x × {cr})"
+        base_val = 2.0 * float(ratio) * float(cr)
+        eff_val = round(base_val * mult, 4)
+        return f"${eff_val:g}", f"实付输出: ${eff_val:g}/1M (折算: $2 × {ratio}x × {cr} × 倍率 {mult:g}x)"
 
     return "—", "输出价格未知"
 
@@ -579,7 +587,7 @@ class SquareAPIClient:
                         m_ratio = float(m.get("model_ratio", 1.0))
                         effective_ratio = ratio * m_ratio
                         disp_name = MODEL_DISPLAY_NAMES.get(m_name, m_name)
-                        out_price_disp, out_price_tip = parse_output_price(m)
+                        out_price_disp, out_price_tip = parse_output_price(m, group_multiplier=ratio)
                         matching_models.append({
                             "name": m_name,
                             "display_name": disp_name,
@@ -597,7 +605,7 @@ class SquareAPIClient:
                 target_model_code = group_models_mapping.get(g_name) or DEFAULT_GROUP_MODELS.get(g_name, "gpt-6-astra")
                 disp_name = MODEL_DISPLAY_NAMES.get(target_model_code, target_model_code)
                 target_raw = next((item for item in raw_models if item.get("model_name") == target_model_code), None)
-                out_price_disp, out_price_tip = parse_output_price(target_raw)
+                out_price_disp, out_price_tip = parse_output_price(target_raw, group_multiplier=ratio)
                 models_to_render = [{
                     "name": target_model_code,
                     "display_name": disp_name,
