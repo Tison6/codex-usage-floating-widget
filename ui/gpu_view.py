@@ -168,12 +168,22 @@ class GPUCardRow(QFrame):
 
 
 class GanttTimelineCanvas(QWidget):
-    """Native PyQt5 Gantt Chart Canvas for 7号 & 8号 server GPU history."""
+    """Native PyQt5 Gantt Chart Canvas for 7号 (L40S) & 8号 (A100) server GPU history."""
+    DEFAULT_TASKS = [
+        "L40S [0]",
+        "L40S [1]",
+        "L40S [2]",
+        "A100 [0]",
+        "A100 [1]",
+    ]
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.intervals: List[Dict[str, Any]] = []
         self.days: int = 1
-        self.setMinimumHeight(160)
+        self.tasks: List[str] = list(self.DEFAULT_TASKS)
+        self.setMinimumHeight(150)
+        self.setMouseTracking(True)
         self.setStyleSheet("background-color: rgba(15, 23, 42, 0.6); border-radius: 6px;")
 
         self.user_palette = [
@@ -183,11 +193,29 @@ class GanttTimelineCanvas(QWidget):
         self.user_color_map: Dict[str, str] = {}
 
     def set_data(self, intervals: List[Dict[str, Any]], days: int = 1):
+        import re
         # Filter only 7号 and 8号
-        self.intervals = [x for x in intervals if x.get("sid") in ("7", "8")]
+        filtered = []
+        for x in intervals:
+            if x.get("sid") in ("7", "8"):
+                # Normalize task: strip server prefixes like "7号 " or "8号 "
+                clean_t = re.sub(r'^\d+号\s*', '', x.get("task", "")).strip()
+                x["task"] = clean_t
+                filtered.append(x)
+        self.intervals = filtered
         self.days = days
-        unique_tasks = sorted(list(set(x["task"] for x in self.intervals)))
-        needed_h = max(160, len(unique_tasks) * 28 + 36)
+
+        # Always include all 5 GPUs so no card is ever missing from the track
+        tasks = list(self.DEFAULT_TASKS)
+        for x in self.intervals:
+            t = x.get("task", "")
+            if t and t not in tasks:
+                tasks.append(t)
+        self.tasks = tasks
+
+        row_h = 24
+        header_h = 18
+        needed_h = max(150, len(self.tasks) * row_h + header_h + 10)
         self.setFixedHeight(needed_h)
         self.update()
 
@@ -204,55 +232,65 @@ class GanttTimelineCanvas(QWidget):
         w = self.width()
         h = self.height()
 
-        if not self.intervals:
-            painter.setPen(QColor("#64748B"))
-            painter.setFont(QFont("Segoe UI", 9))
-            painter.drawText(self.rect(), Qt.AlignCenter, "暂无历史占用记录")
-            return
-
         now = datetime.datetime.now()
         start_time = now - datetime.timedelta(days=self.days)
         total_seconds = (now - start_time).total_seconds()
         if total_seconds <= 0:
             return
 
-        unique_tasks = sorted(list(set(x["task"] for x in self.intervals)), reverse=True)
-        row_h = 26
-        header_h = 22
-        label_w = 110
-        chart_w = w - label_w - 12
+        tasks = getattr(self, "tasks", self.DEFAULT_TASKS)
+        row_h = 24
+        header_h = 18
+        label_w = 56  # Fits "L40S [0]" comfortably with brackets
+        chart_w = max(40.0, float(w - label_w - 8))
 
-        # Draw time header
-        painter.setPen(QColor("#94A3B8"))
-        painter.setFont(QFont("Segoe UI", 8))
-        num_ticks = 4
+        # 1. Draw time header (2 ticks to eliminate collision)
+        painter.setPen(QColor("#64748B"))
+        painter.setFont(QFont("Segoe UI", 7))
+        num_ticks = 2
         for i in range(num_ticks + 1):
             t_frac = i / num_ticks
             tick_time = start_time + datetime.timedelta(seconds=total_seconds * t_frac)
             x = label_w + chart_w * t_frac
             time_str = tick_time.strftime("%m-%d %H:%M" if self.days > 1 else "%H:%M")
-            painter.drawText(int(x - 25), 12, 50, 12, Qt.AlignCenter, time_str)
-            painter.setPen(QPen(QColor(255, 255, 255, 12), 1, Qt.DashLine))
-            painter.drawLine(int(x), header_h, int(x), h - 4)
-            painter.setPen(QColor("#94A3B8"))
+            if i == 0:
+                painter.drawText(int(x), 2, 45, 12, Qt.AlignLeft | Qt.AlignVCenter, time_str)
+            elif i == num_ticks:
+                painter.drawText(int(x - 45), 2, 45, 12, Qt.AlignRight | Qt.AlignVCenter, "现在" if self.days == 1 else time_str)
+            else:
+                painter.drawText(int(x - 25), 2, 50, 12, Qt.AlignCenter | Qt.AlignVCenter, time_str)
 
-        # Draw task rows
-        for r_idx, task_name in enumerate(unique_tasks):
+            painter.setPen(QPen(QColor(255, 255, 255, 12), 1, Qt.DashLine))
+            painter.drawLine(int(x), header_h, int(x), h - 2)
+            painter.setPen(QColor("#64748B"))
+
+        # 2. Draw task rows (model + card number only, small font)
+        for r_idx, task_name in enumerate(tasks):
             y = header_h + r_idx * row_h
             if r_idx % 2 == 1:
                 painter.fillRect(label_w, y, int(chart_w), row_h, QColor(255, 255, 255, 4))
 
-            painter.setPen(QColor("#E2E8F0"))
-            painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
-            painter.drawText(6, y + 3, label_w - 10, row_h - 6, Qt.AlignVCenter | Qt.AlignLeft, task_name)
+            # Subtle baseline separator
+            painter.setPen(QPen(QColor(255, 255, 255, 8), 1))
+            painter.drawLine(label_w, y + row_h, int(label_w + chart_w), y + row_h)
 
-        # Draw intervals
+            painter.setPen(QColor("#CBD5E1"))
+            painter.setFont(QFont("Segoe UI", 7, QFont.Bold))
+            painter.drawText(2, y + 1, label_w - 4, row_h - 2, Qt.AlignVCenter | Qt.AlignLeft, task_name)
+
+        # 3. Draw intervals
+        if not self.intervals:
+            painter.setPen(QColor("#475569"))
+            painter.setFont(QFont("Segoe UI", 8))
+            painter.drawText(label_w, header_h, int(chart_w), h - header_h, Qt.AlignCenter, "区间内暂无任务占用")
+            return
+
         for itv in self.intervals:
             task_name = itv["task"]
-            if task_name not in unique_tasks:
+            if task_name not in tasks:
                 continue
-            r_idx = unique_tasks.index(task_name)
-            y = header_h + r_idx * row_h + 3
+            r_idx = tasks.index(task_name)
+            y = header_h + r_idx * row_h + 2
 
             itv_start = max(start_time, itv["start_dt"])
             itv_finish = min(now, itv["finish_dt"])
@@ -269,12 +307,57 @@ class GanttTimelineCanvas(QWidget):
             user_color = QColor(self._get_user_color(itv["user"]))
             painter.setBrush(QBrush(user_color))
             painter.setPen(Qt.NoPen)
-            painter.drawRoundedRect(QRectF(x1, y, bar_w, row_h - 6), 3, 3)
+            painter.drawRoundedRect(QRectF(x1, y, bar_w, row_h - 4), 3, 3)
 
-            if bar_w > 32:
+            if bar_w > 26:
                 painter.setPen(QColor("#FFFFFF"))
                 painter.setFont(QFont("Segoe UI", 7, QFont.Bold))
-                painter.drawText(QRectF(x1 + 2, y, bar_w - 4, row_h - 6), Qt.AlignCenter, itv["user"])
+                painter.drawText(QRectF(x1 + 1, y, bar_w - 2, row_h - 4), Qt.AlignCenter, itv["user"])
+
+    def mouseMoveEvent(self, event):
+        pos = event.pos()
+        w = self.width()
+        now = datetime.datetime.now()
+        start_time = now - datetime.timedelta(days=self.days)
+        total_seconds = (now - start_time).total_seconds()
+        if total_seconds <= 0 or not self.intervals:
+            super().mouseMoveEvent(event)
+            return
+
+        label_w = 56
+        chart_w = max(40.0, float(w - label_w - 8))
+        header_h = 18
+        row_h = 24
+
+        found_tip = None
+        for itv in self.intervals:
+            task_name = itv["task"]
+            if task_name not in self.tasks:
+                continue
+            r_idx = self.tasks.index(task_name)
+            y = header_h + r_idx * row_h + 2
+
+            itv_start = max(start_time, itv["start_dt"])
+            itv_finish = min(now, itv["finish_dt"])
+            if itv_finish <= itv_start:
+                continue
+
+            sec_start = (itv_start - start_time).total_seconds()
+            sec_end = (itv_finish - start_time).total_seconds()
+            x1 = label_w + (sec_start / total_seconds) * chart_w
+            x2 = label_w + (sec_end / total_seconds) * chart_w
+            bar_w = max(4.0, x2 - x1)
+
+            rect = QRectF(x1, y, bar_w, row_h - 4)
+            if rect.contains(pos):
+                found_tip = f"{itv['task']} · {itv['user']}\n时段: {itv['start']} ~ {itv['finish']}\n时长: {itv['duration_min']} 分钟"
+                break
+
+        if found_tip:
+            self.setToolTip(found_tip)
+        else:
+            self.setToolTip("")
+        super().mouseMoveEvent(event)
 
 
 class GPUServerView(QWidget):

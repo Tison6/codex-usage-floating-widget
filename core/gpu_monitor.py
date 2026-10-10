@@ -253,7 +253,7 @@ class GPUHistoryWorker(QThread):
                 gpu_model = clean_gpu_name(raw_model)
                 sid = get_server_id(ip)
                 server_tag = f"{sid}号 {gpu_model}"
-                gpu_label = f"{sid}号 {gpu_model} [{gpu_idx}]"
+                gpu_label = f"{gpu_model} [{gpu_idx}]"
 
                 start_dt = datetime.datetime.strptime(group[0][0], "%Y-%m-%d %H:%M:%S")
                 last_dt = start_dt
