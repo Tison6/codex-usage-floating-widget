@@ -14,7 +14,7 @@ QWidget#MainWidget {
 QWidget#MiniWidget {
     background-color: rgba(16, 20, 30, 0.92);
     border: 1px solid rgba(59, 130, 246, 0.35);
-    border-radius: 16px;
+    border-radius: 12px;
 }
 
 /* Card Sections */
