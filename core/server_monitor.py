@@ -46,12 +46,12 @@ def get_hex_for_cpu(val: float) -> str:
     """Return theme color based on CPU usage percentage."""
     if val < 0:
         return "#64748B"  # Offline / disconnected: Slate gray
-    elif val < 50:
-        return "#10B981"  # Normal (<50%): Emerald green
-    elif val < 80:
-        return "#F59E0B"  # Medium (50%~80%): Amber orange
+    elif val < 10:
+        return "#10B981"  # Normal (<10%): Emerald green
+    elif val < 30:
+        return "#F59E0B"  # Medium (10%~30%): Amber orange
     else:
-        return "#EF4444"  # High (>80%): Alert red
+        return "#EF4444"  # High (>=30%): Alert red
 
 
 class SingleServerWorker(QThread):
