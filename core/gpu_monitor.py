@@ -7,19 +7,24 @@ Supports multi-server metrics, individual GPU card statistics, and mini-capsule 
 import os
 import sqlite3
 import datetime
+import json
 from typing import Dict, Any, List, Optional
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
 DB_FILE = r"D:/gpu_history.db"
 
-USER_MAPPING = {
-    "user_c": "UserC", "user_d": "UserD", "user_e": "UserE", "user_f": "UserF",
-    "user_a": "UserA", "user_g": "UserG", "user_h": "UserH", "user_i": "UserI",
-    "user_j": "UserJ", "user_k": "UserK", "user_b": "UserB", "user_l": "UserL",
-    "user_m": "UserM", "liuuser_c": "UserN", "user_o": "UserO", "user_p": "UserP",
-    "user_q": "UserQ", "user_r": "UserR", "user_s": "UserS", "user_t": "UserT",
-    "user_u": "UserU", "user_v": "UserV", "user_w": "UserW"
-}
+def _load_user_mapping() -> Dict[str, str]:
+    """Load local user mapping from data/user_mapping.json if present (gitignored)."""
+    mapping_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "user_mapping.json")
+    if os.path.exists(mapping_file):
+        try:
+            with open(mapping_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+USER_MAPPING = _load_user_mapping()
 
 
 def clean_gpu_name(raw_name: str) -> str:
@@ -31,7 +36,7 @@ def clean_gpu_name(raw_name: str) -> str:
 
 
 def get_cn_name(pinyin: str) -> str:
-    """Convert pinyin username to Chinese name using USER_MAPPING."""
+    """Convert pinyin username to display name using local USER_MAPPING."""
     if not pinyin or pinyin in ("Idle", "Unknown", "None"):
         return "Idle"
     if str(pinyin).startswith("PID"):
@@ -68,10 +73,10 @@ def get_db_size_mb(path: str = DB_FILE) -> str:
 
 
 def get_server_id(ip: str) -> str:
-    """Extract server number from IP, e.g. 10.0.0.8 -> 8."""
-    if "10.0.0." in ip:
+    """Extract server number or identifier from IP / hostname."""
+    if "." in ip:
         return ip.split(".")[-1]
-    return ip.split(".")[-1] if "." in ip else ip
+    return ip
 
 
 class GPULiveWorker(QThread):
