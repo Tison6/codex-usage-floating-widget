@@ -22,7 +22,7 @@ QWidget#MainWidget {{
 QWidget#MiniWidget {{
     background-color: rgba(16, 20, 30, 0.92);
     border: 1px solid rgba(59, 130, 246, 0.35);
-    border-radius: {px(12, 8)}px;
+    border-radius: {px(11, 7)}px;
 }}
 
 /* Card Sections */

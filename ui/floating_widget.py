@@ -423,7 +423,7 @@ class FloatingWidget(QWidget):
             return
 
         # 1. Margins and Spacing
-        pad_x = max(3, int(round(6 * self.widget_scale)))
+        pad_x = max(3, int(round(5 * self.widget_scale)))
         pad_y = max(1, int(round(2 * self.widget_scale)))
         self.mini_vbox.setContentsMargins(pad_x, pad_y, pad_x, pad_y)
         self.mini_vbox.setSpacing(max(1, int(round(1 * self.widget_scale))))
@@ -500,7 +500,7 @@ class FloatingWidget(QWidget):
             self.root_layout.setContentsMargins(2, 2, 2, 2)
             self.expanded_container.hide()
             self.mini_container.show()
-            self.setFixedSize(int(round(210 * self.widget_scale)), int(round(48 * self.widget_scale)))
+            self.setFixedSize(int(round(156 * self.widget_scale)), int(round(37 * self.widget_scale)))
         else:
             self.root_layout.setContentsMargins(6, 6, 6, 6)
             self.mini_container.hide()
@@ -558,7 +558,7 @@ class FloatingWidget(QWidget):
         """Restore saved window coordinates or place near top-right."""
         pos = self.cfg.get("window_pos")
         screen = QApplication.primaryScreen().availableGeometry()
-        expected_w = int(1055 * self.widget_scale) if not self.is_mini else int(210 * self.widget_scale)
+        expected_w = int(round(1055 * self.widget_scale)) if not self.is_mini else int(round(156 * self.widget_scale))
         if pos and len(pos) == 2:
             x = max(screen.left() + 10, min(pos[0], screen.right() - expected_w))
             y = max(screen.top() + 10, min(pos[1], screen.bottom() - 150))
