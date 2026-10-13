@@ -34,7 +34,7 @@ from ui.relay_view import RelayStationView
 from ui.gpu_view import GPUServerView
 from ui.pelican_viewer import PelicanViewerDialog
 from ui.icons import get_openai_pixmap, get_cpu_pixmap, get_nvidia_pixmap
-from ui.styles import MAIN_STYLESHEET
+from ui.styles import MAIN_STYLESHEET, get_main_stylesheet
 
 
 def get_health_color(percent: int) -> str:
@@ -165,7 +165,7 @@ class FloatingWidget(QWidget):
             flags |= Qt.WindowStaysOnTopHint
         self.setWindowFlags(flags)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setStyleSheet(MAIN_STYLESHEET)
+        self.setStyleSheet(get_main_stylesheet(self.widget_scale))
 
     def init_ui(self):
         """Build widget layout for both Expanded and Mini modes."""
@@ -193,20 +193,21 @@ class FloatingWidget(QWidget):
         title_bar.setContentsMargins(2, 0, 2, 0)
         
         self.title_icon = QLabel("⚡", self.expanded_container)
-        self.title_icon.setStyleSheet("font-size: 11px;")
+        self.title_icon.setStyleSheet(f"font-size: {max(8, int(round(11 * self.widget_scale)))}px;")
         
         self.title_text = QLabel("状态小组件", self.expanded_container)
         self.title_text.setProperty("class", "TitleLabel")
         
+        btn_sz = max(14, int(round(18 * self.widget_scale)))
         self.btn_mini_toggle = QPushButton("➖", self.expanded_container)
         self.btn_mini_toggle.setProperty("class", "IconButton")
-        self.btn_mini_toggle.setFixedSize(18, 18)
+        self.btn_mini_toggle.setFixedSize(btn_sz, btn_sz)
         self.btn_mini_toggle.setToolTip("收起为迷你胶囊模式")
         self.btn_mini_toggle.clicked.connect(self.collapse_to_mini)
         
         self.btn_settings = QPushButton("⚙️", self.expanded_container)
         self.btn_settings.setProperty("class", "IconButton")
-        self.btn_settings.setFixedSize(18, 18)
+        self.btn_settings.setFixedSize(btn_sz, btn_sz)
         self.btn_settings.setToolTip("偏好设置")
         self.btn_settings.clicked.connect(self.open_settings)
         
@@ -224,28 +225,28 @@ class FloatingWidget(QWidget):
         cols_layout.setSpacing(8)
         
         # --- Left Column: Devices & Official Codex ---
-        left_col = QWidget(self.cols_widget)
-        left_col.setFixedWidth(int(210 * self.widget_scale))
-        left_layout = QVBoxLayout(left_col)
+        self.left_col = QWidget(self.cols_widget)
+        self.left_col.setFixedWidth(int(210 * self.widget_scale))
+        left_layout = QVBoxLayout(self.left_col)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(6)
         
         # Bluetooth Battery View
-        self.battery_view = BatteryView(left_col)
+        self.battery_view = BatteryView(self.left_col, scale=self.widget_scale)
         left_layout.addWidget(self.battery_view)
         
         # Divider Line
-        divider = QFrame(left_col)
+        divider = QFrame(self.left_col)
         divider.setFrameShape(QFrame.HLine)
         divider.setStyleSheet("background-color: rgba(255, 255, 255, 0.06); height: 1px; border: none;")
         left_layout.addWidget(divider)
         
         # Codex Quota View
-        self.codex_view = CodexQuotaView(self.quota_tracker, left_col)
+        self.codex_view = CodexQuotaView(self.quota_tracker, self.left_col, scale=self.widget_scale)
         self.codex_view.refresh_requested.connect(lambda: self.fetch_codex_async(force=True))
         left_layout.addWidget(self.codex_view)
         left_layout.addStretch()
-        cols_layout.addWidget(left_col)
+        cols_layout.addWidget(self.left_col)
         
         # Vertical Separator between Left and Middle
         v_sep = QFrame(self.cols_widget)
@@ -254,13 +255,13 @@ class FloatingWidget(QWidget):
         cols_layout.addWidget(v_sep)
         
         # --- Middle Column: Relay Stations (Square API & AIHub) ---
-        mid_col = QWidget(self.cols_widget)
-        mid_col.setFixedWidth(int(485 * self.widget_scale))
-        mid_layout = QVBoxLayout(mid_col)
+        self.mid_col = QWidget(self.cols_widget)
+        self.mid_col.setFixedWidth(int(485 * self.widget_scale))
+        mid_layout = QVBoxLayout(self.mid_col)
         mid_layout.setContentsMargins(0, 0, 0, 0)
         mid_layout.setSpacing(6)
         
-        self.relay_view = RelayStationView(mid_col)
+        self.relay_view = RelayStationView(self.mid_col, scale=self.widget_scale)
         self.relay_view.pelican_clicked.connect(self.open_pelican_viewer)
         self.relay_view.filter_dialog_requested.connect(self.open_square_filter_dialog)
         self.relay_view.aihub_filter_requested.connect(self.open_aihub_filter_dialog)
@@ -268,7 +269,7 @@ class FloatingWidget(QWidget):
         self.relay_view.refresh_requested.connect(lambda: self.fetch_relay_async(force=True))
         mid_layout.addWidget(self.relay_view)
         mid_layout.addStretch()
-        cols_layout.addWidget(mid_col)
+        cols_layout.addWidget(self.mid_col)
 
         # Vertical Separator between Middle and Right
         v_sep2 = QFrame(self.cols_widget)
@@ -277,15 +278,15 @@ class FloatingWidget(QWidget):
         cols_layout.addWidget(v_sep2)
 
         # --- Right Column: GPU Servers (matching dark aesthetic of left column) ---
-        right_col = QWidget(self.cols_widget)
-        right_col.setFixedWidth(int(295 * self.widget_scale))
-        right_layout = QVBoxLayout(right_col)
+        self.right_col = QWidget(self.cols_widget)
+        self.right_col.setFixedWidth(int(295 * self.widget_scale))
+        right_layout = QVBoxLayout(self.right_col)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(6)
 
-        self.gpu_view = GPUServerView(self.gpu_monitor, right_col)
+        self.gpu_view = GPUServerView(self.gpu_monitor, self.right_col, scale=self.widget_scale)
         right_layout.addWidget(self.gpu_view)
-        cols_layout.addWidget(right_col)
+        cols_layout.addWidget(self.right_col)
         
         self.exp_layout.addWidget(self.cols_widget)
         self.root_layout.addWidget(self.expanded_container)
@@ -303,18 +304,15 @@ class FloatingWidget(QWidget):
         self.mini_vbox.setSpacing(1)
 
         # === Row 1 (Top): 1 BT + 5 GPUs ===
-        row1_layout = QHBoxLayout()
-        row1_layout.setContentsMargins(0, 0, 0, 0)
-        row1_layout.setSpacing(2)
+        self.row1_layout = QHBoxLayout()
+        self.row1_layout.setContentsMargins(0, 0, 0, 0)
+        self.row1_layout.setSpacing(max(1, int(round(2 * self.widget_scale))))
 
         self.mini_bt_lbl = QLabel("📶 --", self.mini_container)
-        self.mini_bt_lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #10B981;")
 
-        mini_sep1 = QLabel("|", self.mini_container)
-        mini_sep1.setStyleSheet("color: rgba(255, 255, 255, 0.2); font-size: 8px;")
+        self.mini_sep1 = QLabel("|", self.mini_container)
 
         self.mini_nvidia_icon = QLabel(self.mini_container)
-        self.mini_nvidia_icon.setPixmap(get_nvidia_pixmap(11))
         self.mini_nvidia_icon.setToolTip("GPU 显存占用 (7号 L40S x3 · 8号 A100 x2)")
 
         # 5 GPU card labels (7号: 0, 1, 2; 8号: 0, 1) interleaved with '·'
@@ -328,50 +326,38 @@ class FloatingWidget(QWidget):
             self.mini_gpu_0, self.mini_gpu_1, self.mini_gpu_2,
             self.mini_gpu_3, self.mini_gpu_4
         ]
-        for lbl in self.mini_gpu_labels:
-            lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
 
-        row1_layout.addWidget(self.mini_bt_lbl)
-        row1_layout.addWidget(mini_sep1)
-        row1_layout.addWidget(self.mini_nvidia_icon)
+        self.row1_layout.addWidget(self.mini_bt_lbl)
+        self.row1_layout.addWidget(self.mini_sep1)
+        self.row1_layout.addWidget(self.mini_nvidia_icon)
 
         self.mini_gpu_dots = []
         for i, lbl in enumerate(self.mini_gpu_labels):
             if i > 0:
                 dot = QLabel("·", self.mini_container)
-                dot.setStyleSheet("font-size: 10px; font-weight: 700; color: rgba(255, 255, 255, 0.35);")
                 self.mini_gpu_dots.append(dot)
-                row1_layout.addWidget(dot)
-            row1_layout.addWidget(lbl)
+                self.row1_layout.addWidget(dot)
+            self.row1_layout.addWidget(lbl)
 
-        row1_layout.addStretch()
-        self.mini_vbox.addLayout(row1_layout)
+        self.row1_layout.addStretch()
+        self.mini_vbox.addLayout(self.row1_layout)
 
         # === Row 2 (Bottom): 2 OpenAI Quotas + Spinner + 3 CPUs ===
-        row2_layout = QHBoxLayout()
-        row2_layout.setContentsMargins(0, 0, 0, 0)
-        row2_layout.setSpacing(2)
+        self.row2_layout = QHBoxLayout()
+        self.row2_layout.setContentsMargins(0, 0, 0, 0)
+        self.row2_layout.setSpacing(max(1, int(round(2 * self.widget_scale))))
 
         self.mini_openai_icon = QLabel(self.mini_container)
-        self.mini_openai_icon.setPixmap(get_openai_pixmap(11))
         self.mini_openai_icon.setToolTip("ChatGPT / Codex 剩余限额")
 
         self.mini_cdx_5h = QLabel("--", self.mini_container)
-        self.mini_cdx_5h.setStyleSheet("font-size: 10px; font-weight: 700; color: #10B981;")
-
         self.mini_cdx_dot = QLabel("·", self.mini_container)
-        self.mini_cdx_dot.setStyleSheet("font-size: 10px; font-weight: 700; color: rgba(255, 255, 255, 0.35);")
-
         self.mini_cdx_wk = QLabel("--", self.mini_container)
-        self.mini_cdx_wk.setStyleSheet("font-size: 10px; font-weight: 700; color: #10B981;")
+        self.mini_status_light = CodexStatusLight(self.mini_container, size=max(6, int(round(9 * self.widget_scale))))
 
-        self.mini_status_light = CodexStatusLight(self.mini_container, size=9)
-
-        mini_sep2 = QLabel("|", self.mini_container)
-        mini_sep2.setStyleSheet("color: rgba(255, 255, 255, 0.2); font-size: 8px;")
+        self.mini_sep2 = QLabel("|", self.mini_container)
 
         self.mini_cpu_icon = QLabel(self.mini_container)
-        self.mini_cpu_icon.setPixmap(get_cpu_pixmap(11))
         self.mini_cpu_icon.setToolTip("服务器 CPU 利用率 (quad / e5 / 8375c)")
 
         self.mini_srv_quad = QLabel("--", self.mini_container)
@@ -383,36 +369,33 @@ class FloatingWidget(QWidget):
             "e5": self.mini_srv_e5,
             "8375c": self.mini_srv_8375c,
         }
-        for lbl in self.mini_srv_labels.values():
-            lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
 
-        row2_layout.addWidget(self.mini_openai_icon)
-        row2_layout.addWidget(self.mini_cdx_5h)
-        row2_layout.addWidget(self.mini_cdx_dot)
-        row2_layout.addWidget(self.mini_cdx_wk)
-        row2_layout.addWidget(self.mini_status_light)
-        row2_layout.addWidget(mini_sep2)
-        row2_layout.addWidget(self.mini_cpu_icon)
+        self.row2_layout.addWidget(self.mini_openai_icon)
+        self.row2_layout.addWidget(self.mini_cdx_5h)
+        self.row2_layout.addWidget(self.mini_cdx_dot)
+        self.row2_layout.addWidget(self.mini_cdx_wk)
+        self.row2_layout.addWidget(self.mini_status_light)
+        self.row2_layout.addWidget(self.mini_sep2)
+        self.row2_layout.addWidget(self.mini_cpu_icon)
 
         self.mini_srv_dots = []
         srv_keys = ["quad", "e5", "8375c"]
         for i, sid in enumerate(srv_keys):
             if i > 0:
                 dot = QLabel("·", self.mini_container)
-                dot.setStyleSheet("font-size: 10px; font-weight: 700; color: rgba(255, 255, 255, 0.35);")
                 self.mini_srv_dots.append(dot)
-                row2_layout.addWidget(dot)
-            row2_layout.addWidget(self.mini_srv_labels[sid])
+                self.row2_layout.addWidget(dot)
+            self.row2_layout.addWidget(self.mini_srv_labels[sid])
 
-        row2_layout.addStretch()
-        self.mini_vbox.addLayout(row2_layout)
+        self.row2_layout.addStretch()
+        self.mini_vbox.addLayout(self.row2_layout)
 
         # Ensure clicks anywhere on labels or status light trigger container expand
         all_mini_widgets = [
-            self.mini_bt_lbl, mini_sep1, self.mini_nvidia_icon,
+            self.mini_bt_lbl, self.mini_sep1, self.mini_nvidia_icon,
             *self.mini_gpu_labels, *self.mini_gpu_dots,
             self.mini_openai_icon, self.mini_cdx_5h, self.mini_cdx_dot, self.mini_cdx_wk,
-            self.mini_status_light, mini_sep2, self.mini_cpu_icon,
+            self.mini_status_light, self.mini_sep2, self.mini_cpu_icon,
             *self.mini_srv_labels.values(), *self.mini_srv_dots
         ]
         for w in all_mini_widgets:
@@ -424,8 +407,60 @@ class FloatingWidget(QWidget):
         
         self.root_layout.addWidget(self.mini_container)
         
+        # Apply scaled styling to mini labels & icons
+        self.update_mini_scale_styling()
+        
         # Apply initial mode display
         self.update_mode_visibility()
+
+    def get_mini_font_size(self, base_px: int = 10) -> int:
+        """Calculate scaled font size for mini capsule items."""
+        return max(7, int(round(base_px * self.widget_scale + 1e-5)))
+
+    def update_mini_scale_styling(self):
+        """Update fonts, icon sizes, and layout paddings for mini capsule based on scale."""
+        if not hasattr(self, "mini_container"):
+            return
+
+        # 1. Margins and Spacing
+        pad_x = max(3, int(round(6 * self.widget_scale)))
+        pad_y = max(1, int(round(2 * self.widget_scale)))
+        self.mini_vbox.setContentsMargins(pad_x, pad_y, pad_x, pad_y)
+        self.mini_vbox.setSpacing(max(1, int(round(1 * self.widget_scale))))
+        
+        spacing = max(1, int(round(2 * self.widget_scale)))
+        self.row1_layout.setSpacing(spacing)
+        self.row2_layout.setSpacing(spacing)
+
+        # 2. Icon sizes
+        icon_sz = max(9, int(round(12 * self.widget_scale)))
+        self.mini_nvidia_icon.setPixmap(get_nvidia_pixmap(icon_sz))
+        self.mini_openai_icon.setPixmap(get_openai_pixmap(icon_sz))
+        self.mini_cpu_icon.setPixmap(get_cpu_pixmap(icon_sz))
+
+        # 3. Separators & Dots
+        sep_fs = self.get_mini_font_size(9)
+        dot_fs = self.get_mini_font_size(9)
+        sep_style = f"font-size: {sep_fs}px; color: #4B5563; font-weight: 400;"
+        dot_style = f"font-size: {dot_fs}px; color: #6B7280; font-weight: 400;"
+
+        self.mini_sep1.setStyleSheet(sep_style)
+        self.mini_sep2.setStyleSheet(sep_style)
+        self.mini_cdx_dot.setStyleSheet(dot_style)
+        for dot in self.mini_gpu_dots:
+            dot.setStyleSheet(dot_style)
+        for dot in self.mini_srv_dots:
+            dot.setStyleSheet(dot_style)
+
+        # 4. Status Light Size
+        st_sz = max(6, int(round(9 * self.widget_scale)))
+        self.mini_status_light.set_size(st_sz)
+
+        # 5. Re-render labels with new scaled font sizes
+        self._render_mini_bluetooth()
+        self.update_mini_quota_display()
+        self._render_mini_server_cpu()
+        self._render_mini_gpu()
 
     def expand_to_full(self):
         """Expand to full detailed card."""
@@ -460,12 +495,12 @@ class FloatingWidget(QWidget):
 
     def update_mode_visibility(self):
         """Instant toggle between mini and expanded views with zero lag."""
-        base_w = int(1055 * self.widget_scale)
+        base_w = int(round(1055 * self.widget_scale))
         if self.is_mini:
             self.root_layout.setContentsMargins(2, 2, 2, 2)
             self.expanded_container.hide()
             self.mini_container.show()
-            self.setFixedSize(int(210 * self.widget_scale), int(48 * self.widget_scale))
+            self.setFixedSize(int(round(210 * self.widget_scale)), int(round(48 * self.widget_scale)))
         else:
             self.root_layout.setContentsMargins(6, 6, 6, 6)
             self.mini_container.hide()
@@ -476,9 +511,42 @@ class FloatingWidget(QWidget):
             self.adjustSize()
 
     def set_scale(self, scale_val: float):
-        """Set UI size scale."""
-        self.widget_scale = scale_val
-        self.cfg.set("scale", scale_val)
+        """Set UI size scale and dynamically recompute all fonts, margins, and subviews."""
+        self.widget_scale = float(scale_val)
+        self.cfg.set("scale", self.widget_scale)
+        
+        # 1. Update window-level QSS stylesheet (dynamically scales all standard fonts)
+        self.setStyleSheet(get_main_stylesheet(self.widget_scale))
+        
+        # 2. Update title bar buttons and icon
+        title_fs = max(8, int(round(11 * self.widget_scale)))
+        self.title_icon.setStyleSheet(f"font-size: {title_fs}px;")
+        btn_sz = max(14, int(round(18 * self.widget_scale)))
+        self.btn_mini_toggle.setFixedSize(btn_sz, btn_sz)
+        self.btn_settings.setFixedSize(btn_sz, btn_sz)
+        
+        # 3. Update column fixed widths
+        if hasattr(self, "left_col"):
+            self.left_col.setFixedWidth(int(round(210 * self.widget_scale)))
+        if hasattr(self, "mid_col"):
+            self.mid_col.setFixedWidth(int(round(485 * self.widget_scale)))
+        if hasattr(self, "right_col"):
+            self.right_col.setFixedWidth(int(round(295 * self.widget_scale)))
+            
+        # 4. Notify subviews to update their custom internal fonts and item heights
+        if hasattr(self, "battery_view") and hasattr(self.battery_view, "set_scale"):
+            self.battery_view.set_scale(self.widget_scale)
+        if hasattr(self, "codex_view") and hasattr(self.codex_view, "set_scale"):
+            self.codex_view.set_scale(self.widget_scale)
+        if hasattr(self, "relay_view") and hasattr(self.relay_view, "set_scale"):
+            self.relay_view.set_scale(self.widget_scale)
+        if hasattr(self, "gpu_view") and hasattr(self.gpu_view, "set_scale"):
+            self.gpu_view.set_scale(self.widget_scale)
+            
+        # 5. Update mini capsule fonts, icon pixmaps, and spacings
+        self.update_mini_scale_styling()
+        
+        # 6. Re-apply mode visibility and geometry
         self.update_mode_visibility()
 
     def apply_theme_and_opacity(self):
@@ -556,7 +624,14 @@ class FloatingWidget(QWidget):
         """Receive devices from background worker without blocking UI."""
         self._current_devices = devices
         self.battery_view.update_devices(devices)
-        
+        self._render_mini_bluetooth()
+        if not self.is_mini:
+            self.adjustSize()
+
+    def _render_mini_bluetooth(self):
+        """Render Bluetooth device battery in mini capsule."""
+        devices = getattr(self, "_current_devices", [])
+        fs = self.get_mini_font_size(10)
         if devices:
             # Priority 1: Vibe Coding with DJI Mic Mini / DJI Mic (always pinned to front)
             dji_dev = next((d for d in devices if "dji" in d.get("name", "").lower()), None)
@@ -573,15 +648,12 @@ class FloatingWidget(QWidget):
             color = target_dev.get("status_color", "#10B981")
             
             self.mini_bt_lbl.setText(f"{icon} {bat}")
-            self.mini_bt_lbl.setStyleSheet(f"font-size: 10px; font-weight: 700; color: {color};")
+            self.mini_bt_lbl.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: {color};")
             self.mini_bt_lbl.setToolTip(f"显示外设: {target_dev.get('name')} ({bat}%)\n(共 {len(devices)} 台设备在线)")
         else:
             self.mini_bt_lbl.setText("📶 --")
-            self.mini_bt_lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #9CA3AF;")
+            self.mini_bt_lbl.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: #9CA3AF;")
             self.mini_bt_lbl.setToolTip("无在线蓝牙设备")
-            
-        if not self.is_mini:
-            self.adjustSize()
 
     def fetch_codex_async(self, force: bool = False):
         """Run async thread for ChatGPT/Codex quota lookup."""
@@ -668,9 +740,10 @@ class FloatingWidget(QWidget):
     def update_mini_quota_display(self):
         """Render mini quota with concise 5H · Week format and dynamic health colors."""
         data = self._current_codex_data
+        fs = self.get_mini_font_size(10)
         if not data or not data.get("success"):
             self.mini_cdx_5h.setText("--")
-            self.mini_cdx_5h.setStyleSheet("font-size: 10px; font-weight: 700; color: #EF4444;")
+            self.mini_cdx_5h.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: #EF4444;")
             self.mini_cdx_dot.hide()
             self.mini_cdx_wk.hide()
             self.mini_cdx_5h.setToolTip("ChatGPT 状态: 获取失败")
@@ -688,27 +761,27 @@ class FloatingWidget(QWidget):
         
         if five_h and weekly:
             self.mini_cdx_5h.setText(str(fh_rem))
-            self.mini_cdx_5h.setStyleSheet(f"font-size: 10px; font-weight: 700; color: {col_5h};")
+            self.mini_cdx_5h.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: {col_5h};")
             self.mini_cdx_5h.show()
             self.mini_cdx_dot.show()
             self.mini_cdx_wk.setText(str(wk_rem))
-            self.mini_cdx_wk.setStyleSheet(f"font-size: 10px; font-weight: 700; color: {col_wk};")
+            self.mini_cdx_wk.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: {col_wk};")
             self.mini_cdx_wk.show()
         elif weekly:
             self.mini_cdx_5h.setText(str(wk_rem))
-            self.mini_cdx_5h.setStyleSheet(f"font-size: 10px; font-weight: 700; color: {col_wk};")
+            self.mini_cdx_5h.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: {col_wk};")
             self.mini_cdx_5h.show()
             self.mini_cdx_dot.hide()
             self.mini_cdx_wk.hide()
         elif five_h:
             self.mini_cdx_5h.setText(str(fh_rem))
-            self.mini_cdx_5h.setStyleSheet(f"font-size: 10px; font-weight: 700; color: {col_5h};")
+            self.mini_cdx_5h.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: {col_5h};")
             self.mini_cdx_5h.show()
             self.mini_cdx_dot.hide()
             self.mini_cdx_wk.hide()
         else:
             self.mini_cdx_5h.setText("OK")
-            self.mini_cdx_5h.setStyleSheet("font-size: 10px; font-weight: 700; color: #10B981;")
+            self.mini_cdx_5h.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: #10B981;")
             self.mini_cdx_dot.hide()
             self.mini_cdx_wk.hide()
 
@@ -724,6 +797,13 @@ class FloatingWidget(QWidget):
 
     def on_server_cpu_updated(self, data: Dict[str, float]):
         """Update mini capsule with 3 server CPU utilization values (quad, e5, 8375c)."""
+        self._current_server_cpu = data
+        self._render_mini_server_cpu()
+
+    def _render_mini_server_cpu(self):
+        """Render server CPU values in mini capsule."""
+        data = getattr(self, "_current_server_cpu", {})
+        fs = self.get_mini_font_size(10)
         tip_parts = []
         for sid in ["quad", "e5", "8375c"]:
             val = data.get(sid, -1.0)
@@ -732,13 +812,13 @@ class FloatingWidget(QWidget):
                 continue
             if val < 0:
                 lbl.setText("--")
-                lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
+                lbl.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: #64748B;")
                 tip_parts.append(f"{sid}: 离线")
             else:
                 num_str = f"{int(round(val))}"
                 color = get_hex_for_cpu(val)
                 lbl.setText(num_str)
-                lbl.setStyleSheet(f"font-size: 10px; font-weight: 700; color: {color};")
+                lbl.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: {color};")
                 tip_parts.append(f"{sid}: {val:.1f}%")
 
         tooltip = "服务器CPU利用率 (quad / e5 / 8375c)\n" + " | ".join(tip_parts)
@@ -748,10 +828,19 @@ class FloatingWidget(QWidget):
 
     def on_gpu_data_updated(self, data: Dict[str, Any]):
         """Render GPU mini stats and refresh expanded view."""
-        if not data.get("success"):
+        self._current_gpu_data = data
+        self._render_mini_gpu()
+        if not self.is_mini:
+            self.adjustSize()
+
+    def _render_mini_gpu(self):
+        """Render GPU card stats in mini capsule."""
+        data = getattr(self, "_current_gpu_data", {})
+        fs = self.get_mini_font_size(10)
+        if not data or not data.get("success"):
             for lbl in self.mini_gpu_labels:
                 lbl.setText("--")
-                lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
+                lbl.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: #64748B;")
                 lbl.setToolTip("GPU: 离线")
             self.mini_nvidia_icon.setToolTip("GPU 服务器: 离线")
             return
@@ -763,11 +852,11 @@ class FloatingWidget(QWidget):
                 val = c.get("val", 0)
                 num_str = f"{int(round(val))}"
                 lbl.setText(num_str)
-                lbl.setStyleSheet(f"font-size: 10px; font-weight: 700; color: {c.get('color', '#64748B')};")
+                lbl.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: {c.get('color', '#64748B')};")
                 lbl.setToolTip(c.get("tooltip", ""))
             else:
                 lbl.setText("--")
-                lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #64748B;")
+                lbl.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: #64748B;")
                 lbl.setToolTip("GPU: 无数据")
 
         tt = data.get("five_cards_tt", "GPU 显存占用 (7号 L40S x3 · 8号 A100 x2)")
@@ -834,7 +923,7 @@ class FloatingWidget(QWidget):
     def contextMenuEvent(self, event):
         """Show modern dark right-click menu."""
         menu = QMenu(self)
-        menu.setStyleSheet(MAIN_STYLESHEET)
+        menu.setStyleSheet(get_main_stylesheet(self.widget_scale))
         
         act_mode = menu.addAction("💊 切换为迷你胶囊" if not self.is_mini else "📖 展开详细面板")
         act_mode.triggered.connect(self.toggle_mode)
@@ -843,10 +932,17 @@ class FloatingWidget(QWidget):
         
         # Size Scaling Submenu
         size_menu = menu.addMenu("📏 窗口缩放尺寸")
-        for label, scale_v in [("紧凑 (85%)", 0.85), ("标准 (100%)", 1.0), ("放大 (115%)", 1.15)]:
+        scale_options = [
+            ("极小 (80%)", 0.80),
+            ("紧凑 (85%)", 0.85),
+            ("小 (90%)", 0.90),
+            ("标准 (100%)", 1.00),
+            ("放大 (115%)", 1.15),
+        ]
+        for label, scale_v in scale_options:
             act_s = size_menu.addAction(label)
             act_s.setCheckable(True)
-            act_s.setChecked(abs(self.widget_scale - scale_v) < 0.05)
+            act_s.setChecked(abs(self.widget_scale - scale_v) < 0.03)
             act_s.triggered.connect(lambda checked, s=scale_v: self.set_scale(s))
         
         menu.addSeparator()
@@ -904,6 +1000,10 @@ class FloatingWidget(QWidget):
 
     def on_settings_applied(self):
         """Reload timers and styles after settings saved."""
+        new_scale = float(self.cfg.get("scale", 1.0))
+        if abs(new_scale - self.widget_scale) > 0.001:
+            self.set_scale(new_scale)
+
         self.apply_theme_and_opacity()
         
         bt_sec = max(3, int(self.cfg.get("bt_interval_sec", 10)))

@@ -21,7 +21,14 @@ class QuotaSparklineWidget(QWidget):
         self.setFixedHeight(64)
         self.setMinimumWidth(180)
         self.analysis_data: Dict[str, Any] = {}
+        self.scale: float = 1.0
         self.setAttribute(Qt.WA_Hover, True)
+
+    def set_scale(self, scale: float):
+        """Update scale and repaint sparkline."""
+        self.scale = max(0.5, float(scale))
+        self.setFixedHeight(max(40, int(round(64 * self.scale))))
+        self.update()
 
     def set_analysis_data(self, data: Dict[str, Any]):
         """Update chart data and trigger repaint."""
@@ -127,7 +134,7 @@ class QuotaSparklineWidget(QWidget):
                 painter.drawEllipse(last_pt, 2.2, 2.2)
 
         # 7. Bottom Day Ticks (1d, 2d, 3d, 4d, 5d, 6d, 7d)
-        font = QFont("Segoe UI", 7)
+        font = QFont("Segoe UI", max(5, int(round(7 * self.scale))))
         painter.setFont(font)
         painter.setPen(QColor(156, 163, 175, 160))
         

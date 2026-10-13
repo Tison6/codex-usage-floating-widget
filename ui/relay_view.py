@@ -276,12 +276,31 @@ class RelayStationView(QWidget):
     refresh_requested = pyqtSignal()
     aihub_mode_toggled = pyqtSignal(bool)  # emits new auto_mode boolean (True=auto, False=manual)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, scale: float = 1.0):
         super().__init__(parent)
+        self.scale = max(0.5, float(scale))
         self.current_tab = 0
         self._square_data: Dict[str, Any] = {}
         self._aihub_data: Dict[str, Any] = {}
         self.init_ui()
+
+    def set_scale(self, scale: float):
+        """Update scale and re-render header and tables."""
+        self.scale = max(0.5, float(scale))
+        self._apply_header_styles()
+        if self._square_data:
+            self.update_square_data(self._square_data)
+        if self._aihub_data:
+            self.update_aihub_data(self._aihub_data)
+
+    def _apply_header_styles(self):
+        title_fs = max(7, int(round(10 * self.scale)))
+        self.title_lbl.setStyleSheet(f"font-size: {title_fs}px; font-weight: 700; color: #E2E8F0;")
+        tab_h = max(16, int(round(20 * self.scale)))
+        self.btn_square.setFixedHeight(tab_h)
+        self.btn_aihub.setFixedHeight(tab_h)
+        btn_sz = max(16, int(round(20 * self.scale)))
+        self.btn_refresh.setFixedSize(btn_sz, btn_sz)
 
     def init_ui(self):
         main_layout = QVBoxLayout(self)
@@ -299,24 +318,27 @@ class RelayStationView(QWidget):
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
 
+        title_fs = max(7, int(round(10 * self.scale)))
         self.title_lbl = QLabel("中转站")
-        self.title_lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #E2E8F0;")
+        self.title_lbl.setStyleSheet(f"font-size: {title_fs}px; font-weight: 700; color: #E2E8F0;")
 
+        tab_h = max(16, int(round(20 * self.scale)))
         # Tab Buttons
         self.btn_square = QPushButton("Square")
         self.btn_square.setCheckable(True)
         self.btn_square.setChecked(True)
         self.btn_square.setCursor(Qt.PointingHandCursor)
-        self.btn_square.setFixedHeight(20)
+        self.btn_square.setFixedHeight(tab_h)
 
         self.btn_aihub = QPushButton("AIHub")
         self.btn_aihub.setCheckable(True)
         self.btn_aihub.setChecked(False)
         self.btn_aihub.setCursor(Qt.PointingHandCursor)
-        self.btn_aihub.setFixedHeight(20)
+        self.btn_aihub.setFixedHeight(tab_h)
 
+        btn_sz = max(16, int(round(20 * self.scale)))
         self.btn_refresh = QPushButton("🔄")
-        self.btn_refresh.setFixedSize(20, 20)
+        self.btn_refresh.setFixedSize(btn_sz, btn_sz)
         self.btn_refresh.setCursor(Qt.PointingHandCursor)
         self.btn_refresh.setToolTip("刷新中转站数据")
         self.btn_refresh.setStyleSheet("""
@@ -558,19 +580,23 @@ class RelayStationView(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
+        hdr_fs = max(6, int(round(8 * self.scale)))
+        row_title_fs = max(7, int(round(9 * self.scale)))
+        row_sub_fs = max(6, int(round(8 * self.scale)))
+
         # Header Titles: 分组 / 关注模型, 倍率, 输出/M, 速度, 首字, 延迟, 成功率
         h_titles = ["分组 / 关注模型", "倍率", "输出/M", "速度", "首字", "延迟", "成功率"]
         h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignCenter, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight]
         for col_idx, (title, align) in enumerate(zip(h_titles, h_aligns)):
             h_lbl = QLabel(title)
             h_lbl.setAlignment(align | Qt.AlignVCenter)
-            h_lbl.setStyleSheet("font-size: 8px; font-weight: 700; color: #64748B;")
+            h_lbl.setStyleSheet(f"font-size: {hdr_fs}px; font-weight: 700; color: #64748B;")
             self.sq_grid.addWidget(h_lbl, 0, col_idx)
 
         monitored_rows = data.get("monitored_rows", [])
         if not monitored_rows:
             empty_lbl = QLabel("暂无勾选的分组，请点击右上角 [⚙️ 勾选监控] 选择")
-            empty_lbl.setStyleSheet("font-size: 9px; color: #94A3B8; padding: 10px;")
+            empty_lbl.setStyleSheet(f"font-size: {row_title_fs}px; color: #94A3B8; padding: 10px;")
             self.sq_grid.addWidget(empty_lbl, 1, 0, 1, 7, Qt.AlignCenter)
         else:
             for row_idx, r in enumerate(monitored_rows, start=1):
@@ -585,12 +611,12 @@ class RelayStationView(QWidget):
                 g_lay.setSpacing(1)
 
                 g_lbl = QLabel(short_g)
-                g_lbl.setStyleSheet(f"font-size: 9px; font-weight: 700; color: {color};")
+                g_lbl.setStyleSheet(f"font-size: {row_title_fs}px; font-weight: 700; color: {color};")
                 g_lay.addWidget(g_lbl)
 
                 if focus_m:
                     m_lbl = QLabel(focus_m)
-                    m_lbl.setStyleSheet("font-size: 8px; color: #94A3B8;")
+                    m_lbl.setStyleSheet(f"font-size: {row_sub_fs}px; color: #94A3B8;")
                     g_lay.addWidget(m_lbl)
 
                 # Rich tooltip with group name, monitored models, and calculation breakdown
@@ -610,25 +636,25 @@ class RelayStationView(QWidget):
                 mult_lbl = QLabel(r.get("ratio_str", "--"))
                 mult_lbl.setToolTip(tip_text)
                 mult_lbl.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-                mult_lbl.setStyleSheet("font-size: 8px; font-weight: 600; color: #60A5FA;")
+                mult_lbl.setStyleSheet(f"font-size: {row_sub_fs}px; font-weight: 600; color: #60A5FA;")
 
                 # Output Price per 1M tokens (first tier if tiered)
                 out_price_lbl = QLabel(r.get("output_price", "—"))
                 out_price_lbl.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-                out_price_lbl.setStyleSheet("font-size: 8px; font-weight: 700; color: #F59E0B;")
+                out_price_lbl.setStyleSheet(f"font-size: {row_sub_fs}px; font-weight: 700; color: #F59E0B;")
                 out_price_lbl.setToolTip(r.get("output_price_tip") or "输出 token 价格")
 
                 tps_lbl = QLabel(r.get("tps", "--"))
                 tps_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                tps_lbl.setStyleSheet("font-size: 8px; color: #CBD5E1;")
+                tps_lbl.setStyleSheet(f"font-size: {row_sub_fs}px; color: #CBD5E1;")
 
                 ttft_lbl = QLabel(r.get("ttft", "--"))
                 ttft_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                ttft_lbl.setStyleSheet("font-size: 8px; color: #94A3B8;")
+                ttft_lbl.setStyleSheet(f"font-size: {row_sub_fs}px; color: #94A3B8;")
 
                 lat_lbl = QLabel(r.get("latency", "--"))
                 lat_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                lat_lbl.setStyleSheet("font-size: 8px; color: #94A3B8;")
+                lat_lbl.setStyleSheet(f"font-size: {row_sub_fs}px; color: #94A3B8;")
 
                 # Sparkline bar chart with live time-series
                 bar_cnt = r.get("bar_count", 16)
@@ -713,13 +739,17 @@ class RelayStationView(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
+        hdr_fs = max(6, int(round(8 * self.scale)))
+        row_title_fs = max(7, int(round(9 * self.scale)))
+        row_sub_fs = max(6, int(round(8 * self.scale)))
+
         # Header: 供应商, 倍率, 真实倍率, 缓存率, 实测图
         h_titles = ["供应商", "倍率", "真实倍率", "缓存率", "实测图"]
         h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignCenter, Qt.AlignRight, Qt.AlignCenter]
         for col_idx, (title, align) in enumerate(zip(h_titles, h_aligns)):
             h_lbl = QLabel(title)
             h_lbl.setAlignment(align | Qt.AlignVCenter)
-            h_lbl.setStyleSheet("font-size: 8px; font-weight: 700; color: #64748B;")
+            h_lbl.setStyleSheet(f"font-size: {hdr_fs}px; font-weight: 700; color: #64748B;")
             self.aihub_grid.addWidget(h_lbl, 0, col_idx)
 
         # Set column proportions for spacious thumbnail view
@@ -731,7 +761,7 @@ class RelayStationView(QWidget):
 
         if not monitored:
             empty_lbl = QLabel("暂无勾选的供应商，请点击右上角 [⚙️ 勾选监控] 选择")
-            empty_lbl.setStyleSheet("font-size: 9px; color: #94A3B8; padding: 10px;")
+            empty_lbl.setStyleSheet(f"font-size: {row_title_fs}px; color: #94A3B8; padding: 10px;")
             self.aihub_grid.addWidget(empty_lbl, 1, 0, 1, 5, Qt.AlignCenter)
         else:
             for row_idx, g in enumerate(monitored, start=1):
@@ -748,22 +778,22 @@ class RelayStationView(QWidget):
                     f"实测成功率: {g.get('success_rate_str', '100.0%')}"
                 )
                 c_name.setToolTip(tip_text)
-                c_name.setStyleSheet("font-size: 9px; font-weight: 600; color: #CBD5E1;")
+                c_name.setStyleSheet(f"font-size: {row_title_fs}px; font-weight: 600; color: #CBD5E1;")
 
                 c_nom = QLabel(nom_mult_str)
                 c_nom.setToolTip(tip_text)
                 c_nom.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-                c_nom.setStyleSheet("font-size: 9px; font-weight: 600; color: #60A5FA;")
+                c_nom.setStyleSheet(f"font-size: {row_title_fs}px; font-weight: 600; color: #60A5FA;")
 
                 c_mult = QLabel(eff_mult_str)
                 c_mult.setToolTip(tip_text)
                 c_mult.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-                c_mult.setStyleSheet("font-size: 9px; font-weight: 700; color: #34D399;")
+                c_mult.setStyleSheet(f"font-size: {row_title_fs}px; font-weight: 700; color: #34D399;")
 
                 c_hit = QLabel(g.get("cache_hit_rate", "-"))
                 c_hit.setToolTip(tip_text)
                 c_hit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                c_hit.setStyleSheet("font-size: 9px; color: #94A3B8;")
+                c_hit.setStyleSheet(f"font-size: {row_title_fs}px; color: #94A3B8;")
 
                 # Prominent 88x42 clickable thumbnail
                 thumb = ClickableThumbnail(g, self.aihub_scroll_content)

@@ -26,6 +26,12 @@ class CodexStatusLight(QWidget):
         self.setToolTip("ChatGPT Codex: 空闲 (就绪)")
         self.setAttribute(Qt.WA_Hover, True)
 
+    def set_size(self, size: int):
+        """Update indicator size dynamically."""
+        self._size = size
+        self.setFixedSize(size, size)
+        self.update()
+
     def set_running_state(self, running: bool):
         """Update state to either Running (orange spinning) or Idle (green dot)."""
         if self._is_running == running:

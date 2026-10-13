@@ -2,6 +2,7 @@
 Compact ChatGPT / Codex View Component with 5H & Weekly Rate Limits, Grid Sparkline & Status Light.
 Only shows remaining percentage, exact minute timestamps (MM-DD HH:MM),
 uniform subtext font size, and dynamic status light.
+Supports dynamic proportional font and dimension scaling.
 """
 
 from typing import Dict, Any, Optional
@@ -21,9 +22,12 @@ class CodexQuotaView(QWidget):
     
     refresh_requested = pyqtSignal()
     
-    def __init__(self, quota_tracker: QuotaTracker, parent=None):
+    def __init__(self, quota_tracker: QuotaTracker, parent=None, scale: float = 1.0):
         super().__init__(parent)
         self.tracker = quota_tracker
+        self.scale = max(0.5, float(scale))
+        self._last_data: Dict[str, Any] = {}
+        
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(4)
@@ -33,8 +37,9 @@ class CodexQuotaView(QWidget):
         self.header_layout.setContentsMargins(2, 0, 2, 0)
         self.header_layout.setSpacing(5)
         
+        logo_sz = max(9, int(round(13 * self.scale)))
         self.logo_lbl = QLabel(self)
-        self.logo_lbl.setPixmap(get_openai_pixmap(13))
+        self.logo_lbl.setPixmap(get_openai_pixmap(logo_sz))
         
         self.title_lbl = QLabel("ChatGPT", self)
         self.title_lbl.setProperty("class", "SectionHeader")
@@ -42,11 +47,12 @@ class CodexQuotaView(QWidget):
         self.plan_badge = QLabel("PLUS", self)
         self.plan_badge.setProperty("class", "BadgePlan")
         
-        self.status_light = CodexStatusLight(self, size=13)
+        self.status_light = CodexStatusLight(self, size=logo_sz)
         
+        btn_sz = max(14, int(round(18 * self.scale)))
         self.refresh_btn = QPushButton("🔄", self)
         self.refresh_btn.setProperty("class", "IconButton")
-        self.refresh_btn.setFixedSize(18, 18)
+        self.refresh_btn.setFixedSize(btn_sz, btn_sz)
         self.refresh_btn.setToolTip("点击立即刷新 ChatGPT 用量")
         self.refresh_btn.clicked.connect(self.refresh_requested.emit)
         
@@ -72,23 +78,27 @@ class CodexQuotaView(QWidget):
         fh_layout.setContentsMargins(0, 0, 0, 2)
         fh_layout.setSpacing(2)
         
+        hdr_fs = max(7, int(round(10 * self.scale)))
+        sub_fs = max(6, int(round(9 * self.scale)))
+        
         fh_top = QHBoxLayout()
         self.fh_title_lbl = QLabel("5H", self.five_hour_container)
-        self.fh_title_lbl.setStyleSheet("font-size: 10px; font-weight: 600; color: #E5E7EB;")
+        self.fh_title_lbl.setStyleSheet(f"font-size: {hdr_fs}px; font-weight: 600; color: #E5E7EB;")
         self.fh_stat_lbl = QLabel("剩 100%", self.five_hour_container)
-        self.fh_stat_lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #10B981; font-family: 'Consolas', monospace;")
+        self.fh_stat_lbl.setStyleSheet(f"font-size: {hdr_fs}px; font-weight: 700; color: #10B981; font-family: 'Consolas', monospace;")
         fh_top.addWidget(self.fh_title_lbl)
         fh_top.addStretch()
         fh_top.addWidget(self.fh_stat_lbl)
         
+        pbar_h = max(3, int(round(4 * self.scale)))
         self.fh_pbar = QProgressBar(self.five_hour_container)
-        self.fh_pbar.setFixedHeight(4)
+        self.fh_pbar.setFixedHeight(pbar_h)
         self.fh_pbar.setTextVisible(False)
         self.fh_pbar.setRange(0, 100)
         self.fh_pbar.setValue(0)
         
         self.fh_reset_lbl = QLabel("倒计时: --", self.five_hour_container)
-        self.fh_reset_lbl.setStyleSheet("font-size: 9px; color: #9CA3AF; font-weight: 400;")
+        self.fh_reset_lbl.setStyleSheet(f"font-size: {sub_fs}px; color: #9CA3AF; font-weight: 400;")
         
         fh_layout.addLayout(fh_top)
         fh_layout.addWidget(self.fh_pbar)
@@ -104,10 +114,10 @@ class CodexQuotaView(QWidget):
         
         stat_top = QHBoxLayout()
         self.stat_title_lbl = QLabel("周限额", self.weekly_container)
-        self.stat_title_lbl.setStyleSheet("font-size: 10px; font-weight: 600; color: #E5E7EB;")
+        self.stat_title_lbl.setStyleSheet(f"font-size: {hdr_fs}px; font-weight: 600; color: #E5E7EB;")
         
         self.stat_num_lbl = QLabel("剩 56%", self.weekly_container)
-        self.stat_num_lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #60A5FA; font-family: 'Consolas', monospace;")
+        self.stat_num_lbl.setStyleSheet(f"font-size: {hdr_fs}px; font-weight: 700; color: #60A5FA; font-family: 'Consolas', monospace;")
         
         stat_top.addWidget(self.stat_title_lbl)
         stat_top.addStretch()
@@ -116,7 +126,7 @@ class CodexQuotaView(QWidget):
         
         # Progress Bar
         self.pbar = QProgressBar(self.weekly_container)
-        self.pbar.setFixedHeight(4)
+        self.pbar.setFixedHeight(pbar_h)
         self.pbar.setTextVisible(False)
         self.pbar.setRange(0, 100)
         self.pbar.setValue(44)
@@ -124,18 +134,20 @@ class CodexQuotaView(QWidget):
         
         # 7-Day Sparkline Curve with Grid
         self.sparkline = QuotaSparklineWidget(self.weekly_container)
-        self.sparkline.setFixedHeight(56)
+        self.sparkline.set_scale(self.scale)
+        self.sparkline.setFixedHeight(max(40, int(round(56 * self.scale))))
         wk_layout.addWidget(self.sparkline)
         
         # Reset Countdown (Upper Line) & Exhaustion (Lower Line, Bold)
+        lbl_h = max(11, int(round(14 * self.scale)))
         self.reset_lbl = QLabel("倒计时: --", self.weekly_container)
-        self.reset_lbl.setStyleSheet("font-size: 9px; color: #9CA3AF; font-weight: 400;")
-        self.reset_lbl.setFixedHeight(14)
+        self.reset_lbl.setStyleSheet(f"font-size: {sub_fs}px; color: #9CA3AF; font-weight: 400;")
+        self.reset_lbl.setFixedHeight(lbl_h)
         wk_layout.addWidget(self.reset_lbl)
         
         self.exhaust_lbl = QLabel("预计分析中...", self.weekly_container)
-        self.exhaust_lbl.setStyleSheet("font-size: 9px; color: #F3F4F6; font-weight: 700;")
-        self.exhaust_lbl.setFixedHeight(14)
+        self.exhaust_lbl.setStyleSheet(f"font-size: {sub_fs}px; color: #F3F4F6; font-weight: 700;")
+        self.exhaust_lbl.setFixedHeight(lbl_h)
         wk_layout.addWidget(self.exhaust_lbl)
         
         self.card_layout.addWidget(self.weekly_container)
@@ -157,18 +169,42 @@ class CodexQuotaView(QWidget):
         
         self.main_layout.addWidget(self.card)
 
+    def set_scale(self, scale: float):
+        """Update scale and refresh typography & component sizing."""
+        self.scale = max(0.5, float(scale))
+        logo_sz = max(9, int(round(13 * self.scale)))
+        self.logo_lbl.setPixmap(get_openai_pixmap(logo_sz))
+        self.status_light.set_size(logo_sz)
+        btn_sz = max(14, int(round(18 * self.scale)))
+        self.refresh_btn.setFixedSize(btn_sz, btn_sz)
+        self.sparkline.set_scale(self.scale)
+        self.sparkline.setFixedHeight(max(40, int(round(56 * self.scale))))
+        lbl_h = max(11, int(round(14 * self.scale)))
+        self.reset_lbl.setFixedHeight(lbl_h)
+        self.exhaust_lbl.setFixedHeight(lbl_h)
+        pbar_h = max(3, int(round(4 * self.scale)))
+        self.fh_pbar.setFixedHeight(pbar_h)
+        self.pbar.setFixedHeight(pbar_h)
+        if self._last_data:
+            self.update_data(self._last_data)
+
     def set_codex_running_state(self, running: bool):
         """Update status light state."""
         self.status_light.set_running_state(running)
 
     def update_data(self, data: Dict[str, Any]):
-        """Update quota numbers with exact minute timestamps and uniform 9px font."""
+        """Update quota numbers with exact minute timestamps and uniform scaled font."""
+        self._last_data = data
+        hdr_fs = max(7, int(round(10 * self.scale)))
+        sub_fs = max(6, int(round(9 * self.scale)))
+
         if not data.get("success"):
             err_msg = str(data.get("error", "获取失败"))
             self.stat_num_lbl.setText("异常")
-            self.stat_num_lbl.setStyleSheet("color: #EF4444; font-size: 10px;")
+            self.stat_num_lbl.setStyleSheet(f"color: #EF4444; font-size: {hdr_fs}px;")
             short_err = "网络连接异常" if "Connection" in err_msg or "HTTPS" in err_msg else (err_msg[:20] + "..." if len(err_msg) > 20 else err_msg)
             self.exhaust_lbl.setText(f"提示: {short_err}")
+            self.exhaust_lbl.setStyleSheet(f"font-size: {sub_fs}px; color: #F3F4F6; font-weight: 700;")
             self.exhaust_lbl.setToolTip(f"错误详情: {err_msg}")
             self.pbar.setValue(0)
             self.credits_badge.hide()
@@ -201,8 +237,9 @@ class CodexQuotaView(QWidget):
             elif five_h.get("reset_at_str"):
                 fh_exact_dt = five_h.get("reset_at_str")
             
+            self.fh_title_lbl.setStyleSheet(f"font-size: {hdr_fs}px; font-weight: 600; color: #E5E7EB;")
             self.fh_stat_lbl.setText(f"剩 {fh_remain}%")
-            self.fh_stat_lbl.setStyleSheet(f"font-size: 10px; font-weight: 700; color: {fh_color}; font-family: 'Consolas', monospace;")
+            self.fh_stat_lbl.setStyleSheet(f"font-size: {hdr_fs}px; font-weight: 700; color: {fh_color}; font-family: 'Consolas', monospace;")
             self.fh_pbar.setValue(fh_used)
             self.fh_pbar.setStyleSheet(f"""
                 QProgressBar {{
@@ -218,6 +255,7 @@ class CodexQuotaView(QWidget):
             if fh_exact_dt:
                 fh_str += f" ({fh_exact_dt})"
             self.fh_reset_lbl.setText(fh_str)
+            self.fh_reset_lbl.setStyleSheet(f"font-size: {sub_fs}px; color: #9CA3AF; font-weight: 400;")
         else:
             self.five_hour_container.hide()
         
@@ -232,8 +270,9 @@ class CodexQuotaView(QWidget):
             color = weekly.get("bar_color", "#3B82F6")
             
             self.stat_title_lbl.setText(name)
+            self.stat_title_lbl.setStyleSheet(f"font-size: {hdr_fs}px; font-weight: 600; color: #E5E7EB;")
             self.stat_num_lbl.setText(f"剩 {remain}%")
-            self.stat_num_lbl.setStyleSheet(f"font-size: 10px; font-weight: 700; color: {color}; font-family: 'Consolas', monospace;")
+            self.stat_num_lbl.setStyleSheet(f"font-size: {hdr_fs}px; font-weight: 700; color: {color}; font-family: 'Consolas', monospace;")
             
             self.pbar.setValue(used)
             self.pbar.setStyleSheet(f"""
@@ -261,6 +300,7 @@ class CodexQuotaView(QWidget):
             if exact_dt_str:
                 r_str += f" ({exact_dt_str})"
             self.reset_lbl.setText(r_str)
+            self.reset_lbl.setStyleSheet(f"font-size: {sub_fs}px; color: #9CA3AF; font-weight: 400;")
             
             # Compute analytical metrics & burn curve
             analysis = self.tracker.get_analysis_for_current_cycle(weekly)
@@ -268,6 +308,7 @@ class CodexQuotaView(QWidget):
             
             exhaust_text = analysis.get("exhaustion_text", "").replace("⚠️ ", "").replace("✅ ", "").replace("⏳ ", "")
             self.exhaust_lbl.setText(exhaust_text)
+            self.exhaust_lbl.setStyleSheet(f"font-size: {sub_fs}px; color: #F3F4F6; font-weight: 700;")
 
         # Credits
         credits_count = data.get("reset_credits", 0)

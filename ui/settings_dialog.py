@@ -95,9 +95,9 @@ class SettingsDialog(QDialog):
         # Scale
         scale_lay = QHBoxLayout()
         scale_lbl = QLabel("界面尺寸缩放:", grp_app)
-        self.combo_scale = QComboBox(grp_app)
-        self.combo_scale.addItem("超紧凑 (80%)", 0.80)
-        self.combo_scale.addItem("精简 (90%)", 0.90)
+        self.combo_scale.addItem("极小 (80%)", 0.80)
+        self.combo_scale.addItem("紧凑 (85%)", 0.85)
+        self.combo_scale.addItem("小 (90%)", 0.90)
         self.combo_scale.addItem("标准 (100%)", 1.00)
         self.combo_scale.addItem("放大 (115%)", 1.15)
         scale_lay.addWidget(scale_lbl)
@@ -204,12 +204,16 @@ class SettingsDialog(QDialog):
         self.edit_auth_path.setText(self.cfg.get("auth_file_path", "~/.codex/auth.json"))
         
         # Scale
-        current_scale = self.cfg.get("scale", 1.0)
-        idx = self.combo_scale.findData(current_scale)
-        if idx >= 0:
-            self.combo_scale.setCurrentIndex(idx)
-        else:
-            self.combo_scale.setCurrentIndex(2)
+        current_scale = float(self.cfg.get("scale", 1.0))
+        best_idx = 0
+        min_diff = 999.0
+        for i in range(self.combo_scale.count()):
+            val = float(self.combo_scale.itemData(i))
+            diff = abs(val - current_scale)
+            if diff < min_diff:
+                min_diff = diff
+                best_idx = i
+        self.combo_scale.setCurrentIndex(best_idx)
 
     def browse_auth_file(self):
         path, _ = QFileDialog.getOpenFileName(self, "选择 auth.json 凭证文件", os.path.expanduser("~/.codex"), "JSON Files (*.json)")
