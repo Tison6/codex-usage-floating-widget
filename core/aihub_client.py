@@ -102,6 +102,19 @@ class AIHubClient:
         if self.config:
             self.config.set("aihub_selected_providers", providers)
 
+    def get_excluded_providers(self) -> List[str]:
+        """Get list of user-excluded (blacklisted) provider codes."""
+        if self.config:
+            exc = self.config.get("aihub_excluded_providers")
+            if exc and isinstance(exc, list):
+                return exc
+        return []
+
+    def set_excluded_providers(self, providers: List[str]):
+        """Save user-excluded provider codes."""
+        if self.config:
+            self.config.set("aihub_excluded_providers", providers)
+
     def fetch_data(self, force: bool = False, timeout: int = 8) -> Dict[str, Any]:
         """
         Fetch public providers and live usage stats from AIHub.
@@ -138,6 +151,7 @@ class AIHubClient:
             except Exception:
                 pass
 
+        excluded_codes = set(self.get_excluded_providers() or [])
         all_parsed_providers = []
         for it in providers_raw:
             code = it.get("code", "")
@@ -276,6 +290,7 @@ class AIHubClient:
                 "detection_tip": det_tip,
                 "detection_model": md_model,
                 "detection_raw_status": md_status,
+                "is_excluded": code in excluded_codes,
             })
 
         # Sort all providers: available first, then lower rate multiplier ascending
@@ -291,6 +306,7 @@ class AIHubClient:
             matched_providers = [
                 p for p in all_parsed_providers
                 if p["available"]
+                and p["code"] not in excluded_codes
                 and p["success_rate"] >= DEFAULT_FILTER_MIN_SR
                 and p["cache_hit_val"] >= DEFAULT_FILTER_MIN_CACHE
                 and p["effective_multiplier"] <= DEFAULT_FILTER_MAX_EFF
@@ -300,14 +316,14 @@ class AIHubClient:
                 monitored_rows = matched_providers
             else:
                 # Graceful fallback: pick top available providers with high SR
-                monitored_rows = [p for p in all_parsed_providers if p["available"] and p["success_rate"] >= DEFAULT_FILTER_MIN_SR][:5]
+                monitored_rows = [p for p in all_parsed_providers if p["code"] not in excluded_codes and p["available"] and p["success_rate"] >= DEFAULT_FILTER_MIN_SR][:5]
                 if not monitored_rows:
-                    monitored_rows = all_parsed_providers[:5]
+                    monitored_rows = [p for p in all_parsed_providers if p["code"] not in excluded_codes][:5]
         else:
             # Manual mode: use user's checked providers
-            monitored_rows = [p for p in all_parsed_providers if p["code"] in selected_codes]
+            monitored_rows = [p for p in all_parsed_providers if p["code"] in selected_codes and p["code"] not in excluded_codes]
             if not monitored_rows:
-                monitored_rows = all_parsed_providers[:5]
+                monitored_rows = [p for p in all_parsed_providers if p["code"] not in excluded_codes][:5]
 
         result = {
             "success": True,
@@ -316,6 +332,7 @@ class AIHubClient:
             "monitored_providers": monitored_rows,
             "top_groups": monitored_rows,
             "selected_codes": selected_codes,
+            "excluded_codes": list(excluded_codes),
             "updated_at": time.strftime("%H:%M:%S", time.localtime(now)),
         }
 

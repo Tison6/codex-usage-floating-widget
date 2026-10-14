@@ -485,7 +485,9 @@ class AIHubFilterDialog(QDialog):
         super().__init__(parent)
         self.aihub_client = aihub_client
         self.provider_checkboxes: Dict[str, QCheckBox] = {}
+        self.provider_exclude_checkboxes: Dict[str, QCheckBox] = {}
         self.provider_data_map: Dict[str, Dict[str, Any]] = {}
+        self.excluded_providers = set(self.aihub_client.get_excluded_providers() or [])
 
         if not self.aihub_client.cached_data:
             try:
@@ -500,7 +502,7 @@ class AIHubFilterDialog(QDialog):
         self.setWindowTitle("AIHub 供应商监控项筛选")
         self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.resize(610, 530)
+        self.resize(650, 530)
 
     def init_ui(self):
         root = QVBoxLayout(self)
@@ -772,11 +774,14 @@ class AIHubFilterDialog(QDialog):
         h_row.addWidget(h_prov)
         h_row.addStretch()
 
-        for title, w in [("倍率", 40), ("真实倍率", 46), ("缓存率", 44), ("TTFT", 40), ("成功率", 52), ("实测图", 36)]:
+        for title, w in [("倍率", 40), ("真实倍率", 46), ("缓存率", 44), ("TTFT", 40), ("成功率", 52), ("实测图", 36), ("剔除", 36)]:
             lbl = QLabel(title)
             lbl.setFixedWidth(w)
             lbl.setAlignment(Qt.AlignCenter)
             lbl.setStyleSheet("font-size: 9px; font-weight: 700; color: #64748B;")
+            if title == "剔除":
+                lbl.setStyleSheet("font-size: 9px; font-weight: 700; color: #EF4444;")
+                lbl.setToolTip("勾选剔除后，无论在自动模式还是手动模式下，该供应商均被排除不会被监控")
             h_row.addWidget(lbl)
         layout.addLayout(h_row)
 
@@ -820,8 +825,10 @@ class AIHubFilterDialog(QDialog):
             dot = DetectionDot(det_status, tooltip=det_tip, size=9, parent=row)
             r_lay.addWidget(dot)
 
+            is_exc = code in self.excluded_providers
             cb = QCheckBox(code)
-            cb.setChecked(code in cur_selected)
+            cb.setChecked(code in cur_selected and not is_exc)
+            cb.setEnabled(not is_exc)
             cb.setStyleSheet(CHECKBOX_STYLE)
             cb.stateChanged.connect(self.update_count_label)
             self.provider_checkboxes[code] = cb
@@ -909,6 +916,46 @@ class AIHubFilterDialog(QDialog):
             img_lbl.setStyleSheet("font-size: 10px; color: #10B981;" if p.get("has_image") else "font-size: 9px; color: #475569;")
             r_lay.addWidget(img_lbl)
 
+            # Exclude checkbox (剔除)
+            cb_exc = QCheckBox()
+            cb_exc.setFixedWidth(36)
+            cb_exc.setChecked(is_exc)
+            cb_exc.setCursor(Qt.PointingHandCursor)
+            cb_exc.setToolTip(f"剔除 {code}：勾选后在自动和手动模式下均排除")
+            cb_exc.setStyleSheet("""
+                QCheckBox {
+                    padding-left: 10px;
+                }
+                QCheckBox::indicator {
+                    width: 13px;
+                    height: 13px;
+                    border-radius: 3px;
+                    border: 1px solid rgba(239, 68, 68, 0.45);
+                    background: rgba(255, 255, 255, 0.04);
+                }
+                QCheckBox::indicator:hover {
+                    border-color: #EF4444;
+                    background: rgba(239, 68, 68, 0.18);
+                }
+                QCheckBox::indicator:checked {
+                    background-color: #EF4444;
+                    border-color: #EF4444;
+                }
+            """)
+            def _make_exc_handler(c_code=code, m_cb=cb):
+                def _handler(state):
+                    if state == Qt.Checked:
+                        m_cb.setChecked(False)
+                        m_cb.setEnabled(False)
+                    else:
+                        m_cb.setEnabled(True)
+                    self.update_count_label()
+                return _handler
+
+            cb_exc.stateChanged.connect(_make_exc_handler())
+            self.provider_exclude_checkboxes[code] = cb_exc
+            r_lay.addWidget(cb_exc)
+
             c_layout.addWidget(row)
 
         c_layout.addStretch()
@@ -947,12 +994,17 @@ class AIHubFilterDialog(QDialog):
 
     def update_count_label(self):
         checked = sum(1 for cb in self.provider_checkboxes.values() if cb.isChecked())
+        excluded = sum(1 for cb_e in self.provider_exclude_checkboxes.values() if cb_e.isChecked())
         total = len(self.provider_checkboxes)
-        self.count_lbl.setText(f"已勾选: {checked} / 总计 {total} 个供应商")
+        self.count_lbl.setText(f"已勾选: {checked}  |  🚫 已剔除: {excluded}  |  总计: {total} 个供应商")
 
     def toggle_all(self, checked: bool):
-        for cb in self.provider_checkboxes.values():
-            cb.setChecked(checked)
+        for code, cb in self.provider_checkboxes.items():
+            cb_e = self.provider_exclude_checkboxes.get(code)
+            if checked and cb_e and cb_e.isChecked():
+                cb.setChecked(False)
+            else:
+                cb.setChecked(checked)
         self.update_count_label()
 
     def apply_numeric_filter(self):
@@ -974,7 +1026,13 @@ class AIHubFilterDialog(QDialog):
 
         for code, p in self.provider_data_map.items():
             cb = self.provider_checkboxes.get(code)
+            cb_e = self.provider_exclude_checkboxes.get(code)
             if not cb:
+                continue
+
+            # Excluded providers are skipped and left unchecked
+            if cb_e and cb_e.isChecked():
+                cb.setChecked(False)
                 continue
 
             # Model verification filter
@@ -1023,7 +1081,11 @@ class AIHubFilterDialog(QDialog):
 
     def apply_good_preset(self):
         for code, cb in self.provider_checkboxes.items():
-            cb.setChecked(code in DEFAULT_SELECTED_PROVIDERS)
+            cb_e = self.provider_exclude_checkboxes.get(code)
+            if cb_e and cb_e.isChecked():
+                cb.setChecked(False)
+            else:
+                cb.setChecked(code in DEFAULT_SELECTED_PROVIDERS)
         self.update_count_label()
 
     def save_and_apply(self):
@@ -1031,8 +1093,12 @@ class AIHubFilterDialog(QDialog):
         is_auto = self.btn_dlg_auto.isChecked()
         self.aihub_client.set_auto_mode(is_auto)
 
-        # Save selected providers
-        selected_codes = [code for code, cb in self.provider_checkboxes.items() if cb.isChecked()]
+        # Save excluded providers
+        excluded_codes = [code for code, cb_e in self.provider_exclude_checkboxes.items() if cb_e.isChecked()]
+        self.aihub_client.set_excluded_providers(excluded_codes)
+
+        # Save selected providers (excluding any that are blacklisted)
+        selected_codes = [code for code, cb in self.provider_checkboxes.items() if cb.isChecked() and code not in excluded_codes]
         self.aihub_client.set_selected_providers(selected_codes)
 
         # Force re-computation of monitored rows

@@ -16,7 +16,7 @@ from PyQt5.QtGui import QColor, QPainter, QBrush, QPen, QFont
 from core.gpu_monitor import (
     GPUMonitor, get_hex_for_gpu_vram, clean_gpu_name, get_cn_name
 )
-from ui.icons import get_nvidia_pixmap
+from ui.icons import get_nvidia_pixmap, get_cpu_pixmap
 
 
 class GPUCardRow(QFrame):
@@ -43,18 +43,18 @@ class GPUCardRow(QFrame):
         """)
 
         layout = QVBoxLayout(self)
-        pad_h = max(3, int(round(5 * self.scale)))
-        pad_v = max(2, int(round(3 * self.scale)))
+        pad_h = max(2, int(round(4 * self.scale)))
+        pad_v = max(2, int(round(2.5 * self.scale)))
         layout.setContentsMargins(pad_h, pad_v, pad_h, pad_v)
-        layout.setSpacing(max(1, int(round(2 * self.scale))))
+        layout.setSpacing(max(1, int(round(1.5 * self.scale))))
 
         # 1. Top Row: Title badge & User / Idle status
         top_row = QHBoxLayout()
         top_row.setContentsMargins(0, 0, 0, 0)
         top_row.setSpacing(max(1, int(round(2 * self.scale))))
 
-        title_fs = max(7, int(round(9.5 * self.scale)))
-        sub_fs = max(6, int(round(8.5 * self.scale)))
+        title_fs = max(7, int(round(9.0 * self.scale)))
+        sub_fs = max(6, int(round(8.0 * self.scale)))
 
         self.lbl_title = QLabel(f"{sid}号 · {model} [{index}]", self)
         self.lbl_title.setStyleSheet(f"""
@@ -126,9 +126,9 @@ class GPUCardRow(QFrame):
             self.update_data(self._last_cdata, self.model)
 
     def _apply_scale_styles(self):
-        title_fs = max(7, int(round(9.5 * self.scale)))
-        sub_fs = max(6, int(round(8.5 * self.scale)))
-        pbar_h = max(2, int(round(3 * self.scale)))
+        title_fs = max(7, int(round(9.0 * self.scale)))
+        sub_fs = max(6, int(round(8.0 * self.scale)))
+        pbar_h = max(2, int(round(2.5 * self.scale)))
         self.prog_bar.setFixedHeight(pbar_h)
         self.lbl_title.setStyleSheet(f"color: #E2E8F0; font-size: {title_fs}px; font-weight: 700;")
         self.lbl_mem.setStyleSheet(f"font-size: {sub_fs}px; color: #CBD5E1; font-family: 'Consolas', monospace;")
@@ -143,7 +143,7 @@ class GPUCardRow(QFrame):
 
         is_busy = cdata.get("is_busy", False)
         display_user = cdata.get("display_user", "Idle")
-        sub_fs = max(6, int(round(8.5 * self.scale)))
+        sub_fs = max(6, int(round(8.0 * self.scale)))
 
         if is_busy:
             self.lbl_user.setText(f"👤 {display_user}")
@@ -188,7 +188,8 @@ class GPUCardRow(QFrame):
 
         p_draw = cdata.get("power_draw", "0")
         p_lim = cdata.get("power_limit", "0")
-        self.lbl_power.setText(f"⚡ {p_draw}/{p_lim}W")
+        self.lbl_power.setText(f"⚡ {p_draw}W")
+        self.lbl_power.setToolTip(f"实时功耗: {p_draw}W / 额定 {p_lim}W")
 
         util = cdata.get("utilization", 0)
         self.lbl_util.setText(f"⚙️ {util}%")
@@ -263,18 +264,18 @@ class ServerHostCard(QFrame):
 
     def set_scale(self, scale: float):
         self.scale = max(0.5, float(scale))
-        pad_v = max(2, int(round(3 * self.scale)))
-        pad_h = max(4, int(round(5 * self.scale)))
+        pad_v = max(2, int(round(2.5 * self.scale)))
+        pad_h = max(2, int(round(4 * self.scale)))
         self.layout().setContentsMargins(pad_h, pad_v, pad_h, pad_v)
-        self.layout().setSpacing(max(1, int(round(2 * self.scale))))
-        name_fs = max(7, int(round(9.5 * self.scale)))
+        self.layout().setSpacing(max(1, int(round(1.5 * self.scale))))
+        name_fs = max(7, int(round(9.0 * self.scale)))
         self.lbl_name.setStyleSheet(f"font-size: {name_fs}px; font-weight: 700; color: #E2E8F0; background: transparent; border: none;")
-        cpu_fs = max(7, int(round(9.0 * self.scale)))
+        cpu_fs = max(7, int(round(8.5 * self.scale)))
         cur_style = self.lbl_cpu.styleSheet()
         col_pos = cur_style.find("color:")
         col_str = cur_style[col_pos:] if col_pos != -1 else "color: #64748B;"
         self.lbl_cpu.setStyleSheet(f"font-size: {cpu_fs}px; font-weight: 700; background: transparent; border: none; {col_str}")
-        sub_fs = max(6, int(round(8.0 * self.scale)))
+        sub_fs = max(6, int(round(7.5 * self.scale)))
         self.lbl_ram.setStyleSheet(f"font-size: {sub_fs}px; color: #94A3B8; background: transparent; border: none;")
         self.lbl_disk.setStyleSheet(f"font-size: {sub_fs}px; color: #CBD5E1; background: transparent; border: none;")
 
@@ -292,14 +293,16 @@ class ServerHostCard(QFrame):
             c_color = "#EF4444"
             c_text = f"CPU: {int(round(cpu))}%"
 
-        cpu_fs = max(7, int(round(9.0 * self.scale)))
+        cpu_fs = max(7, int(round(8.5 * self.scale)))
         self.lbl_cpu.setText(c_text)
         self.lbl_cpu.setStyleSheet(f"font-size: {cpu_fs}px; font-weight: 700; color: {c_color}; background: transparent; border: none;")
 
         if mem_total > 0:
-            self.lbl_ram.setText(f"🧠 {mem_used:.1f}/{mem_total:.0f}G ({int(round(mem_pct))}%)")
+            self.lbl_ram.setText(f"🧠 {mem_used:.0f}/{mem_total:.0f}G ({int(round(mem_pct))}%)")
+            self.lbl_ram.setToolTip(f"内存: {mem_used:.1f} / {mem_total:.0f} GB ({int(round(mem_pct))}%)")
         else:
             self.lbl_ram.setText("🧠 --/--G (--%)")
+            self.lbl_ram.setToolTip("")
 
         if disk_str:
             self.lbl_disk.setText(disk_str)
@@ -342,7 +345,7 @@ class GanttLabelsWidget(QWidget):
         row_h = max(15, int(round(19 * self.scale)))
         header_h = max(12, int(round(15 * self.scale)))
         needed_h = max(95, len(self.tasks) * row_h + header_h + 6)
-        label_w = max(52, int(round(62 * self.scale)))
+        label_w = max(30, int(round(35 * self.scale)))
         self.setFixedSize(label_w, needed_h + 8)
 
     def set_scale(self, scale: float):
@@ -374,7 +377,7 @@ class GanttLabelsWidget(QWidget):
 
             painter.setPen(QColor("#CBD5E1"))
             painter.setFont(QFont("Segoe UI", max(5, int(round(7.5 * self.scale))), QFont.Bold))
-            painter.drawText(2, y + 1, w - 4, row_h - 2, Qt.AlignVCenter | Qt.AlignLeft, task_name)
+            painter.drawText(1, y + 1, w - 2, row_h - 2, Qt.AlignVCenter | Qt.AlignLeft, task_name)
 
     def wheelEvent(self, event):
         if self._target_scroll_area:
@@ -619,18 +622,23 @@ class GPUServerView(QWidget):
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(max(2, int(round(4 * self.scale))))
 
-        icon_sz = max(9, int(round(13 * self.scale)))
-        self.title_icon = QLabel(self)
-        self.title_icon.setPixmap(get_nvidia_pixmap(icon_sz))
+        icon_sz = max(9, int(round(12 * self.scale)))
+        self.title_icon_gpu = QLabel(self)
+        self.title_icon_gpu.setPixmap(get_nvidia_pixmap(icon_sz))
+        self.title_icon_gpu.setToolTip("GPU 服务器")
 
-        title_fs = max(8, int(round(10.5 * self.scale)))
-        self.title_lbl = QLabel("GPU 服务器", self)
+        self.title_icon_cpu = QLabel(self)
+        self.title_icon_cpu.setPixmap(get_cpu_pixmap(icon_sz))
+        self.title_icon_cpu.setToolTip("CPU 服务器")
+
+        title_fs = max(8, int(round(10.0 * self.scale)))
+        self.title_lbl = QLabel("服务器", self)
         self.title_lbl.setStyleSheet(f"font-size: {title_fs}px; font-weight: 800; color: #FFFFFF;")
 
         btn_sz = max(14, int(round(18 * self.scale)))
         self.btn_refresh = QPushButton("🔄", self)
         self.btn_refresh.setFixedSize(btn_sz, btn_sz)
-        self.btn_refresh.setToolTip("点击刷新 GPU 实时状态")
+        self.btn_refresh.setToolTip("点击刷新服务器实时状态")
         self.btn_refresh.setStyleSheet(f"""
             QPushButton {{
                 background-color: rgba(255, 255, 255, 0.08);
@@ -657,7 +665,8 @@ class GPUServerView(QWidget):
             font-family: 'Consolas', monospace;
         """)
 
-        header.addWidget(self.title_icon)
+        header.addWidget(self.title_icon_gpu)
+        header.addWidget(self.title_icon_cpu)
         header.addWidget(self.title_lbl)
         header.addWidget(self.btn_refresh)
         header.addStretch()
@@ -692,6 +701,7 @@ class GPUServerView(QWidget):
         self.scroll_live = QScrollArea(self)
         self.scroll_live.setWidgetResizable(True)
         self.scroll_live.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_live.setFixedHeight(max(150, int(round(214 * self.scale))))
         self.scroll_live.viewport().setAutoFillBackground(False)
         self.scroll_live.setStyleSheet("""
             QScrollArea, QScrollArea > QWidget, QScrollArea > QWidget > QWidget {
@@ -802,21 +812,21 @@ class GPUServerView(QWidget):
         hist_ctrl_row.setContentsMargins(0, 0, 0, 0)
         hist_ctrl_row.setSpacing(4)
 
-        hist_lbl = QLabel("查看范围:", self.hist_container)
-        hist_lbl.setStyleSheet(f"font-size: {max(7, int(round(9.5 * self.scale)))}px; color: #94A3B8;")
+        hist_lbl = QLabel("范围:", self.hist_container)
+        hist_lbl.setStyleSheet(f"font-size: {max(7, int(round(9.0 * self.scale)))}px; color: #94A3B8;")
 
         self.combo_days = QComboBox(self.hist_container)
-        self.combo_days.addItem("过去 1 天", 1)
-        self.combo_days.addItem("过去 3 天", 3)
-        self.combo_days.addItem("过去 7 天", 7)
+        self.combo_days.addItem("1 天", 1)
+        self.combo_days.addItem("3 天", 3)
+        self.combo_days.addItem("7 天", 7)
         self.combo_days.setStyleSheet(f"""
             QComboBox {{
                 background-color: #1E293B;
                 color: #E2E8F0;
                 border: 1px solid rgba(255, 255, 255, 0.12);
                 border-radius: 3px;
-                padding: 1px 4px;
-                font-size: {max(7, int(round(9.5 * self.scale)))}px;
+                padding: 1px 3px;
+                font-size: {max(7, int(round(9.0 * self.scale)))}px;
             }}
             QComboBox QAbstractItemView {{
                 background-color: #1E293B;
@@ -826,8 +836,8 @@ class GPUServerView(QWidget):
         """)
         self.combo_days.currentIndexChanged.connect(self._on_days_changed)
 
-        self.btn_hist_refresh = QPushButton("↻ 载入历史", self.hist_container)
-        btn_w = max(42, int(round(60 * self.scale)))
+        self.btn_hist_refresh = QPushButton("↻ 载入", self.hist_container)
+        btn_w = max(34, int(round(44 * self.scale)))
         btn_h = max(16, int(round(19 * self.scale)))
         self.btn_hist_refresh.setFixedSize(btn_w, btn_h)
         self.btn_hist_refresh.setStyleSheet(f"""
@@ -908,10 +918,15 @@ class GPUServerView(QWidget):
     def set_scale(self, scale: float):
         """Update scale and propagate to child card rows and gantt chart."""
         self.scale = max(0.5, float(scale))
-        icon_sz = max(9, int(round(13 * self.scale)))
-        self.title_icon.setPixmap(get_nvidia_pixmap(icon_sz))
-        title_fs = max(8, int(round(10.5 * self.scale)))
+        icon_sz = max(9, int(round(12 * self.scale)))
+        if hasattr(self, "title_icon_gpu"):
+            self.title_icon_gpu.setPixmap(get_nvidia_pixmap(icon_sz))
+        if hasattr(self, "title_icon_cpu"):
+            self.title_icon_cpu.setPixmap(get_cpu_pixmap(icon_sz))
+        title_fs = max(8, int(round(10.0 * self.scale)))
         self.title_lbl.setStyleSheet(f"font-size: {title_fs}px; font-weight: 800; color: #FFFFFF;")
+        if hasattr(self, "scroll_live"):
+            self.scroll_live.setFixedHeight(max(150, int(round(214 * self.scale))))
         btn_sz = max(14, int(round(18 * self.scale)))
         self.btn_refresh.setFixedSize(btn_sz, btn_sz)
         tab_h = max(16, int(round(20 * self.scale)))

@@ -218,7 +218,7 @@ class ThumbnailDownloadManager(QObject):
             if resp.status_code == 200 and resp.content:
                 qimg = QImage()
                 if qimg.loadFromData(resp.content):
-                    scaled = qimg.scaled(64, 30, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    scaled = qimg.scaled(46, 22, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     self.cache[url] = scaled
                     self.thumb_loaded.emit(url, scaled)
         except Exception:
@@ -231,10 +231,12 @@ class ClickableThumbnail(QLabel):
     """Clickable thumbnail image representing a provider's detection artifact."""
     clicked = pyqtSignal(dict)  # emits provider_dict
 
-    def __init__(self, provider_item: Dict[str, Any], parent=None):
+    def __init__(self, provider_item: Dict[str, Any], parent=None, scale: float = 1.0):
         super().__init__(parent)
         self.provider_item = provider_item
-        self.setFixedSize(64, 30)
+        w = max(38, int(round(46 * scale)))
+        h = max(18, int(round(22 * scale)))
+        self.setFixedSize(w, h)
         self.setAlignment(Qt.AlignCenter)
         self.setCursor(Qt.PointingHandCursor)
         self.setToolTip("点击在线查看该供应商全部历史鹈鹕图")
@@ -289,6 +291,8 @@ class ClickableThumbnail(QLabel):
     def _apply_image(self, scaled: QImage):
         pix = QPixmap.fromImage(scaled)
         self.setText("")
+        if not pix.isNull():
+            pix = pix.scaled(self.width() - 2, self.height() - 2, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         self.setPixmap(pix)
         self.setStyleSheet("""
             QLabel {
@@ -337,9 +341,9 @@ class RelayStationView(QWidget):
         self.scale = max(0.5, float(scale))
         self._apply_header_styles()
         if hasattr(self, "sq_scroll"):
-            self.sq_scroll.setFixedHeight(max(140, int(round(195 * self.scale))))
+            self.sq_scroll.setFixedHeight(max(140, int(round(185 * self.scale))))
         if hasattr(self, "aihub_scroll"):
-            self.aihub_scroll.setFixedHeight(max(140, int(round(195 * self.scale))))
+            self.aihub_scroll.setFixedHeight(max(140, int(round(185 * self.scale))))
         if self._square_data:
             self.update_square_data(self._square_data)
         if self._aihub_data:
@@ -362,6 +366,7 @@ class RelayStationView(QWidget):
         # Main Card container
         self.card = QFrame(self)
         self.card.setProperty("class", "CardSection")
+        self.card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         card_layout = QVBoxLayout(self.card)
         card_layout.setContentsMargins(6, 5, 6, 5)
         card_layout.setSpacing(5)
@@ -501,7 +506,7 @@ class RelayStationView(QWidget):
         # Scroll Area for Square Monitored Rows
         self.sq_scroll = QScrollArea()
         self.sq_scroll.setWidgetResizable(True)
-        self.sq_scroll.setFixedHeight(max(140, int(round(195 * self.scale))))
+        self.sq_scroll.setFixedHeight(max(140, int(round(185 * self.scale))))
         self.sq_scroll.setStyleSheet(SCROLL_STYLE)
         self.sq_scroll.viewport().setStyleSheet("background: transparent; border: none;")
         self.sq_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -522,7 +527,7 @@ class RelayStationView(QWidget):
 
         # Sub-header with Filter Button (NO balance display per user request)
         sub_hdr = QHBoxLayout()
-        self.aihub_title_lbl = QLabel("🟢 AIHub 供应商实测")
+        self.aihub_title_lbl = QLabel("🟢 AIHub 实测")
         self.aihub_title_lbl.setStyleSheet("font-size: 10px; font-weight: 700; color: #10B981;")
 
         # Mode button (Auto vs Manual)
@@ -580,7 +585,7 @@ class RelayStationView(QWidget):
         # Scroll Area for Providers Table
         self.aihub_scroll = QScrollArea()
         self.aihub_scroll.setWidgetResizable(True)
-        self.aihub_scroll.setFixedHeight(max(140, int(round(195 * self.scale))))
+        self.aihub_scroll.setFixedHeight(max(140, int(round(185 * self.scale))))
         self.aihub_scroll.setStyleSheet(SCROLL_STYLE)
         self.aihub_scroll.viewport().setStyleSheet("background: transparent; border: none;")
         self.aihub_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -605,10 +610,6 @@ class RelayStationView(QWidget):
         self.stack.setCurrentIndex(index)
         self.btn_square.setChecked(index == 0)
         self.btn_aihub.setChecked(index == 1)
-        self.stack.adjustSize()
-        self.card.adjustSize()
-        if self.parentWidget():
-            self.parentWidget().adjustSize()
 
     def update_square_data(self, data: Dict[str, Any]):
         """Render Square API real-time monitored performance benchmark table with output/M token price."""
@@ -637,20 +638,27 @@ class RelayStationView(QWidget):
         # Header Titles: 分组/模型, 倍率, 输出/M, 速度, 首字, 延迟, 成功率
         h_titles = ["分组/模型", "倍率", "输出/M", "速度", "首字", "延迟", "成功率"]
         h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignCenter, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight]
-        for col_idx, (title, align) in enumerate(zip(h_titles, h_aligns)):
+        sq_col_widths = [
+            None,
+            max(24, int(round(28 * self.scale))),
+            max(28, int(round(34 * self.scale))),
+            max(24, int(round(28 * self.scale))),
+            max(22, int(round(26 * self.scale))),
+            max(22, int(round(26 * self.scale))),
+            max(42, int(round(48 * self.scale))),
+        ]
+        for col_idx, (title, align, col_w) in enumerate(zip(h_titles, h_aligns, sq_col_widths)):
             h_lbl = QLabel(title)
             h_lbl.setAlignment(align | Qt.AlignVCenter)
             h_lbl.setStyleSheet(f"font-size: {hdr_fs}px; font-weight: 700; color: #64748B;")
+            if col_w:
+                h_lbl.setFixedWidth(col_w)
             self.sq_grid.addWidget(h_lbl, 0, col_idx)
 
-        # Proportional stretches to eliminate excess space and prevent clipping
-        self.sq_grid.setColumnStretch(0, 4)
-        self.sq_grid.setColumnStretch(1, 2)
-        self.sq_grid.setColumnStretch(2, 2)
-        self.sq_grid.setColumnStretch(3, 2)
-        self.sq_grid.setColumnStretch(4, 2)
-        self.sq_grid.setColumnStretch(5, 2)
-        self.sq_grid.setColumnStretch(6, 3)
+        # Stretch ONLY column 0 (分组/模型) and fix all numeric/stat columns to eliminate horizontal overflow
+        self.sq_grid.setColumnStretch(0, 1)
+        for c in range(1, 7):
+            self.sq_grid.setColumnStretch(c, 0)
 
         monitored_rows = data.get("monitored_rows", [])
         if not monitored_rows:
@@ -665,6 +673,7 @@ class RelayStationView(QWidget):
 
                 # Combined Group + Focus Model display
                 g_box = QWidget()
+                g_box.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
                 g_lay = QVBoxLayout(g_box)
                 g_lay.setContentsMargins(0, 1, 0, 1)
                 g_lay.setSpacing(1)
@@ -695,24 +704,29 @@ class RelayStationView(QWidget):
                 mult_lbl = QLabel(r.get("ratio_str", "--"))
                 mult_lbl.setToolTip(tip_text)
                 mult_lbl.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+                mult_lbl.setFixedWidth(sq_col_widths[1])
                 mult_lbl.setStyleSheet(f"font-size: {row_sub_fs}px; font-weight: 600; color: #60A5FA;")
 
                 # Output Price per 1M tokens (first tier if tiered)
                 out_price_lbl = QLabel(r.get("output_price", "—"))
                 out_price_lbl.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+                out_price_lbl.setFixedWidth(sq_col_widths[2])
                 out_price_lbl.setStyleSheet(f"font-size: {row_sub_fs}px; font-weight: 700; color: #F59E0B;")
                 out_price_lbl.setToolTip(r.get("output_price_tip") or "输出 token 价格")
 
                 tps_lbl = QLabel(r.get("tps", "--"))
                 tps_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                tps_lbl.setFixedWidth(sq_col_widths[3])
                 tps_lbl.setStyleSheet(f"font-size: {row_sub_fs}px; color: #CBD5E1;")
 
                 ttft_lbl = QLabel(r.get("ttft", "--"))
                 ttft_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                ttft_lbl.setFixedWidth(sq_col_widths[4])
                 ttft_lbl.setStyleSheet(f"font-size: {row_sub_fs}px; color: #94A3B8;")
 
                 lat_lbl = QLabel(r.get("latency", "--"))
                 lat_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                lat_lbl.setFixedWidth(sq_col_widths[5])
                 lat_lbl.setStyleSheet(f"font-size: {row_sub_fs}px; color: #94A3B8;")
 
                 # Sparkline bar chart with live time-series
@@ -720,6 +734,7 @@ class RelayStationView(QWidget):
                 sr_val = float(r.get("success_rate", 100.0))
                 series_data = r.get("series", [])
                 bar_widget = SuccessRateBarWidget(count=bar_cnt, success_rate=sr_val, series=series_data, scale=self.scale)
+                bar_widget.setFixedWidth(sq_col_widths[6])
                 bar_widget.setToolTip(f"实测成功率: {sr_val:.1f}%\n24小时时段样本: {len(series_data)}个")
 
                 self.sq_grid.addWidget(g_box, row_idx, 0)
@@ -729,10 +744,6 @@ class RelayStationView(QWidget):
                 self.sq_grid.addWidget(ttft_lbl, row_idx, 4)
                 self.sq_grid.addWidget(lat_lbl, row_idx, 5)
                 self.sq_grid.addWidget(bar_widget, row_idx, 6, Qt.AlignRight | Qt.AlignVCenter)
-
-        self.sq_scroll_content.adjustSize()
-        self.stack.adjustSize()
-        self.card.adjustSize()
 
     def update_aihub_data(self, data: Dict[str, Any]):
         """Render AIHub monitored providers with prominent pelican thumbnails and effective multipliers."""
@@ -788,9 +799,14 @@ class RelayStationView(QWidget):
             avg_ttft = f"{sum(valid_tts)/len(valid_tts)/1000:.1f}s" if valid_tts else "--"
             valid_srs = [g["success_rate"] for g in monitored if g.get("success_rate") is not None]
             avg_sr = f"{sum(valid_srs)/len(valid_srs):.1f}%" if valid_srs else "--"
-            self.aihub_status_lbl.setText(f"TTFT {avg_ttft} · 成功率 {avg_sr} · {data.get('updated_at', '')}")
+            up_time = str(data.get('updated_at', ''))
+            time_part = up_time[-8:-3] if len(up_time) >= 8 else up_time
+            self.aihub_status_lbl.setText(f"{avg_ttft} · {avg_sr} · {time_part}")
+            self.aihub_status_lbl.setToolTip(f"平均首字 (TTFT): {avg_ttft}\n平均成功率: {avg_sr}\n更新时间: {up_time}")
         else:
-            self.aihub_status_lbl.setText(f"{data.get('updated_at', '刚刚')}")
+            up_time = str(data.get('updated_at', '刚刚'))
+            time_part = up_time[-8:-3] if len(up_time) >= 8 else up_time
+            self.aihub_status_lbl.setText(f"{time_part}")
 
         # Clear grid
         while self.aihub_grid.count():
@@ -805,21 +821,31 @@ class RelayStationView(QWidget):
         # Header: 检测, 供应商, 倍率, 真实倍率, 缓存率, 实测图
         h_titles = ["检测", "供应商", "倍率", "真实倍率", "缓存率", "实测图"]
         h_aligns = [Qt.AlignCenter, Qt.AlignLeft, Qt.AlignCenter, Qt.AlignCenter, Qt.AlignRight, Qt.AlignCenter]
-        for col_idx, (title, align) in enumerate(zip(h_titles, h_aligns)):
+        aihub_col_widths = [
+            max(14, int(round(16 * self.scale))),
+            None,
+            max(24, int(round(28 * self.scale))),
+            max(30, int(round(36 * self.scale))),
+            max(26, int(round(30 * self.scale))),
+            max(38, int(round(44 * self.scale))),
+        ]
+        for col_idx, (title, align, col_w) in enumerate(zip(h_titles, h_aligns, aihub_col_widths)):
             h_lbl = QLabel(title)
             h_lbl.setAlignment(align | Qt.AlignVCenter)
             h_lbl.setStyleSheet(f"font-size: {hdr_fs}px; font-weight: 700; color: #64748B;")
+            if col_w:
+                h_lbl.setFixedWidth(col_w)
             if title == "检测":
                 h_lbl.setToolTip("模型真实性检测:\n🟢 检测通过 (官方验证通过)\n🟠 模型疑似 (验证无法定论)\n⚪ 其他 (证据不足/未配置)")
             self.aihub_grid.addWidget(h_lbl, 0, col_idx)
 
-        # Set column proportions for spacious thumbnail view
-        self.aihub_grid.setColumnStretch(0, 1)  # 检测状态圆点
-        self.aihub_grid.setColumnStretch(1, 4)  # 供应商名称
-        self.aihub_grid.setColumnStretch(2, 2)  # 名义倍率
-        self.aihub_grid.setColumnStretch(3, 3)  # 真实折算倍率
-        self.aihub_grid.setColumnStretch(4, 2)  # 缓存命中率
-        self.aihub_grid.setColumnStretch(5, 5)  # 实测图缩略图
+        # Rigidly fix all stat columns and stretch ONLY col 1 (供应商) to eliminate horizontal scrolling glitches
+        self.aihub_grid.setColumnStretch(0, 0)  # 检测状态圆点
+        self.aihub_grid.setColumnStretch(1, 1)  # 供应商名称 (弹性)
+        self.aihub_grid.setColumnStretch(2, 0)  # 名义倍率
+        self.aihub_grid.setColumnStretch(3, 0)  # 真实折算倍率
+        self.aihub_grid.setColumnStretch(4, 0)  # 缓存命中率
+        self.aihub_grid.setColumnStretch(5, 0)  # 实测图缩略图
 
         if not monitored:
             empty_lbl = QLabel("暂无勾选的供应商，请点击右上角 [⚙️ 勾选监控] 选择")
@@ -831,8 +857,10 @@ class RelayStationView(QWidget):
                 det_status = g.get("detection_status", "other")
                 det_tip = g.get("detection_tip", "模型检测: ⚪ 未配置 / 暂无检测数据")
                 c_dot = DetectionDot(det_status, tooltip=det_tip, size=dot_size, parent=self.aihub_scroll_content)
+                c_dot.setFixedWidth(aihub_col_widths[0])
 
                 c_name = QLabel(f"{row_idx}. {g['code']}")
+                c_name.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
                 eff_mult_str = g.get("effective_multiplier_str") or g.get("multiplier_str", "--")
                 nom_mult_str = g.get("multiplier_str", "--")
                 det_label = g.get("detection_label", "未检")
@@ -856,20 +884,24 @@ class RelayStationView(QWidget):
                 c_nom = QLabel(nom_mult_str)
                 c_nom.setToolTip(tip_text)
                 c_nom.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+                c_nom.setFixedWidth(aihub_col_widths[2])
                 c_nom.setStyleSheet(f"font-size: {row_title_fs}px; font-weight: 600; color: #60A5FA;")
 
                 c_mult = QLabel(eff_mult_str)
                 c_mult.setToolTip(tip_text)
                 c_mult.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+                c_mult.setFixedWidth(aihub_col_widths[3])
                 c_mult.setStyleSheet(f"font-size: {row_title_fs}px; font-weight: 700; color: #34D399;")
 
                 c_hit = QLabel(g.get("cache_hit_rate", "-"))
                 c_hit.setToolTip(tip_text)
                 c_hit.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                c_hit.setFixedWidth(aihub_col_widths[4])
                 c_hit.setStyleSheet(f"font-size: {row_title_fs}px; color: #94A3B8;")
 
-                # Prominent 88x42 clickable thumbnail
-                thumb = ClickableThumbnail(g, self.aihub_scroll_content)
+                # Clickable thumbnail with explicit scaling
+                thumb = ClickableThumbnail(g, self.aihub_scroll_content, scale=self.scale)
+                thumb.setFixedWidth(aihub_col_widths[5])
                 thumb.clicked.connect(self.pelican_clicked.emit)
 
                 self.aihub_grid.addWidget(c_dot, row_idx, 0, Qt.AlignCenter | Qt.AlignVCenter)
@@ -879,6 +911,3 @@ class RelayStationView(QWidget):
                 self.aihub_grid.addWidget(c_hit, row_idx, 4)
                 self.aihub_grid.addWidget(thumb, row_idx, 5, Qt.AlignCenter | Qt.AlignVCenter)
 
-        self.aihub_scroll_content.adjustSize()
-        self.stack.adjustSize()
-        self.card.adjustSize()
