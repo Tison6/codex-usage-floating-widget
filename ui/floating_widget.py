@@ -528,12 +528,15 @@ class FloatingWidget(QWidget):
             self._last_mini_center = old_center
             self._expanded_dragged = False
             self.is_mini = False
+            self._expand_timestamp = time.time()
             self.cfg.set("is_mini_mode", False)
             self.update_mode_visibility()
             self.layout().activate()
             self.adjustSize()
             self._recenter_around(old_center)
+            self.raise_()
             self.activateWindow()
+            self.setFocus()
 
     def collapse_to_mini(self):
         """Collapse back to mini capsule, shrinking back symmetrically to center."""
@@ -558,12 +561,39 @@ class FloatingWidget(QWidget):
         else:
             self.collapse_to_mini()
 
+    def _has_active_modal_or_dialog(self) -> bool:
+        """Check if any modal, popup, or active dialog is currently open or visible."""
+        if QApplication.activeModalWidget() is not None:
+            return True
+        if QApplication.activePopupWidget() is not None:
+            return True
+        for d in self.findChildren(QDialog):
+            if d.isVisible():
+                return True
+        for w in QApplication.topLevelWidgets():
+            if isinstance(w, (QDialog, QMenu)) and w.isVisible() and w != self:
+                return True
+        return False
+
+    def _check_auto_collapse_safety(self):
+        """Safety check to auto-collapse if window is expanded but lost active focus."""
+        if self.is_mini:
+            return
+        if time.time() - getattr(self, "_expand_timestamp", 0) < 0.6:
+            return
+        if QApplication.mouseButtons() != Qt.NoButton or getattr(self, "_dragging", False):
+            return
+        if self._has_active_modal_or_dialog():
+            return
+        if not self.isActiveWindow():
+            self.collapse_to_mini()
+
     def changeEvent(self, event):
         """Auto-collapse to mini capsule when losing window focus (clicking elsewhere)."""
-        if event.type() == QEvent.ActivationChange:
+        if event.type() in (QEvent.ActivationChange, QEvent.WindowDeactivate):
             if not self.isActiveWindow() and not self.is_mini:
-                # Do not collapse if user is interacting with settings dialog or menus
-                if not self.findChildren(QDialog) and not QApplication.activeModalWidget():
+                # Do not collapse if user is interacting with an open dialog or menu
+                if not self._has_active_modal_or_dialog():
                     self.collapse_to_mini()
         super().changeEvent(event)
 
@@ -662,6 +692,12 @@ class FloatingWidget(QWidget):
         self.relay_timer.timeout.connect(lambda: self.fetch_relay_async(force=True))
         relay_sec = max(20, int(self.cfg.get("relay_interval_sec", 60)))
         self.relay_timer.start(relay_sec * 1000)
+
+        # 5. Safety auto-collapse check timer
+        self._expand_timestamp = 0
+        self.focus_check_timer = QTimer(self)
+        self.focus_check_timer.timeout.connect(self._check_auto_collapse_safety)
+        self.focus_check_timer.start(350)
 
     # -------------------------------------------------------------
     # Fast Activity & Data Methods
@@ -794,20 +830,33 @@ class FloatingWidget(QWidget):
             dlg.exec_()
         finally:
             self._pelican_dlg = None
+            dlg.deleteLater()
+            self.raise_()
+            self.activateWindow()
 
     def open_square_filter_dialog(self):
         """Open Square API interactive group and model filter selection dialog."""
         from ui.square_filter_dialog import SquareFilterDialog
         dlg = SquareFilterDialog(self.square_client, parent=self)
         dlg.filters_changed.connect(lambda: self.fetch_relay_async(force=True))
-        dlg.exec_()
+        try:
+            dlg.exec_()
+        finally:
+            dlg.deleteLater()
+            self.raise_()
+            self.activateWindow()
 
     def open_aihub_filter_dialog(self):
         """Open AIHub interactive provider filter selection dialog with live stats."""
         from ui.square_filter_dialog import AIHubFilterDialog
         dlg = AIHubFilterDialog(self.aihub_client, parent=self)
         dlg.filters_changed.connect(lambda: self.fetch_relay_async(force=True))
-        dlg.exec_()
+        try:
+            dlg.exec_()
+        finally:
+            dlg.deleteLater()
+            self.raise_()
+            self.activateWindow()
 
     def update_mini_quota_display(self):
         """Render mini quota with concise 5H · Week format and dynamic health colors."""
@@ -1103,7 +1152,12 @@ class FloatingWidget(QWidget):
         """Open settings dialog."""
         dlg = SettingsDialog(self.cfg, self)
         dlg.settings_saved.connect(self.on_settings_applied)
-        dlg.exec_()
+        try:
+            dlg.exec_()
+        finally:
+            dlg.deleteLater()
+            self.raise_()
+            self.activateWindow()
 
     def on_settings_applied(self):
         """Reload timers and styles after settings saved."""
