@@ -349,7 +349,7 @@ class SingleLinuxServerWorker(QThread):
                 pass
 
     def run(self):
-        py_cmd = '''python3 -c '
+        script = """
 import os, time, shutil, json
 try:
     with open("/proc/stat") as f:
@@ -414,10 +414,11 @@ try:
         tg = d["total_gb"]
         pct = round(fg * 100.0 / tg, 1) if tg > 0 else 0
         tag = " (主要数据盘)" if d == primary else ""
+        m_path = d["mount"]
         if fg >= 1000:
-            tt_lines.append(f"• {d['mount']}: {fg/1024:.2f}TB / {tg/1024:.2f}TB 可用 ({pct}%){tag}")
+            tt_lines.append(f"• {m_path}: {fg/1024:.2f}TB / {tg/1024:.2f}TB 可用 ({pct}%){tag}")
         else:
-            tt_lines.append(f"• {d['mount']}: {fg:.1f}GB / {tg:.0f}GB 可用 ({pct}%){tag}")
+            tt_lines.append(f"• {m_path}: {fg:.1f}GB / {tg:.0f}GB 可用 ({pct}%){tag}")
     disk_tooltip = "\\n".join(tt_lines)
 
     print(json.dumps({
@@ -432,7 +433,8 @@ try:
     }))
 except Exception as e:
     print(json.dumps({"error": str(e)}))
-' '''
+"""
+        py_cmd = "python3 -c " + chr(39) + script.strip() + chr(39)
         while self._running:
             try:
                 self.status_updated.emit(self.server_id, "connecting")
