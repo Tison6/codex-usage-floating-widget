@@ -278,7 +278,7 @@ class ServerHostCard(QFrame):
         self.lbl_ram.setStyleSheet(f"font-size: {sub_fs}px; color: #94A3B8; background: transparent; border: none;")
         self.lbl_disk.setStyleSheet(f"font-size: {sub_fs}px; color: #CBD5E1; background: transparent; border: none;")
 
-    def update_stats(self, cpu: float, mem_used: float, mem_total: float, mem_pct: float, disk_free: float):
+    def update_stats(self, cpu: float, mem_used: float, mem_total: float, mem_pct: float, disk_free: float, disk_str: str = "", disk_tooltip: str = ""):
         if cpu < 0:
             c_color = "#64748B"
             c_text = "CPU: 离线"
@@ -301,10 +301,20 @@ class ServerHostCard(QFrame):
         else:
             self.lbl_ram.setText("🧠 --/--G (--%)")
 
-        if disk_free > 0:
-            self.lbl_disk.setText(f"💾 {disk_free:.1f}G 剩余")
+        if disk_str:
+            self.lbl_disk.setText(disk_str)
+        elif disk_free > 0:
+            if disk_free >= 1000:
+                self.lbl_disk.setText(f"💾 {disk_free/1024:.2f}T")
+            else:
+                self.lbl_disk.setText(f"💾 {disk_free:.1f}G")
         else:
             self.lbl_disk.setText("💾 -- 剩余")
+
+        if disk_tooltip:
+            self.lbl_disk.setToolTip(disk_tooltip)
+        else:
+            self.lbl_disk.setToolTip("")
 
 
 class GanttLabelsWidget(QWidget):
@@ -992,7 +1002,9 @@ class GPUServerView(QWidget):
                 mem_t = float(sdata.get("mem_total", 0.0))
                 mem_p = float(sdata.get("mem_pct", 0.0))
                 disk_f = float(sdata.get("disk_free", 0.0))
-                card.update_stats(cpu, mem_u, mem_t, mem_p, disk_f)
+                disk_str = sdata.get("disk_str", "")
+                disk_tooltip = sdata.get("disk_tooltip", "")
+                card.update_stats(cpu, mem_u, mem_t, mem_p, disk_f, disk_str=disk_str, disk_tooltip=disk_tooltip)
 
     def switch_tab(self, index: int):
         """Switch active tab between Live (0) and History (1)."""

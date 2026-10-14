@@ -130,19 +130,33 @@ class SingleWindowsServerWorker(QThread):
                 pass
 
     def _query_wmic_stats(self):
-        """Query memory and disk free space via WMIC on another channel."""
+        """Query memory and all fixed disks free space via WMIC on another channel."""
         if not self.client:
             return
         try:
-            cmd = 'wmic OS get FreePhysicalMemory,TotalVisibleMemorySize /Value & wmic LogicalDisk where "DeviceID=\'C:\'" get FreeSpace,Size /Value'
+            cmd = 'wmic OS get FreePhysicalMemory,TotalVisibleMemorySize /Value & wmic logicaldisk where DriveType=3 get Caption,FreeSpace,Size,VolumeName /format:csv'
             stdin, stdout, stderr = self.client.exec_command(cmd, timeout=5)
-            out = stdout.read().decode('gbk', errors='ignore')
+            raw = stdout.read()
+            try:
+                out = raw.decode('gbk')
+            except Exception:
+                out = raw.decode('utf-8', errors='ignore')
+
             res = {}
+            csv_lines = []
+            is_csv = False
             for line in out.splitlines():
                 line = line.strip()
-                if '=' in line:
-                    k, v = line.split('=', 1)
-                    res[k.strip()] = v.strip()
+                if not line:
+                    continue
+                if 'FreePhysicalMemory' in line or 'TotalVisibleMemorySize' in line:
+                    if '=' in line:
+                        k, v = line.split('=', 1)
+                        res[k.strip()] = v.strip()
+                if 'Caption' in line and 'FreeSpace' in line:
+                    is_csv = True
+                if is_csv:
+                    csv_lines.append(line)
 
             tot_k = float(res.get('TotalVisibleMemorySize', 1))
             free_k = float(res.get('FreePhysicalMemory', 0))
@@ -151,17 +165,64 @@ class SingleWindowsServerWorker(QThread):
             mem_t_g = round(tot_k / 1048576, 1)
             mem_pct = round(used_k * 100.0 / tot_k, 1) if tot_k > 0 else 0.0
 
-            dfree_b = float(res.get('FreeSpace', 0))
-            dtot_b = float(res.get('Size', 1))
-            disk_free_g = round(dfree_b / (1024**3), 1)
-            disk_tot_g = round(dtot_b / (1024**3), 1)
+            disks = []
+            if csv_lines:
+                reader = csv.DictReader(csv_lines)
+                for r in reader:
+                    if 'Caption' in r and r['Caption']:
+                        disks.append({
+                            'drive': r['Caption'],
+                            'free_gb': float(r.get('FreeSpace', 0)) / (1024**3),
+                            'total_gb': float(r.get('Size', 0)) / (1024**3),
+                            'name': r.get('VolumeName', '')
+                        })
+
+            # Format primary disk & tooltip
+            primary = None
+            if self.server_id == '8375c':
+                primary = next((d for d in disks if d['drive'].upper() == 'E:'), None)
+            if not primary:
+                primary = next((d for d in disks if d['drive'].upper() == 'D:'), None)
+            if not primary and disks:
+                primary = max(disks, key=lambda d: d['free_gb'])
+
+            if primary:
+                f_gb = primary['free_gb']
+                drv = primary['drive']
+                if f_gb >= 1000:
+                    disk_str = f"💾 {drv} {f_gb / 1024:.2f}T"
+                else:
+                    disk_str = f"💾 {drv} {f_gb:.1f}G"
+                disk_free_g = round(f_gb, 1)
+                disk_tot_g = round(primary['total_gb'], 1)
+            else:
+                disk_str = "💾 -- 剩余"
+                disk_free_g = 0.0
+                disk_tot_g = 0.0
+
+            tt_lines = [f"硬盘空间 ({self.name}):"]
+            for d in disks:
+                c = d['drive']
+                fg = d['free_gb']
+                tg = d['total_gb']
+                pct = (fg / tg * 100) if tg > 0 else 0
+                tag = " (主要数据盘)" if d == primary else ""
+                vn = d.get('name', '')
+                vname = f" [{vn}]" if vn else ""
+                if fg >= 1000:
+                    tt_lines.append(f"• {c} {fg/1024:.2f}TB / {tg/1024:.2f}TB 可用 ({pct:.1f}%){vname}{tag}")
+                else:
+                    tt_lines.append(f"• {c} {fg:.1f}GB / {tg:.0f}GB 可用 ({pct:.1f}%){vname}{tag}")
+            disk_tooltip = "\n".join(tt_lines)
 
             self._last_stats.update({
                 "mem_used": mem_u_g,
                 "mem_total": mem_t_g,
                 "mem_pct": mem_pct,
                 "disk_free": disk_free_g,
-                "disk_total": disk_tot_g
+                "disk_total": disk_tot_g,
+                "disk_str": disk_str,
+                "disk_tooltip": disk_tooltip,
             })
             self.stats_updated.emit(self.server_id, dict(self._last_stats))
         except Exception:
@@ -311,17 +372,53 @@ try:
     mem_t_g = round(tot_k / 1048576, 1)
     mem_pct = round(used_k * 100.0 / tot_k, 1)
 
-    paths = ["/", "/data", "/home"]
-    disk_free_g = 0
-    disk_tot_g = 0
+    paths = ["/", "/mnt/Data", "/mnt/Data_solid", "/data", "/home"]
+    disks = []
+    seen = set()
     for p in paths:
         if os.path.exists(p):
+            dev = os.stat(p).st_dev
+            if dev in seen:
+                continue
+            seen.add(dev)
             t_b, u_b, f_b = shutil.disk_usage(p)
-            fg = round(f_b / (1024**3), 1)
-            tg = round(t_b / (1024**3), 1)
-            if fg > disk_free_g:
-                disk_free_g = fg
-                disk_tot_g = tg
+            disks.append({
+                "mount": p,
+                "free_gb": round(f_b / (1024**3), 1),
+                "total_gb": round(t_b / (1024**3), 1)
+            })
+
+    primary = next((d for d in disks if "Data" in d["mount"]), None)
+    if not primary and disks:
+        primary = disks[0]
+
+    if primary:
+        f_gb = primary["free_gb"]
+        t_gb = primary["total_gb"]
+        m = primary["mount"]
+        prefix = "Data: " if "Data" in m else ""
+        if f_gb >= 1000:
+            disk_str = f"💾 {prefix}{f_gb/1024:.2f}T"
+        else:
+            disk_str = f"💾 {prefix}{f_gb:.1f}G"
+        disk_free_g = f_gb
+        disk_tot_g = t_gb
+    else:
+        disk_str = "💾 -- 剩余"
+        disk_free_g = 0.0
+        disk_tot_g = 0.0
+
+    tt_lines = ["硬盘空间:"]
+    for d in disks:
+        fg = d["free_gb"]
+        tg = d["total_gb"]
+        pct = round(fg * 100.0 / tg, 1) if tg > 0 else 0
+        tag = " (主要数据盘)" if d == primary else ""
+        if fg >= 1000:
+            tt_lines.append(f"• {d['mount']}: {fg/1024:.2f}TB / {tg/1024:.2f}TB 可用 ({pct}%){tag}")
+        else:
+            tt_lines.append(f"• {d['mount']}: {fg:.1f}GB / {tg:.0f}GB 可用 ({pct}%){tag}")
+    disk_tooltip = "\\n".join(tt_lines)
 
     print(json.dumps({
         "cpu": cpu,
@@ -329,7 +426,9 @@ try:
         "mem_total": mem_t_g,
         "mem_pct": mem_pct,
         "disk_free": disk_free_g,
-        "disk_total": disk_tot_g
+        "disk_total": disk_tot_g,
+        "disk_str": disk_str,
+        "disk_tooltip": disk_tooltip
     }))
 except Exception as e:
     print(json.dumps({"error": str(e)}))
@@ -370,6 +469,8 @@ except Exception as e:
                                     "mem_pct": float(d.get("mem_pct", 0)),
                                     "disk_free": float(d.get("disk_free", 0)),
                                     "disk_total": float(d.get("disk_total", 0)),
+                                    "disk_str": d.get("disk_str", ""),
+                                    "disk_tooltip": d.get("disk_tooltip", ""),
                                     "status": "connected"
                                 })
                                 self.cpu_updated.emit(self.server_id, cpu_val)
