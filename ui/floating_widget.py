@@ -353,7 +353,7 @@ class FloatingWidget(QWidget):
         self.mini_cdx_5h = QLabel("--", self.mini_container)
         self.mini_cdx_dot = QLabel("·", self.mini_container)
         self.mini_cdx_wk = QLabel("--", self.mini_container)
-        self.mini_status_light = CodexStatusLight(self.mini_container, size=max(6, int(round(9 * self.widget_scale))))
+        self.mini_status_light = CodexStatusLight(self.mini_container, size=max(8, int(round(13 * self.widget_scale))))
 
         self.mini_sep2 = QLabel("|", self.mini_container)
 
@@ -433,7 +433,7 @@ class FloatingWidget(QWidget):
         self.row2_layout.setSpacing(spacing)
 
         # 2. Icon sizes
-        icon_sz = max(9, int(round(12 * self.widget_scale)))
+        icon_sz = max(9, int(round(13 * self.widget_scale)))
         self.mini_nvidia_icon.setPixmap(get_nvidia_pixmap(icon_sz))
         self.mini_openai_icon.setPixmap(get_openai_pixmap(icon_sz))
         self.mini_cpu_icon.setPixmap(get_cpu_pixmap(icon_sz))
@@ -453,7 +453,7 @@ class FloatingWidget(QWidget):
             dot.setStyleSheet(dot_style)
 
         # 4. Status Light Size
-        st_sz = max(6, int(round(9 * self.widget_scale)))
+        st_sz = max(8, int(round(13 * self.widget_scale)))
         self.mini_status_light.set_size(st_sz)
 
         # 5. Re-render labels with new scaled font sizes
@@ -933,16 +933,15 @@ class FloatingWidget(QWidget):
         # Size Scaling Submenu
         size_menu = menu.addMenu("📏 窗口缩放尺寸")
         scale_options = [
-            ("极小 (80%)", 0.80),
-            ("紧凑 (85%)", 0.85),
-            ("小 (90%)", 0.90),
-            ("标准 (100%)", 1.00),
-            ("放大 (115%)", 1.15),
+            ("80%", 0.80),
+            ("100% (标准)", 1.00),
+            ("120%", 1.20),
+            ("140%", 1.40),
         ]
         for label, scale_v in scale_options:
             act_s = size_menu.addAction(label)
             act_s.setCheckable(True)
-            act_s.setChecked(abs(self.widget_scale - scale_v) < 0.03)
+            act_s.setChecked(abs(self.widget_scale - scale_v) < 0.05)
             act_s.triggered.connect(lambda checked, s=scale_v: self.set_scale(s))
         
         menu.addSeparator()

@@ -70,12 +70,17 @@ class CodexStatusLight(QWidget):
             painter.translate(cx, cy)
             painter.rotate(self._angle)
             
-            radius = (min(w, h) - 3.0) / 2.0
+            radius = (min(w, h) - 2.5) / 2.0
             rect = QRectF(-radius, -radius, radius * 2.0, radius * 2.0)
             
-            # Vibrant Orange Pen
+            # Subtle track ring for high contrast
+            track_pen = QPen(QColor(245, 158, 11, 45), 1.6)
+            painter.setPen(track_pen)
+            painter.drawEllipse(rect)
+            
+            # Vibrant Orange Spinner Arc
             pen = QPen()
-            pen.setWidthF(1.8)
+            pen.setWidthF(2.0)
             pen.setCapStyle(Qt.RoundCap)
             pen.setColor(QColor(245, 158, 11))  # Electric Amber Orange (#F59E0B)
             painter.setPen(pen)
@@ -84,28 +89,31 @@ class CodexStatusLight(QWidget):
             painter.drawArc(rect, 0, 270 * 16)
             painter.restore()
             
-            # Center pulsing orange dot
+            # Center bright glowing orange dot
+            dot_r = max(1.5, radius * 0.36)
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(251, 146, 60, 220))  # #FB923C
-            painter.drawEllipse(QRectF(cx - 1.8, cy - 1.8, 3.6, 3.6))
+            painter.setBrush(QColor(251, 146, 60, 240))  # #FB923C
+            painter.drawEllipse(QRectF(cx - dot_r, cy - dot_r, dot_r * 2.0, dot_r * 2.0))
             
         else:
             # --- IDLE STATE: Emerald Green Glowing Dot ---
+            r = min(w, h) / 2.0
             # Outer soft glow halo
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(16, 185, 129, 50))
-            painter.drawEllipse(QRectF(cx - 5.5, cy - 5.5, 11.0, 11.0))
+            painter.drawEllipse(QRectF(cx - r * 0.9, cy - r * 0.9, r * 1.8, r * 1.8))
             
             # Middle ring
             painter.setBrush(QColor(16, 185, 129, 140))
-            painter.drawEllipse(QRectF(cx - 3.8, cy - 3.8, 7.6, 7.6))
+            painter.drawEllipse(QRectF(cx - r * 0.65, cy - r * 0.65, r * 1.3, r * 1.3))
             
             # Inner solid core
             painter.setBrush(QColor(16, 185, 129, 255))
-            painter.drawEllipse(QRectF(cx - 2.8, cy - 2.8, 5.6, 5.6))
+            painter.drawEllipse(QRectF(cx - r * 0.45, cy - r * 0.45, r * 0.9, r * 0.9))
             
             # White shine glint
-            painter.setBrush(QColor(255, 255, 255, 200))
-            painter.drawEllipse(QRectF(cx - 1.2, cy - 1.8, 1.8, 1.8))
+            glint_r = max(0.8, r * 0.16)
+            painter.setBrush(QColor(255, 255, 255, 220))
+            painter.drawEllipse(QRectF(cx - glint_r * 1.2, cy - r * 0.28, glint_r * 2.0, glint_r * 2.0))
             
         painter.end()
