@@ -1,6 +1,9 @@
 """
-Server CPU Utilization Monitor via SSH & Windows typeperf streaming.
-Monitors remote servers ('quad', 'e5', '8375c') in background threads with zero UI blocking.
+Server CPU, Memory & Disk Utilization Monitor via SSH.
+Supports:
+1. Windows servers ('quad', 'e5', '8375c') via typeperf streaming & wmic.
+2. Linux GPU servers ('7号', '8号', '4号') via lightweight /proc and disk sampling.
+Runs fully asynchronously in background threads with zero UI blocking.
 """
 
 import io
@@ -14,30 +17,63 @@ from PyQt5.QtCore import QObject, QThread, pyqtSignal
 import os
 import json
 
-DEFAULT_SERVERS = [
+DEFAULT_CPU_SERVERS = [
     {
         "id": "quad",
         "name": "server-quad",
         "host": "server-quad",
         "port": 22,
-        "user": "",
-        "password": ""
+        "user": "SJTU",
+        "password": "lab116",
+        "type": "cpu"
     },
     {
         "id": "e5",
         "name": "server-e5",
         "host": "server-e5",
         "port": 22,
-        "user": "",
-        "password": ""
+        "user": "SJTU",
+        "password": "lab116",
+        "type": "cpu"
     },
     {
         "id": "8375c",
         "name": "server-8375c",
         "host": "server-8375c",
         "port": 22,
-        "user": "",
-        "password": ""
+        "user": "SJTU",
+        "password": "lab116",
+        "type": "cpu"
+    }
+]
+
+DEFAULT_GPU_SERVERS = [
+    {
+        "id": "7",
+        "name": "7号 · L40S",
+        "ip": "192.168.120.7",
+        "port": 22,
+        "user": "xutianxiao",
+        "key_path": r"C:/Users/xtx/.ssh/id_rsa_xtx",
+        "type": "gpu"
+    },
+    {
+        "id": "8",
+        "name": "8号 · A100",
+        "ip": "192.168.120.8",
+        "port": 22,
+        "user": "xutianxiao",
+        "key_path": r"C:/Users/xtx/.ssh/id_rsa_xtx",
+        "type": "gpu"
+    },
+    {
+        "id": "4",
+        "name": "4号 · 2080Ti",
+        "ip": "192.168.120.4",
+        "port": 22,
+        "user": "xutianxiao",
+        "key_path": r"C:/Users/xtx/.ssh/id_rsa_stu",
+        "type": "gpu"
     }
 ]
 
@@ -54,10 +90,11 @@ def get_hex_for_cpu(val: float) -> str:
         return "#EF4444"  # High (>=30%): Alert red
 
 
-class SingleServerWorker(QThread):
-    """Background worker monitoring a single server's CPU percentage via streaming typeperf."""
-    cpu_updated = pyqtSignal(str, float)  # server_id, cpu_percent (-1.0 if offline)
-    status_updated = pyqtSignal(str, str)  # server_id, status ("connected", "connecting", "error")
+class SingleWindowsServerWorker(QThread):
+    """Background worker monitoring a Windows server's CPU via typeperf and RAM/Disk via wmic."""
+    cpu_updated = pyqtSignal(str, float)
+    stats_updated = pyqtSignal(str, dict)
+    status_updated = pyqtSignal(str, str)
 
     def __init__(self, server_cfg: Dict[str, Any], interval: int = 2):
         super().__init__()
@@ -67,10 +104,22 @@ class SingleServerWorker(QThread):
         self.name = server_cfg.get("name", self.server_id)
         self.host = server_cfg.get("host", self.name)
         self.port = int(server_cfg.get("port", 22))
-        self.user = server_cfg.get("user", "admin")
-        self.password = server_cfg.get("password", "")
+        self.user = server_cfg.get("user", "SJTU")
+        self.password = server_cfg.get("password", "lab116")
         self._running = True
         self.client: Optional[paramiko.SSHClient] = None
+        self._last_stats: Dict[str, Any] = {
+            "id": self.server_id,
+            "name": self.name,
+            "type": "cpu",
+            "cpu": -1.0,
+            "mem_used": 0.0,
+            "mem_total": 0.0,
+            "mem_pct": 0.0,
+            "disk_free": 0.0,
+            "disk_total": 0.0,
+            "status": "connecting"
+        }
 
     def stop(self):
         self._running = False
@@ -79,6 +128,44 @@ class SingleServerWorker(QThread):
                 self.client.close()
             except Exception:
                 pass
+
+    def _query_wmic_stats(self):
+        """Query memory and disk free space via WMIC on another channel."""
+        if not self.client:
+            return
+        try:
+            cmd = 'wmic OS get FreePhysicalMemory,TotalVisibleMemorySize /Value & wmic LogicalDisk where "DeviceID=\'C:\'" get FreeSpace,Size /Value'
+            stdin, stdout, stderr = self.client.exec_command(cmd, timeout=5)
+            out = stdout.read().decode('gbk', errors='ignore')
+            res = {}
+            for line in out.splitlines():
+                line = line.strip()
+                if '=' in line:
+                    k, v = line.split('=', 1)
+                    res[k.strip()] = v.strip()
+
+            tot_k = float(res.get('TotalVisibleMemorySize', 1))
+            free_k = float(res.get('FreePhysicalMemory', 0))
+            used_k = max(0.0, tot_k - free_k)
+            mem_u_g = round(used_k / 1048576, 1)
+            mem_t_g = round(tot_k / 1048576, 1)
+            mem_pct = round(used_k * 100.0 / tot_k, 1) if tot_k > 0 else 0.0
+
+            dfree_b = float(res.get('FreeSpace', 0))
+            dtot_b = float(res.get('Size', 1))
+            disk_free_g = round(dfree_b / (1024**3), 1)
+            disk_tot_g = round(dtot_b / (1024**3), 1)
+
+            self._last_stats.update({
+                "mem_used": mem_u_g,
+                "mem_total": mem_t_g,
+                "mem_pct": mem_pct,
+                "disk_free": disk_free_g,
+                "disk_total": disk_tot_g
+            })
+            self.stats_updated.emit(self.server_id, dict(self._last_stats))
+        except Exception:
+            pass
 
     def run(self):
         while self._running:
@@ -101,11 +188,16 @@ class SingleServerWorker(QThread):
                     transport.set_keepalive(15)
 
                 self.status_updated.emit(self.server_id, "connected")
+                self._last_stats["status"] = "connected"
+
+                # Initial WMIC query
+                self._query_wmic_stats()
 
                 # Stream CPU usage with typeperf
                 cmd = f'typeperf "\\Processor(_Total)\\% Processor Time" -si {self.interval}'
                 stdin, stdout, stderr = self.client.exec_command(cmd, bufsize=1)
 
+                cycle_count = 0
                 while self._running:
                     line = stdout.readline()
                     if not line:
@@ -121,12 +213,22 @@ class SingleServerWorker(QThread):
                         if len(row) >= 2:
                             cpu_val = max(0.0, min(100.0, float(row[1])))
                             self.cpu_updated.emit(self.server_id, cpu_val)
+                            self._last_stats["cpu"] = cpu_val
+                            self.stats_updated.emit(self.server_id, dict(self._last_stats))
                     except (ValueError, IndexError):
                         continue
 
+                    cycle_count += 1
+                    # Refresh RAM and Disk every 10 samples (~20 seconds)
+                    if cycle_count % 10 == 0:
+                        self._query_wmic_stats()
+
             except Exception:
                 self.status_updated.emit(self.server_id, "error")
+                self._last_stats["status"] = "error"
+                self._last_stats["cpu"] = -1.0
                 self.cpu_updated.emit(self.server_id, -1.0)
+                self.stats_updated.emit(self.server_id, dict(self._last_stats))
             finally:
                 if self.client:
                     try:
@@ -142,49 +244,242 @@ class SingleServerWorker(QThread):
                 time.sleep(1)
 
 
-class MultiServerMonitor(QObject):
-    """Coordinates streaming CPU monitors for servers quad, e5, and 8375c."""
-    servers_updated = pyqtSignal(dict)  # {"quad": float, "e5": float, "8375c": float}
+# Alias SingleServerWorker to SingleWindowsServerWorker for backward compatibility
+SingleServerWorker = SingleWindowsServerWorker
 
-    def __init__(self, server_list: Optional[List[Dict[str, Any]]] = None, interval: int = 2):
+
+class SingleLinuxServerWorker(QThread):
+    """Background worker monitoring a Linux GPU server's CPU, Memory and Disk via SSH."""
+    cpu_updated = pyqtSignal(str, float)
+    stats_updated = pyqtSignal(str, dict)
+    status_updated = pyqtSignal(str, str)
+
+    def __init__(self, server_cfg: Dict[str, Any], interval: int = 3):
         super().__init__()
-        if not server_list:
-            # Check if scratch/server_monitor/config.json has credentials
+        self.server_cfg = server_cfg
+        self.interval = max(2, interval)
+        self.server_id = server_cfg.get("id")
+        self.name = server_cfg.get("name", self.server_id)
+        self.ip = server_cfg.get("ip")
+        self.port = int(server_cfg.get("port", 22))
+        self.user = server_cfg.get("user", "xutianxiao")
+        self.key_path = server_cfg.get("key_path")
+        self._running = True
+        self.client: Optional[paramiko.SSHClient] = None
+        self._last_stats: Dict[str, Any] = {
+            "id": self.server_id,
+            "name": self.name,
+            "type": "gpu",
+            "cpu": -1.0,
+            "mem_used": 0.0,
+            "mem_total": 0.0,
+            "mem_pct": 0.0,
+            "disk_free": 0.0,
+            "disk_total": 0.0,
+            "status": "connecting"
+        }
+
+    def stop(self):
+        self._running = False
+        if self.client:
             try:
-                ext_cfg_path = os.path.join(
-                    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                    "server_monitor", "config.json"
-                )
-                if os.path.exists(ext_cfg_path):
-                    with open(ext_cfg_path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        server_list = data.get("servers", [])
+                self.client.close()
             except Exception:
                 pass
-        self.server_list = server_list or list(DEFAULT_SERVERS)
+
+    def run(self):
+        py_cmd = '''python3 -c '
+import os, time, shutil, json
+try:
+    with open("/proc/stat") as f:
+        f1 = [float(x) for x in f.readline().split()[1:5]]
+    time.sleep(0.3)
+    with open("/proc/stat") as f:
+        f2 = [float(x) for x in f.readline().split()[1:5]]
+    cpu = round(100.0 * (1.0 - (f2[3]-f1[3])/(sum(f2)-sum(f1))), 1)
+
+    mem = {}
+    with open("/proc/meminfo") as f:
+        for line in f:
+            p = line.split(":")
+            if len(p)==2:
+                mem[p[0].strip()] = float(p[1].split()[0])
+    tot_k = mem.get("MemTotal", 1)
+    avail_k = mem.get("MemAvailable", mem.get("MemFree", 0))
+    used_k = tot_k - avail_k
+    mem_u_g = round(used_k / 1048576, 1)
+    mem_t_g = round(tot_k / 1048576, 1)
+    mem_pct = round(used_k * 100.0 / tot_k, 1)
+
+    paths = ["/", "/data", "/home"]
+    disk_free_g = 0
+    disk_tot_g = 0
+    for p in paths:
+        if os.path.exists(p):
+            t_b, u_b, f_b = shutil.disk_usage(p)
+            fg = round(f_b / (1024**3), 1)
+            tg = round(t_b / (1024**3), 1)
+            if fg > disk_free_g:
+                disk_free_g = fg
+                disk_tot_g = tg
+
+    print(json.dumps({
+        "cpu": cpu,
+        "mem_used": mem_u_g,
+        "mem_total": mem_t_g,
+        "mem_pct": mem_pct,
+        "disk_free": disk_free_g,
+        "disk_total": disk_tot_g
+    }))
+except Exception as e:
+    print(json.dumps({"error": str(e)}))
+' '''
+        while self._running:
+            try:
+                self.status_updated.emit(self.server_id, "connecting")
+                k = paramiko.RSAKey.from_private_key_file(self.key_path)
+                self.client = paramiko.SSHClient()
+                self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                self.client.connect(
+                    hostname=self.ip,
+                    port=self.port,
+                    username=self.user,
+                    pkey=k,
+                    timeout=4
+                )
+
+                transport = self.client.get_transport()
+                if transport:
+                    transport.set_keepalive(15)
+
+                self.status_updated.emit(self.server_id, "connected")
+                self._last_stats["status"] = "connected"
+
+                while self._running:
+                    stdin, stdout, stderr = self.client.exec_command(py_cmd, timeout=5)
+                    out = stdout.read().decode().strip()
+                    if out:
+                        try:
+                            d = json.loads(out)
+                            if "cpu" in d:
+                                cpu_val = float(d["cpu"])
+                                self._last_stats.update({
+                                    "cpu": cpu_val,
+                                    "mem_used": float(d.get("mem_used", 0)),
+                                    "mem_total": float(d.get("mem_total", 0)),
+                                    "mem_pct": float(d.get("mem_pct", 0)),
+                                    "disk_free": float(d.get("disk_free", 0)),
+                                    "disk_total": float(d.get("disk_total", 0)),
+                                    "status": "connected"
+                                })
+                                self.cpu_updated.emit(self.server_id, cpu_val)
+                                self.stats_updated.emit(self.server_id, dict(self._last_stats))
+                        except Exception:
+                            pass
+
+                    # Sleep between queries
+                    for _ in range(self.interval * 4):
+                        if not self._running:
+                            break
+                        self.msleep(250)
+
+            except Exception as e:
+                self.status_updated.emit(self.server_id, "error")
+                self._last_stats["status"] = "error"
+                self._last_stats["cpu"] = -1.0
+                self.cpu_updated.emit(self.server_id, -1.0)
+                self.stats_updated.emit(self.server_id, dict(self._last_stats))
+            finally:
+                if self.client:
+                    try:
+                        self.client.close()
+                    except Exception:
+                        pass
+                    self.client = None
+
+            # Retry backoff
+            for _ in range(4):
+                if not self._running:
+                    break
+                self.msleep(1000)
+
+
+class MultiServerMonitor(QObject):
+    """
+    Coordinates streaming and periodic monitors for:
+    1. 3 CPU servers (quad, e5, 8375c)
+    2. 3 GPU servers (7号, 8号, 4号)
+    Emits both real-time CPU summary (for Mini mode) and complete host stats (for Expanded mode).
+    """
+    servers_updated = pyqtSignal(dict)      # Backward-compatible CPU dict: {"quad": float, ..., "7": float, ...}
+    host_stats_updated = pyqtSignal(dict)   # Full server dict: {sid: {cpu, mem_used, mem_total, mem_pct, disk_free, ...}}
+
+    def __init__(self, cpu_server_list: Optional[List[Dict[str, Any]]] = None, gpu_server_list: Optional[List[Dict[str, Any]]] = None, interval: int = 2):
+        super().__init__()
+        self.cpu_servers = cpu_server_list or list(DEFAULT_CPU_SERVERS)
+        self.gpu_servers = gpu_server_list or list(DEFAULT_GPU_SERVERS)
         self.interval = interval
-        self.workers: Dict[str, SingleServerWorker] = {}
+
+        self.workers: Dict[str, QThread] = {}
         self.latest_cpu: Dict[str, float] = {
+            # CPU servers
             "quad": -1.0,
             "e5": -1.0,
-            "8375c": -1.0
+            "8375c": -1.0,
+            # GPU servers
+            "7": -1.0,
+            "8": -1.0,
+            "4": -1.0
         }
+        self.latest_host_stats: Dict[str, Dict[str, Any]] = {}
+
+        # Pre-populate host stats structure
+        for s in self.gpu_servers:
+            sid = s.get("id")
+            self.latest_host_stats[sid] = {
+                "id": sid, "name": s.get("name", sid), "type": "gpu",
+                "cpu": -1.0, "mem_used": 0.0, "mem_total": 0.0, "mem_pct": 0.0,
+                "disk_free": 0.0, "disk_total": 0.0, "status": "connecting"
+            }
+        for s in self.cpu_servers:
+            sid = s.get("id")
+            self.latest_host_stats[sid] = {
+                "id": sid, "name": s.get("name", sid), "type": "cpu",
+                "cpu": -1.0, "mem_used": 0.0, "mem_total": 0.0, "mem_pct": 0.0,
+                "disk_free": 0.0, "disk_total": 0.0, "status": "connecting"
+            }
 
     def start(self):
         self.stop()
-        for s_cfg in self.server_list:
+        # 1. Start Windows CPU workers
+        for s_cfg in self.cpu_servers:
             sid = s_cfg.get("id", s_cfg.get("name"))
-            worker = SingleServerWorker(s_cfg, interval=self.interval)
+            worker = SingleWindowsServerWorker(s_cfg, interval=self.interval)
             worker.cpu_updated.connect(self._on_cpu_updated)
+            worker.stats_updated.connect(self._on_stats_updated)
+            self.workers[sid] = worker
+            worker.start()
+
+        # 2. Start Linux GPU host workers
+        for s_cfg in self.gpu_servers:
+            sid = s_cfg.get("id")
+            worker = SingleLinuxServerWorker(s_cfg, interval=3)
+            worker.cpu_updated.connect(self._on_cpu_updated)
+            worker.stats_updated.connect(self._on_stats_updated)
             self.workers[sid] = worker
             worker.start()
 
     def stop(self):
         for worker in self.workers.values():
-            worker.stop()
-            worker.wait(1000)
+            if hasattr(worker, "stop"):
+                worker.stop()
+            worker.wait(800)
         self.workers.clear()
 
     def _on_cpu_updated(self, server_id: str, cpu_val: float):
         self.latest_cpu[server_id] = cpu_val
         self.servers_updated.emit(dict(self.latest_cpu))
+
+    def _on_stats_updated(self, server_id: str, stats: dict):
+        self.latest_host_stats[server_id] = stats
+        self.host_stats_updated.emit(dict(self.latest_host_stats))

@@ -285,6 +285,7 @@ class FloatingWidget(QWidget):
         right_layout.setSpacing(6)
 
         self.gpu_view = GPUServerView(self.gpu_monitor, self.right_col, scale=self.widget_scale)
+        self.server_monitor.host_stats_updated.connect(self.gpu_view.update_host_stats)
         right_layout.addWidget(self.gpu_view)
         cols_layout.addWidget(self.right_col)
         
@@ -303,7 +304,7 @@ class FloatingWidget(QWidget):
         self.mini_vbox.setContentsMargins(6, 2, 6, 2)
         self.mini_vbox.setSpacing(1)
 
-        # === Row 1 (Top): 1 BT + 5 GPUs ===
+        # === Row 1 (Top): 1 BT + 5 GPUs + 3 GPU-Server CPUs ===
         self.row1_layout = QHBoxLayout()
         self.row1_layout.setContentsMargins(0, 0, 0, 0)
         self.row1_layout.setSpacing(max(1, int(round(2 * self.widget_scale))))
@@ -338,6 +339,30 @@ class FloatingWidget(QWidget):
                 self.mini_gpu_dots.append(dot)
                 self.row1_layout.addWidget(dot)
             self.row1_layout.addWidget(lbl)
+
+        # Separator '|' between 5 GPUs and 3 GPU-Server CPUs
+        self.mini_sep_gpu_cpu = QLabel("|", self.mini_container)
+        self.row1_layout.addWidget(self.mini_sep_gpu_cpu)
+
+        # 3 GPU-Server CPU labels (7号, 8号, 4号) interleaved with '·' (no extra logo)
+        self.mini_gpu_cpu_7 = QLabel("--", self.mini_container)
+        self.mini_gpu_cpu_8 = QLabel("--", self.mini_container)
+        self.mini_gpu_cpu_4 = QLabel("--", self.mini_container)
+
+        self.mini_gpu_cpu_labels = {
+            "7": self.mini_gpu_cpu_7,
+            "8": self.mini_gpu_cpu_8,
+            "4": self.mini_gpu_cpu_4,
+        }
+
+        self.mini_gpu_cpu_dots = []
+        gpu_srv_keys = ["7", "8", "4"]
+        for i, sid in enumerate(gpu_srv_keys):
+            if i > 0:
+                dot = QLabel("·", self.mini_container)
+                self.mini_gpu_cpu_dots.append(dot)
+                self.row1_layout.addWidget(dot)
+            self.row1_layout.addWidget(self.mini_gpu_cpu_labels[sid])
 
         self.row1_layout.addStretch()
         self.mini_vbox.addLayout(self.row1_layout)
@@ -394,6 +419,8 @@ class FloatingWidget(QWidget):
         all_mini_widgets = [
             self.mini_bt_lbl, self.mini_sep1, self.mini_nvidia_icon,
             *self.mini_gpu_labels, *self.mini_gpu_dots,
+            self.mini_sep_gpu_cpu,
+            *self.mini_gpu_cpu_labels.values(), *self.mini_gpu_cpu_dots,
             self.mini_openai_icon, self.mini_cdx_5h, self.mini_cdx_dot, self.mini_cdx_wk,
             self.mini_status_light, self.mini_sep2, self.mini_cpu_icon,
             *self.mini_srv_labels.values(), *self.mini_srv_dots
@@ -441,13 +468,16 @@ class FloatingWidget(QWidget):
         # 3. Separators & Dots
         sep_fs = self.get_mini_font_size(9)
         dot_fs = self.get_mini_font_size(9)
-        sep_style = f"font-size: {sep_fs}px; color: #4B5563; font-weight: 400;"
+        sep_style = f"font-size: {sep_fs}px; color: #4B5563; font-weight: 400; padding: 0 {max(1, int(round(2 * self.widget_scale)))}px;"
         dot_style = f"font-size: {dot_fs}px; color: #6B7280; font-weight: 400;"
 
         self.mini_sep1.setStyleSheet(sep_style)
+        self.mini_sep_gpu_cpu.setStyleSheet(sep_style)
         self.mini_sep2.setStyleSheet(sep_style)
         self.mini_cdx_dot.setStyleSheet(dot_style)
         for dot in self.mini_gpu_dots:
+            dot.setStyleSheet(dot_style)
+        for dot in self.mini_gpu_cpu_dots:
             dot.setStyleSheet(dot_style)
         for dot in self.mini_srv_dots:
             dot.setStyleSheet(dot_style)
@@ -544,7 +574,7 @@ class FloatingWidget(QWidget):
             self.root_layout.setContentsMargins(2, 2, 2, 2)
             self.expanded_container.hide()
             self.mini_container.show()
-            self.setFixedSize(int(round(156 * self.widget_scale)), int(round(37 * self.widget_scale)))
+            self.setFixedSize(int(round(208 * self.widget_scale)), int(round(37 * self.widget_scale)))
         else:
             self.root_layout.setContentsMargins(6, 6, 6, 6)
             self.mini_container.hide()
@@ -602,7 +632,7 @@ class FloatingWidget(QWidget):
         """Restore saved window coordinates or place near top-right."""
         pos = self.cfg.get("window_pos")
         screen = QApplication.primaryScreen().availableGeometry()
-        expected_w = int(round(810 * self.widget_scale)) if not self.is_mini else int(round(156 * self.widget_scale))
+        expected_w = int(round(810 * self.widget_scale)) if not self.is_mini else int(round(208 * self.widget_scale))
         if pos and len(pos) == 2:
             x = max(screen.left() + 10, min(pos[0], screen.right() - expected_w))
             y = max(screen.top() + 10, min(pos[1], screen.bottom() - 150))
@@ -845,30 +875,61 @@ class FloatingWidget(QWidget):
         self._render_mini_server_cpu()
 
     def _render_mini_server_cpu(self):
-        """Render server CPU values in mini capsule."""
+        """Render server CPU values in mini capsule (Row 1: 7, 8, 4; Row 2: quad, e5, 8375c)."""
         data = getattr(self, "_current_server_cpu", {})
         fs = self.get_mini_font_size(10)
-        tip_parts = []
-        for sid in ["quad", "e5", "8375c"]:
-            val = data.get(sid, -1.0)
-            lbl = self.mini_srv_labels.get(sid)
-            if not lbl:
-                continue
-            if val < 0:
-                lbl.setText("--")
-                lbl.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: #64748B;")
-                tip_parts.append(f"{sid}: 离线")
-            else:
-                num_str = f"{int(round(val))}"
-                color = get_hex_for_cpu(val)
-                lbl.setText(num_str)
-                lbl.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: {color};")
-                tip_parts.append(f"{sid}: {val:.1f}%")
 
-        tooltip = "服务器CPU利用率 (quad / e5 / 8375c)\n" + " | ".join(tip_parts)
-        self.mini_cpu_icon.setToolTip(tooltip)
-        for lbl in self.mini_srv_labels.values():
-            lbl.setToolTip(tooltip)
+        # 1. GPU Server CPUs in Row 1: 7号, 8号, 4号
+        if hasattr(self, "mini_gpu_cpu_labels"):
+            gpu_tip_parts = []
+            gpu_srv_names = {"7": "7号 (L40S)", "8": "8号 (A100)", "4": "4号 (2080Ti)"}
+            for sid in ["7", "8", "4"]:
+                val = data.get(sid, -1.0)
+                lbl = self.mini_gpu_cpu_labels.get(sid)
+                if not lbl:
+                    continue
+                name = gpu_srv_names.get(sid, sid)
+                if val < 0:
+                    lbl.setText("--")
+                    lbl.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: #64748B;")
+                    gpu_tip_parts.append(f"{name}: 离线")
+                else:
+                    num_str = f"{int(round(val))}"
+                    color = get_hex_for_cpu(val)
+                    lbl.setText(num_str)
+                    lbl.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: {color};")
+                    gpu_tip_parts.append(f"{name}: {val:.1f}%")
+
+            gpu_cpu_tt = "GPU服务器 CPU利用率 (7号 / 8号 / 4号)\n" + " | ".join(gpu_tip_parts)
+            if hasattr(self, "mini_sep_gpu_cpu"):
+                self.mini_sep_gpu_cpu.setToolTip(gpu_cpu_tt)
+            for lbl in self.mini_gpu_cpu_labels.values():
+                lbl.setToolTip(gpu_cpu_tt)
+
+        # 2. CPU Server CPUs in Row 2: quad, e5, 8375c
+        if hasattr(self, "mini_srv_labels"):
+            cpu_tip_parts = []
+            for sid in ["quad", "e5", "8375c"]:
+                val = data.get(sid, -1.0)
+                lbl = self.mini_srv_labels.get(sid)
+                if not lbl:
+                    continue
+                if val < 0:
+                    lbl.setText("--")
+                    lbl.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: #64748B;")
+                    cpu_tip_parts.append(f"{sid}: 离线")
+                else:
+                    num_str = f"{int(round(val))}"
+                    color = get_hex_for_cpu(val)
+                    lbl.setText(num_str)
+                    lbl.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: {color};")
+                    cpu_tip_parts.append(f"{sid}: {val:.1f}%")
+
+            tooltip = "CPU服务器 CPU利用率 (quad / e5 / 8375c)\n" + " | ".join(cpu_tip_parts)
+            if hasattr(self, "mini_cpu_icon"):
+                self.mini_cpu_icon.setToolTip(tooltip)
+            for lbl in self.mini_srv_labels.values():
+                lbl.setToolTip(tooltip)
 
     def on_gpu_data_updated(self, data: Dict[str, Any]):
         """Render GPU mini stats and refresh expanded view."""

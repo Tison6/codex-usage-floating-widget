@@ -194,6 +194,119 @@ class GPUCardRow(QFrame):
         self.lbl_util.setText(f"⚙️ {util}%")
 
 
+class ServerHostCard(QFrame):
+    """
+    Compact card showing a server's host metrics:
+    Line 1: Server name (left) | CPU utilization with color threshold (right)
+    Line 2: 🧠 RAM used/total (%) (left) | 💾 Disk free space (right)
+    """
+    def __init__(self, sid: str, name: str, s_type: str = "gpu", parent=None, scale: float = 1.0):
+        super().__init__(parent)
+        self.sid = sid
+        self.display_name = name
+        self.s_type = s_type
+        self.scale = max(0.5, float(scale))
+
+        self.setObjectName("ServerHostCard")
+        self.setStyleSheet("""
+            QFrame#ServerHostCard {
+                background-color: rgba(255, 255, 255, 0.035);
+                border: 1px solid rgba(255, 255, 255, 0.06);
+                border-radius: 4px;
+            }
+            QFrame#ServerHostCard:hover {
+                background-color: rgba(255, 255, 255, 0.065);
+                border-color: rgba(255, 255, 255, 0.12);
+            }
+        """)
+
+        pad_v = max(2, int(round(3 * self.scale)))
+        pad_h = max(4, int(round(5 * self.scale)))
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(pad_h, pad_v, pad_h, pad_v)
+        layout.setSpacing(max(1, int(round(2 * self.scale))))
+
+        # Row 1: Name & CPU
+        row1 = QHBoxLayout()
+        row1.setContentsMargins(0, 0, 0, 0)
+        row1.setSpacing(3)
+
+        self.lbl_name = QLabel(self.display_name, self)
+        name_fs = max(7, int(round(9.5 * self.scale)))
+        self.lbl_name.setStyleSheet(f"font-size: {name_fs}px; font-weight: 700; color: #E2E8F0; background: transparent; border: none;")
+
+        self.lbl_cpu = QLabel("CPU: --", self)
+        cpu_fs = max(7, int(round(9.0 * self.scale)))
+        self.lbl_cpu.setStyleSheet(f"font-size: {cpu_fs}px; font-weight: 700; color: #64748B; background: transparent; border: none;")
+
+        row1.addWidget(self.lbl_name)
+        row1.addStretch()
+        row1.addWidget(self.lbl_cpu)
+        layout.addLayout(row1)
+
+        # Row 2: RAM & Disk
+        row2 = QHBoxLayout()
+        row2.setContentsMargins(0, 0, 0, 0)
+        row2.setSpacing(3)
+
+        sub_fs = max(6, int(round(8.0 * self.scale)))
+        self.lbl_ram = QLabel("🧠 --/--G (--%)", self)
+        self.lbl_ram.setStyleSheet(f"font-size: {sub_fs}px; color: #94A3B8; background: transparent; border: none;")
+
+        self.lbl_disk = QLabel("💾 -- 剩余", self)
+        self.lbl_disk.setStyleSheet(f"font-size: {sub_fs}px; color: #CBD5E1; background: transparent; border: none;")
+
+        row2.addWidget(self.lbl_ram)
+        row2.addStretch()
+        row2.addWidget(self.lbl_disk)
+        layout.addLayout(row2)
+
+    def set_scale(self, scale: float):
+        self.scale = max(0.5, float(scale))
+        pad_v = max(2, int(round(3 * self.scale)))
+        pad_h = max(4, int(round(5 * self.scale)))
+        self.layout().setContentsMargins(pad_h, pad_v, pad_h, pad_v)
+        self.layout().setSpacing(max(1, int(round(2 * self.scale))))
+        name_fs = max(7, int(round(9.5 * self.scale)))
+        self.lbl_name.setStyleSheet(f"font-size: {name_fs}px; font-weight: 700; color: #E2E8F0; background: transparent; border: none;")
+        cpu_fs = max(7, int(round(9.0 * self.scale)))
+        cur_style = self.lbl_cpu.styleSheet()
+        col_pos = cur_style.find("color:")
+        col_str = cur_style[col_pos:] if col_pos != -1 else "color: #64748B;"
+        self.lbl_cpu.setStyleSheet(f"font-size: {cpu_fs}px; font-weight: 700; background: transparent; border: none; {col_str}")
+        sub_fs = max(6, int(round(8.0 * self.scale)))
+        self.lbl_ram.setStyleSheet(f"font-size: {sub_fs}px; color: #94A3B8; background: transparent; border: none;")
+        self.lbl_disk.setStyleSheet(f"font-size: {sub_fs}px; color: #CBD5E1; background: transparent; border: none;")
+
+    def update_stats(self, cpu: float, mem_used: float, mem_total: float, mem_pct: float, disk_free: float):
+        if cpu < 0:
+            c_color = "#64748B"
+            c_text = "CPU: 离线"
+        elif cpu < 10:
+            c_color = "#10B981"
+            c_text = f"CPU: {int(round(cpu))}%"
+        elif cpu < 30:
+            c_color = "#F59E0B"
+            c_text = f"CPU: {int(round(cpu))}%"
+        else:
+            c_color = "#EF4444"
+            c_text = f"CPU: {int(round(cpu))}%"
+
+        cpu_fs = max(7, int(round(9.0 * self.scale)))
+        self.lbl_cpu.setText(c_text)
+        self.lbl_cpu.setStyleSheet(f"font-size: {cpu_fs}px; font-weight: 700; color: {c_color}; background: transparent; border: none;")
+
+        if mem_total > 0:
+            self.lbl_ram.setText(f"🧠 {mem_used:.1f}/{mem_total:.0f}G ({int(round(mem_pct))}%)")
+        else:
+            self.lbl_ram.setText("🧠 --/--G (--%)")
+
+        if disk_free > 0:
+            self.lbl_disk.setText(f"💾 {disk_free:.1f}G 剩余")
+        else:
+            self.lbl_disk.setText("💾 -- 剩余")
+
+
 class GanttLabelsWidget(QWidget):
     """Pinned left column showing GPU card labels for the history Gantt timeline."""
     DEFAULT_TASKS = [
@@ -609,6 +722,62 @@ class GPUServerView(QWidget):
             self.live_layout.addWidget(row)
             self.card_rows[key] = row
 
+        # Divider between GPU cards and Host Resource cards
+        self.host_divider = QFrame(self.live_container)
+        self.host_divider.setFrameShape(QFrame.HLine)
+        self.host_divider.setStyleSheet("background-color: rgba(255, 255, 255, 0.08); height: 1px; border: none;")
+        self.live_layout.addWidget(self.host_divider)
+
+        # Host section header row: Title + Filter Buttons [全部] [GPU] [CPU]
+        self.host_header = QHBoxLayout()
+        self.host_header.setContentsMargins(0, 2, 0, 1)
+        self.host_header.setSpacing(max(2, int(round(3 * self.scale))))
+
+        self.host_title = QLabel("🖥️ 主机资源", self.live_container)
+        host_title_fs = max(7, int(round(9.5 * self.scale)))
+        self.host_title.setStyleSheet(f"font-size: {host_title_fs}px; font-weight: 700; color: #CBD5E1;")
+
+        self.host_filter_mode = "all"
+        self.btn_filter_all = QPushButton("全部", self.live_container)
+        self.btn_filter_gpu = QPushButton("GPU", self.live_container)
+        self.btn_filter_cpu = QPushButton("CPU", self.live_container)
+
+        self.filter_btns = {
+            "all": self.btn_filter_all,
+            "gpu": self.btn_filter_gpu,
+            "cpu": self.btn_filter_cpu,
+        }
+
+        pill_h = max(13, int(round(16 * self.scale)))
+        for mode, btn in self.filter_btns.items():
+            btn.setFixedHeight(pill_h)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.clicked.connect(lambda checked, m=mode: self._set_host_filter(m))
+
+        self.host_header.addWidget(self.host_title)
+        self.host_header.addStretch()
+        self.host_header.addWidget(self.btn_filter_all)
+        self.host_header.addWidget(self.btn_filter_gpu)
+        self.host_header.addWidget(self.btn_filter_cpu)
+        self.live_layout.addLayout(self.host_header)
+
+        # Pre-create Host Cards for 3 GPU servers + 3 CPU servers
+        self.host_cards: Dict[str, ServerHostCard] = {}
+        host_definitions = [
+            ("7", "GPU 7号 · L40S", "gpu"),
+            ("8", "GPU 8号 · A100", "gpu"),
+            ("4", "GPU 4号 · 2080Ti", "gpu"),
+            ("quad", "CPU server-quad", "cpu"),
+            ("e5", "CPU server-e5", "cpu"),
+            ("8375c", "CPU server-8375c", "cpu"),
+        ]
+        for sid, name, stype in host_definitions:
+            card = ServerHostCard(sid, name, s_type=stype, parent=self.live_container, scale=self.scale)
+            self.live_layout.addWidget(card)
+            self.host_cards[sid] = card
+
+        self._update_filter_button_styles()
+
         self.live_layout.addStretch()
         self.scroll_live.setWidget(self.live_container)
         self.stack.addWidget(self.scroll_live)
@@ -740,6 +909,14 @@ class GPUServerView(QWidget):
         self.btn_tab_hist.setFixedHeight(tab_h)
         for row in self.card_rows.values():
             row.set_scale(self.scale)
+        if hasattr(self, "host_cards"):
+            for card in self.host_cards.values():
+                card.set_scale(self.scale)
+        if hasattr(self, "host_title"):
+            host_title_fs = max(7, int(round(9.5 * self.scale)))
+            self.host_title.setStyleSheet(f"font-size: {host_title_fs}px; font-weight: 700; color: #CBD5E1;")
+        if hasattr(self, "filter_btns"):
+            self._update_filter_button_styles()
         if hasattr(self, "gantt_labels"):
             self.gantt_labels.set_scale(self.scale)
         if hasattr(self, "gantt_canvas"):
@@ -756,6 +933,66 @@ class GPUServerView(QWidget):
                 font-family: 'Consolas', monospace;
             """)
         self.switch_tab(self.stack.currentIndex())
+
+    def _set_host_filter(self, mode: str):
+        """Filter host cards by category: 'all', 'gpu', or 'cpu'."""
+        self.host_filter_mode = mode
+        for card in self.host_cards.values():
+            if mode == "all" or card.s_type == mode:
+                card.show()
+            else:
+                card.hide()
+        self._update_filter_button_styles()
+
+    def _update_filter_button_styles(self):
+        """Update active and inactive styling for host filter pill buttons."""
+        fs = max(6, int(round(8.5 * self.scale)))
+        pad = max(2, int(round(4 * self.scale)))
+        pill_h = max(13, int(round(16 * self.scale)))
+        for mode, btn in self.filter_btns.items():
+            btn.setFixedHeight(pill_h)
+            if mode == self.host_filter_mode:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: #0284C7;
+                        color: #FFFFFF;
+                        border: none;
+                        border-radius: 3px;
+                        font-size: {fs}px;
+                        font-weight: 700;
+                        padding: 0px {pad}px;
+                    }}
+                """)
+            else:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: rgba(255, 255, 255, 0.05);
+                        color: #94A3B8;
+                        border: 1px solid rgba(255, 255, 255, 0.08);
+                        border-radius: 3px;
+                        font-size: {fs}px;
+                        font-weight: 600;
+                        padding: 0px {pad}px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: rgba(255, 255, 255, 0.1);
+                        color: #FFFFFF;
+                    }}
+                """)
+
+    def update_host_stats(self, stats: Dict[str, Dict[str, Any]]):
+        """Update host stats (CPU, RAM, Disk) for all 6 servers."""
+        if not stats:
+            return
+        for sid, card in self.host_cards.items():
+            if sid in stats:
+                sdata = stats[sid]
+                cpu = float(sdata.get("cpu", -1.0))
+                mem_u = float(sdata.get("mem_used", 0.0))
+                mem_t = float(sdata.get("mem_total", 0.0))
+                mem_p = float(sdata.get("mem_pct", 0.0))
+                disk_f = float(sdata.get("disk_free", 0.0))
+                card.update_stats(cpu, mem_u, mem_t, mem_p, disk_f)
 
     def switch_tab(self, index: int):
         """Switch active tab between Live (0) and History (1)."""
