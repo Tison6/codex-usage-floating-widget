@@ -15,6 +15,7 @@ from PyQt5.QtGui import QColor, QFont, QCursor
 
 from core.square_client import DEFAULT_SELECTED_GROUPS, DEFAULT_SELECTED_MODELS, DEFAULT_GROUP_MODELS
 from core.aihub_client import DEFAULT_SELECTED_PROVIDERS
+from ui.relay_view import DetectionDot
 
 SCROLL_STYLE = """
     QScrollArea {
@@ -499,7 +500,7 @@ class AIHubFilterDialog(QDialog):
         self.setWindowTitle("AIHub 供应商监控项筛选")
         self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.resize(590, 530)
+        self.resize(610, 530)
 
     def init_ui(self):
         root = QVBoxLayout(self)
@@ -716,6 +717,27 @@ class AIHubFilterDialog(QDialog):
         self.edit_max_nom.setStyleSheet(input_style)
         f_lay.addWidget(self.edit_max_nom)
 
+        # 5. 模型检测状态
+        f_lay.addWidget(QLabel("检测:"))
+        self.combo_detect = QComboBox()
+        self.combo_detect.addItems(["全部", "仅通过 🟢", "通过+待定 🟢⚪", "仅疑似 🟠"])
+        self.combo_detect.setStyleSheet("""
+            QComboBox {
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 4px;
+                color: #CBD5E1;
+                font-size: 9px;
+                padding: 1px 4px;
+            }
+            QComboBox QAbstractItemView {
+                background: #1E293B;
+                color: #F8FAFC;
+                selection-background-color: #3B82F6;
+            }
+        """)
+        f_lay.addWidget(self.combo_detect)
+
         f_lay.addStretch()
 
         btn_filter = QPushButton("确定筛选")
@@ -744,8 +766,9 @@ class AIHubFilterDialog(QDialog):
         # 3. Table Column Header
         h_row = QHBoxLayout()
         h_row.setContentsMargins(8, 2, 8, 2)
-        h_prov = QLabel("供应商代码")
+        h_prov = QLabel("检测 / 供应商代码")
         h_prov.setStyleSheet("font-size: 9px; font-weight: 700; color: #64748B;")
+        h_prov.setToolTip("AIHub 模型真实性检测:\n🟢 绿色: 模型检测通过\n🟠 橙色: 模型疑似非原生/掺水/存在异常\n⚪ 灰色: 待定/样本不足/未检测")
         h_row.addWidget(h_prov)
         h_row.addStretch()
 
@@ -791,6 +814,11 @@ class AIHubFilterDialog(QDialog):
             r_lay = QHBoxLayout(row)
             r_lay.setContentsMargins(6, 4, 6, 4)
             r_lay.setSpacing(6)
+
+            det_status = p.get("detection_status", "other")
+            det_tip = p.get("detection_tip", "")
+            dot = DetectionDot(det_status, tooltip=det_tip, size=9, parent=row)
+            r_lay.addWidget(dot)
 
             cb = QCheckBox(code)
             cb.setChecked(code in cur_selected)
@@ -942,10 +970,23 @@ class AIHubFilterDialog(QDialog):
         min_cache = parse_val(self.edit_min_cache.text())
         max_eff = parse_val(self.edit_max_eff.text())
         max_nom = parse_val(self.edit_max_nom.text())
+        det_mode = self.combo_detect.currentText()
 
         for code, p in self.provider_data_map.items():
             cb = self.provider_checkboxes.get(code)
             if not cb:
+                continue
+
+            # Model verification filter
+            det_status = p.get("detection_status", "other")
+            if "仅通过" in det_mode and det_status != "passed":
+                cb.setChecked(False)
+                continue
+            elif "通过+待定" in det_mode and det_status == "suspected":
+                cb.setChecked(False)
+                continue
+            elif "仅疑似" in det_mode and det_status != "suspected":
+                cb.setChecked(False)
                 continue
 
             sr = float(p.get("success_rate", 100.0))

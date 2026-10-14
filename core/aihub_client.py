@@ -207,6 +207,50 @@ class AIHubClient:
             full_img_url = (f"{self.BASE_URL}{img_url}") if img_url else ""
             group_id = it.get("group_id")
 
+            # Model verification / detection (是否通过 / 疑似 / 其他)
+            md = it.get("model_detection") or {}
+            md_status = md.get("status")  # 'passed', 'suspected', 'insufficient_evidence', 'not_configured', 'detection_failed', None
+            md_model = md.get("model", "")
+            md_reason = md.get("user_reason", "")
+            md_time = format_iso_timestamp(md.get("detected_at"))
+
+            if md_status == "passed":
+                det_status = "passed"
+                det_label = "通过"
+                det_color = "#10B981"
+                det_dot = "🟢"
+                det_tip = f"模型检测: 🟢 通过\n测试目标: {md_model or '默认'}\n说明: {md_reason or '官方验证通过'}"
+                if md_time:
+                    det_tip += f"\n检测时间: {md_time}"
+            elif md_status == "suspected":
+                det_status = "suspected"
+                det_label = "疑似"
+                det_color = "#F59E0B"
+                det_dot = "🟠"
+                det_tip = f"模型检测: 🟠 疑似 (存疑)\n测试目标: {md_model or '默认'}\n说明: {md_reason or '验证无法定论'}"
+                if md_time:
+                    det_tip += f"\n检测时间: {md_time}"
+            elif md_status == "insufficient_evidence":
+                det_status = "other"
+                det_label = "待定"
+                det_color = "#64748B"
+                det_dot = "⚪"
+                det_tip = f"模型检测: ⚪ 证据不足 (无法定论)\n测试目标: {md_model or '默认'}\n说明: {md_reason or '暂无定论'}"
+                if md_time:
+                    det_tip += f"\n检测时间: {md_time}"
+            elif md_status == "detection_failed":
+                det_status = "other"
+                det_label = "失败"
+                det_color = "#64748B"
+                det_dot = "⚪"
+                det_tip = f"模型检测: ⚪ 检测失败\n说明: {md_reason or '检测暂时不可用'}"
+            else:
+                det_status = "other"
+                det_label = "未检"
+                det_color = "#475569"
+                det_dot = "⚪"
+                det_tip = "模型检测: ⚪ 未配置 / 暂无检测数据"
+
             all_parsed_providers.append({
                 "code": code,
                 "group_id": group_id,
@@ -225,6 +269,13 @@ class AIHubClient:
                 "available": is_avail,
                 "has_image": bool(img_url),
                 "image_url": full_img_url,
+                "detection_status": det_status,
+                "detection_label": det_label,
+                "detection_color": det_color,
+                "detection_dot": det_dot,
+                "detection_tip": det_tip,
+                "detection_model": md_model,
+                "detection_raw_status": md_status,
             })
 
         # Sort all providers: available first, then lower rate multiplier ascending

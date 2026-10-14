@@ -48,6 +48,53 @@ SCROLL_STYLE = """
 """
 
 
+class DetectionDot(QWidget):
+    """
+    Compact circular status dot for AIHub model verification status:
+    - passed: emerald green (#10B981) with soft outer glow
+    - suspected: electric amber orange (#F59E0B) with soft outer glow
+    - other/none: muted slate gray (#64748B)
+    """
+
+    def __init__(self, status: str = "other", tooltip: str = "", size: int = 8, parent=None):
+        super().__init__(parent)
+        self.status = status
+        self._size = size
+        self.setFixedSize(size, size)
+        self.setCursor(Qt.PointingHandCursor)
+        if tooltip:
+            self.setToolTip(tooltip)
+
+    def set_status(self, status: str, tooltip: str = ""):
+        self.status = status
+        if tooltip:
+            self.setToolTip(tooltip)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        w = float(self.width())
+        h = float(self.height())
+        if self.status == "passed":
+            color = QColor("#10B981")
+            glow = QColor(16, 185, 129, 65)
+        elif self.status == "suspected":
+            color = QColor("#F59E0B")
+            glow = QColor(245, 158, 11, 65)
+        else:
+            color = QColor("#64748B")
+            glow = QColor(100, 116, 139, 45)
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(glow)
+        painter.drawEllipse(QRectF(0, 0, w, h))
+
+        dot_r = max(2.0, min(w, h) / 2.0 - 1.2)
+        painter.setBrush(color)
+        painter.drawEllipse(QRectF((w - dot_r * 2) / 2.0, (h - dot_r * 2) / 2.0, dot_r * 2, dot_r * 2))
+
+
 class SuccessRateBarWidget(QWidget):
     """
     Renders benchmark success rate sparkline:
@@ -755,33 +802,44 @@ class RelayStationView(QWidget):
         row_title_fs = max(7, int(round(9 * self.scale)))
         row_sub_fs = max(6, int(round(8 * self.scale)))
 
-        # Header: 供应商, 倍率, 真实倍率, 缓存率, 实测图
-        h_titles = ["供应商", "倍率", "真实倍率", "缓存率", "实测图"]
-        h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignCenter, Qt.AlignRight, Qt.AlignCenter]
+        # Header: 检测, 供应商, 倍率, 真实倍率, 缓存率, 实测图
+        h_titles = ["检测", "供应商", "倍率", "真实倍率", "缓存率", "实测图"]
+        h_aligns = [Qt.AlignCenter, Qt.AlignLeft, Qt.AlignCenter, Qt.AlignCenter, Qt.AlignRight, Qt.AlignCenter]
         for col_idx, (title, align) in enumerate(zip(h_titles, h_aligns)):
             h_lbl = QLabel(title)
             h_lbl.setAlignment(align | Qt.AlignVCenter)
             h_lbl.setStyleSheet(f"font-size: {hdr_fs}px; font-weight: 700; color: #64748B;")
+            if title == "检测":
+                h_lbl.setToolTip("模型真实性检测:\n🟢 检测通过 (官方验证通过)\n🟠 模型疑似 (验证无法定论)\n⚪ 其他 (证据不足/未配置)")
             self.aihub_grid.addWidget(h_lbl, 0, col_idx)
 
         # Set column proportions for spacious thumbnail view
-        self.aihub_grid.setColumnStretch(0, 4)
-        self.aihub_grid.setColumnStretch(1, 2)
-        self.aihub_grid.setColumnStretch(2, 3)
-        self.aihub_grid.setColumnStretch(3, 2)
-        self.aihub_grid.setColumnStretch(4, 5)
+        self.aihub_grid.setColumnStretch(0, 1)  # 检测状态圆点
+        self.aihub_grid.setColumnStretch(1, 4)  # 供应商名称
+        self.aihub_grid.setColumnStretch(2, 2)  # 名义倍率
+        self.aihub_grid.setColumnStretch(3, 3)  # 真实折算倍率
+        self.aihub_grid.setColumnStretch(4, 2)  # 缓存命中率
+        self.aihub_grid.setColumnStretch(5, 5)  # 实测图缩略图
 
         if not monitored:
             empty_lbl = QLabel("暂无勾选的供应商，请点击右上角 [⚙️ 勾选监控] 选择")
             empty_lbl.setStyleSheet(f"font-size: {row_title_fs}px; color: #94A3B8; padding: 10px;")
-            self.aihub_grid.addWidget(empty_lbl, 1, 0, 1, 5, Qt.AlignCenter)
+            self.aihub_grid.addWidget(empty_lbl, 1, 0, 1, 6, Qt.AlignCenter)
         else:
+            dot_size = max(6, int(round(8 * self.scale)))
             for row_idx, g in enumerate(monitored, start=1):
+                det_status = g.get("detection_status", "other")
+                det_tip = g.get("detection_tip", "模型检测: ⚪ 未配置 / 暂无检测数据")
+                c_dot = DetectionDot(det_status, tooltip=det_tip, size=dot_size, parent=self.aihub_scroll_content)
+
                 c_name = QLabel(f"{row_idx}. {g['code']}")
                 eff_mult_str = g.get("effective_multiplier_str") or g.get("multiplier_str", "--")
                 nom_mult_str = g.get("multiplier_str", "--")
+                det_label = g.get("detection_label", "未检")
+                det_dot_emoji = g.get("detection_dot", "⚪")
                 tip_text = (
                     f"供应商: {g['code']}\n"
+                    f"模型检测: {det_dot_emoji} {det_label}\n"
                     f"标准倍率: {nom_mult_str}\n"
                     f"真实倍率: {eff_mult_str} (含实际缓存计费折算)\n"
                     f"缓存命中率: {g.get('cache_hit_rate', '-')}\n"
@@ -789,6 +847,9 @@ class RelayStationView(QWidget):
                     f"输出速度 (TPS): {g.get('tps_str', '--')}\n"
                     f"实测成功率: {g.get('success_rate_str', '100.0%')}"
                 )
+                if g.get("detection_model"):
+                    tip_text += f"\n检测目标: {g['detection_model']}"
+
                 c_name.setToolTip(tip_text)
                 c_name.setStyleSheet(f"font-size: {row_title_fs}px; font-weight: 600; color: #CBD5E1;")
 
@@ -811,11 +872,12 @@ class RelayStationView(QWidget):
                 thumb = ClickableThumbnail(g, self.aihub_scroll_content)
                 thumb.clicked.connect(self.pelican_clicked.emit)
 
-                self.aihub_grid.addWidget(c_name, row_idx, 0)
-                self.aihub_grid.addWidget(c_nom, row_idx, 1)
-                self.aihub_grid.addWidget(c_mult, row_idx, 2)
-                self.aihub_grid.addWidget(c_hit, row_idx, 3)
-                self.aihub_grid.addWidget(thumb, row_idx, 4, Qt.AlignCenter | Qt.AlignVCenter)
+                self.aihub_grid.addWidget(c_dot, row_idx, 0, Qt.AlignCenter | Qt.AlignVCenter)
+                self.aihub_grid.addWidget(c_name, row_idx, 1)
+                self.aihub_grid.addWidget(c_nom, row_idx, 2)
+                self.aihub_grid.addWidget(c_mult, row_idx, 3)
+                self.aihub_grid.addWidget(c_hit, row_idx, 4)
+                self.aihub_grid.addWidget(thumb, row_idx, 5, Qt.AlignCenter | Qt.AlignVCenter)
 
         self.aihub_scroll_content.adjustSize()
         self.stack.adjustSize()
