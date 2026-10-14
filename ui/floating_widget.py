@@ -222,7 +222,7 @@ class FloatingWidget(QWidget):
         self.cols_widget = QWidget(self.expanded_container)
         cols_layout = QHBoxLayout(self.cols_widget)
         cols_layout.setContentsMargins(0, 0, 0, 0)
-        cols_layout.setSpacing(8)
+        cols_layout.setSpacing(6)
         
         # --- Left Column: Devices & Official Codex ---
         self.left_col = QWidget(self.cols_widget)
@@ -256,7 +256,7 @@ class FloatingWidget(QWidget):
         
         # --- Middle Column: Relay Stations (Square API & AIHub) ---
         self.mid_col = QWidget(self.cols_widget)
-        self.mid_col.setFixedWidth(int(485 * self.widget_scale))
+        self.mid_col.setFixedWidth(int(round(335 * self.widget_scale)))
         mid_layout = QVBoxLayout(self.mid_col)
         mid_layout.setContentsMargins(0, 0, 0, 0)
         mid_layout.setSpacing(6)
@@ -279,7 +279,7 @@ class FloatingWidget(QWidget):
 
         # --- Right Column: GPU Servers (matching dark aesthetic of left column) ---
         self.right_col = QWidget(self.cols_widget)
-        self.right_col.setFixedWidth(int(295 * self.widget_scale))
+        self.right_col.setFixedWidth(int(round(225 * self.widget_scale)))
         right_layout = QVBoxLayout(self.right_col)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(6)
@@ -462,20 +462,64 @@ class FloatingWidget(QWidget):
         self._render_mini_server_cpu()
         self._render_mini_gpu()
 
+    def _recenter_around(self, center_point):
+        """Reposition window so that its center matches center_point while staying within screen bounds."""
+        w = self.width()
+        h = self.height()
+        
+        new_x = center_point.x() - w // 2
+        new_y = center_point.y() - h // 2
+        
+        screen = QApplication.screenAt(center_point)
+        if not screen:
+            screen = QApplication.primaryScreen()
+        if screen:
+            s_geo = screen.availableGeometry()
+            # Clamp vertically
+            if new_y < s_geo.top() + 6:
+                new_y = s_geo.top() + 6
+            elif new_y + h > s_geo.bottom() - 6:
+                new_y = max(s_geo.top() + 6, s_geo.bottom() - h - 6)
+                
+            # Clamp horizontally
+            if new_x < s_geo.left() + 6:
+                new_x = s_geo.left() + 6
+            elif new_x + w > s_geo.right() - 6:
+                new_x = max(s_geo.left() + 6, s_geo.right() - w - 6)
+                
+        self.move(new_x, new_y)
+        self.cfg.set("window_pos", [new_x, new_y])
+
     def expand_to_full(self):
-        """Expand to full detailed card."""
+        """Expand to full detailed card, expanding symmetrically around center."""
         if self.is_mini:
+            old_center = self.frameGeometry().center()
+            self._last_mini_pos = self.pos()
+            self._last_mini_center = old_center
+            self._expanded_dragged = False
             self.is_mini = False
             self.cfg.set("is_mini_mode", False)
             self.update_mode_visibility()
+            self.layout().activate()
+            self.adjustSize()
+            self._recenter_around(old_center)
             self.activateWindow()
 
     def collapse_to_mini(self):
-        """Collapse back to mini capsule."""
+        """Collapse back to mini capsule, shrinking back symmetrically to center."""
         if not self.is_mini:
+            old_center = self.frameGeometry().center()
             self.is_mini = True
             self.cfg.set("is_mini_mode", True)
             self.update_mode_visibility()
+            self.layout().activate()
+            self.adjustSize()
+            
+            center_to_use = old_center
+            if not getattr(self, "_expanded_dragged", False) and hasattr(self, "_last_mini_center"):
+                center_to_use = self._last_mini_center
+                
+            self._recenter_around(center_to_use)
 
     def toggle_mode(self):
         """Toggle between Mini capsule and Expanded card."""
@@ -495,7 +539,7 @@ class FloatingWidget(QWidget):
 
     def update_mode_visibility(self):
         """Instant toggle between mini and expanded views with zero lag."""
-        base_w = int(round(1055 * self.widget_scale))
+        base_w = int(round(810 * self.widget_scale))
         if self.is_mini:
             self.root_layout.setContentsMargins(2, 2, 2, 2)
             self.expanded_container.hide()
@@ -506,7 +550,7 @@ class FloatingWidget(QWidget):
             self.mini_container.hide()
             self.expanded_container.show()
             self.setFixedWidth(base_w)
-            self.setMinimumHeight(150)
+            self.setMinimumHeight(120)
             self.setMaximumHeight(16777215)
             self.adjustSize()
 
@@ -529,9 +573,9 @@ class FloatingWidget(QWidget):
         if hasattr(self, "left_col"):
             self.left_col.setFixedWidth(int(round(210 * self.widget_scale)))
         if hasattr(self, "mid_col"):
-            self.mid_col.setFixedWidth(int(round(485 * self.widget_scale)))
+            self.mid_col.setFixedWidth(int(round(335 * self.widget_scale)))
         if hasattr(self, "right_col"):
-            self.right_col.setFixedWidth(int(round(295 * self.widget_scale)))
+            self.right_col.setFixedWidth(int(round(225 * self.widget_scale)))
             
         # 4. Notify subviews to update their custom internal fonts and item heights
         if hasattr(self, "battery_view") and hasattr(self.battery_view, "set_scale"):
@@ -558,7 +602,7 @@ class FloatingWidget(QWidget):
         """Restore saved window coordinates or place near top-right."""
         pos = self.cfg.get("window_pos")
         screen = QApplication.primaryScreen().availableGeometry()
-        expected_w = int(round(1055 * self.widget_scale)) if not self.is_mini else int(round(156 * self.widget_scale))
+        expected_w = int(round(810 * self.widget_scale)) if not self.is_mini else int(round(156 * self.widget_scale))
         if pos and len(pos) == 2:
             x = max(screen.left() + 10, min(pos[0], screen.right() - expected_w))
             y = max(screen.top() + 10, min(pos[1], screen.bottom() - 150))
@@ -880,6 +924,8 @@ class FloatingWidget(QWidget):
             delta = (event.globalPos() - self._press_global_pos).manhattanLength()
             if delta > 4:
                 self._is_dragging = True
+                if not self.is_mini:
+                    self._expanded_dragged = True
                 self.move(event.globalPos() - self._drag_pos)
             event.accept()
 
@@ -894,6 +940,9 @@ class FloatingWidget(QWidget):
                     self.snap_to_screen_edge()
                 pos = self.pos()
                 self.cfg.set("window_pos", [pos.x(), pos.y()])
+                if self.is_mini:
+                    self._last_mini_pos = pos
+                    self._last_mini_center = self.frameGeometry().center()
             event.accept()
 
     def snap_to_screen_edge(self):

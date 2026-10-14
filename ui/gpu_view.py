@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFrame, QScrollArea, QProgressBar, QComboBox, QStackedWidget
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QRectF
+from PyQt5.QtCore import Qt, pyqtSignal, QRectF, QTimer
 from PyQt5.QtGui import QColor, QPainter, QBrush, QPen, QFont
 
 from core.gpu_monitor import (
@@ -34,7 +34,7 @@ class GPUCardRow(QFrame):
             QFrame#GPUCardRow {
                 background-color: rgba(255, 255, 255, 0.035);
                 border: 1px solid rgba(255, 255, 255, 0.06);
-                border-radius: 6px;
+                border-radius: 5px;
             }
             QFrame#GPUCardRow:hover {
                 background-color: rgba(255, 255, 255, 0.065);
@@ -43,18 +43,18 @@ class GPUCardRow(QFrame):
         """)
 
         layout = QVBoxLayout(self)
-        pad_h = max(4, int(round(7 * self.scale)))
-        pad_v = max(3, int(round(6 * self.scale)))
+        pad_h = max(3, int(round(5 * self.scale)))
+        pad_v = max(2, int(round(3 * self.scale)))
         layout.setContentsMargins(pad_h, pad_v, pad_h, pad_v)
-        layout.setSpacing(max(2, int(round(4 * self.scale))))
+        layout.setSpacing(max(1, int(round(2 * self.scale))))
 
         # 1. Top Row: Title badge & User / Idle status
         top_row = QHBoxLayout()
         top_row.setContentsMargins(0, 0, 0, 0)
-        top_row.setSpacing(max(2, int(round(4 * self.scale))))
+        top_row.setSpacing(max(1, int(round(2 * self.scale))))
 
-        title_fs = max(7, int(round(10 * self.scale)))
-        sub_fs = max(6, int(round(9 * self.scale)))
+        title_fs = max(7, int(round(9.5 * self.scale)))
+        sub_fs = max(6, int(round(8.5 * self.scale)))
 
         self.lbl_title = QLabel(f"{sid}号 · {model} [{index}]", self)
         self.lbl_title.setStyleSheet(f"""
@@ -77,7 +77,7 @@ class GPUCardRow(QFrame):
 
         # 2. VRAM Progress Bar
         self.prog_bar = QProgressBar(self)
-        self.prog_bar.setFixedHeight(4)
+        self.prog_bar.setFixedHeight(max(2, int(round(3 * self.scale))))
         self.prog_bar.setTextVisible(False)
         self.prog_bar.setRange(0, 100)
         self.prog_bar.setValue(0)
@@ -85,11 +85,11 @@ class GPUCardRow(QFrame):
             QProgressBar {
                 background-color: rgba(255, 255, 255, 0.08);
                 border: none;
-                border-radius: 2px;
+                border-radius: 1px;
             }
             QProgressBar::chunk {
                 background-color: #10B981;
-                border-radius: 2px;
+                border-radius: 1px;
             }
         """)
         layout.addWidget(self.prog_bar)
@@ -97,18 +97,18 @@ class GPUCardRow(QFrame):
         # 3. Bottom Stats Row: Memory, Power, Utilization
         stats_row = QHBoxLayout()
         stats_row.setContentsMargins(0, 0, 0, 0)
-        stats_row.setSpacing(4)
+        stats_row.setSpacing(max(1, int(round(2 * self.scale))))
 
         self.lbl_mem = QLabel("🧠 0.0 / 0G (0%)", self)
-        self.lbl_mem.setStyleSheet("font-size: 9px; color: #CBD5E1; font-family: 'Consolas', monospace;")
+        self.lbl_mem.setStyleSheet("font-size: 8px; color: #CBD5E1; font-family: 'Consolas', monospace;")
         self.lbl_mem.setToolTip("显存占用")
 
         self.lbl_power = QLabel("⚡ 0/0W", self)
-        self.lbl_power.setStyleSheet("font-size: 9px; color: #94A3B8; font-family: 'Consolas', monospace;")
+        self.lbl_power.setStyleSheet("font-size: 8px; color: #94A3B8; font-family: 'Consolas', monospace;")
         self.lbl_power.setToolTip("功耗 / 额定")
 
         self.lbl_util = QLabel("⚙️ 0%", self)
-        self.lbl_util.setStyleSheet("font-size: 9px; color: #94A3B8; font-family: 'Consolas', monospace;")
+        self.lbl_util.setStyleSheet("font-size: 8px; color: #94A3B8; font-family: 'Consolas', monospace;")
         self.lbl_util.setToolTip("利用率")
 
         self._apply_scale_styles()
@@ -126,9 +126,9 @@ class GPUCardRow(QFrame):
             self.update_data(self._last_cdata, self.model)
 
     def _apply_scale_styles(self):
-        title_fs = max(7, int(round(10 * self.scale)))
-        sub_fs = max(6, int(round(9 * self.scale)))
-        pbar_h = max(3, int(round(4 * self.scale)))
+        title_fs = max(7, int(round(9.5 * self.scale)))
+        sub_fs = max(6, int(round(8.5 * self.scale)))
+        pbar_h = max(2, int(round(3 * self.scale)))
         self.prog_bar.setFixedHeight(pbar_h)
         self.lbl_title.setStyleSheet(f"color: #E2E8F0; font-size: {title_fs}px; font-weight: 700;")
         self.lbl_mem.setStyleSheet(f"font-size: {sub_fs}px; color: #CBD5E1; font-family: 'Consolas', monospace;")
@@ -143,7 +143,7 @@ class GPUCardRow(QFrame):
 
         is_busy = cdata.get("is_busy", False)
         display_user = cdata.get("display_user", "Idle")
-        sub_fs = max(6, int(round(9 * self.scale)))
+        sub_fs = max(6, int(round(8.5 * self.scale)))
 
         if is_busy:
             self.lbl_user.setText(f"👤 {display_user}")
@@ -151,8 +151,8 @@ class GPUCardRow(QFrame):
                 background-color: rgba(239, 68, 68, 0.18);
                 color: #F87171;
                 border: 1px solid rgba(239, 68, 68, 0.35);
-                border-radius: 4px;
-                padding: 1px 5px;
+                border-radius: 3px;
+                padding: 0px 4px;
                 font-size: {sub_fs}px;
                 font-weight: 700;
             """)
@@ -173,11 +173,11 @@ class GPUCardRow(QFrame):
             QProgressBar {{
                 background-color: rgba(255, 255, 255, 0.08);
                 border: none;
-                border-radius: 2px;
+                border-radius: 1px;
             }}
             QProgressBar::chunk {{
                 background-color: {chunk_col};
-                border-radius: 2px;
+                border-radius: 1px;
             }}
         """)
 
@@ -194,8 +194,79 @@ class GPUCardRow(QFrame):
         self.lbl_util.setText(f"⚙️ {util}%")
 
 
+class GanttLabelsWidget(QWidget):
+    """Pinned left column showing GPU card labels for the history Gantt timeline."""
+    DEFAULT_TASKS = [
+        "L40S [0]",
+        "L40S [1]",
+        "L40S [2]",
+        "A100 [0]",
+        "A100 [1]",
+    ]
+
+    def __init__(self, parent=None, scale: float = 1.0):
+        super().__init__(parent)
+        self.scale = max(0.5, float(scale))
+        self.tasks: List[str] = list(self.DEFAULT_TASKS)
+        self._target_scroll_area: Optional[QScrollArea] = None
+        self.setStyleSheet("background-color: rgba(15, 23, 42, 0.6); border-top-left-radius: 4px; border-bottom-left-radius: 4px;")
+        self._recalc_size()
+
+    def set_target_scroll_area(self, scroll_area: QScrollArea):
+        self._target_scroll_area = scroll_area
+
+    def _recalc_size(self):
+        row_h = max(15, int(round(19 * self.scale)))
+        header_h = max(12, int(round(15 * self.scale)))
+        needed_h = max(95, len(self.tasks) * row_h + header_h + 6)
+        label_w = max(52, int(round(62 * self.scale)))
+        self.setFixedSize(label_w, needed_h + 8)
+
+    def set_scale(self, scale: float):
+        self.scale = max(0.5, float(scale))
+        self._recalc_size()
+        self.update()
+
+    def set_tasks(self, tasks: List[str]):
+        self.tasks = tasks
+        self._recalc_size()
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        row_h = max(15, int(round(19 * self.scale)))
+        header_h = max(12, int(round(15 * self.scale)))
+        w = self.width()
+
+        for r_idx, task_name in enumerate(self.tasks):
+            y = header_h + r_idx * row_h
+            if r_idx % 2 == 1:
+                painter.fillRect(0, y, w, row_h, QColor(255, 255, 255, 4))
+
+            # Subtle baseline separator
+            painter.setPen(QPen(QColor(255, 255, 255, 10), 1))
+            painter.drawLine(0, y + row_h, w, y + row_h)
+
+            painter.setPen(QColor("#CBD5E1"))
+            painter.setFont(QFont("Segoe UI", max(5, int(round(7.5 * self.scale))), QFont.Bold))
+            painter.drawText(2, y + 1, w - 4, row_h - 2, Qt.AlignVCenter | Qt.AlignLeft, task_name)
+
+    def wheelEvent(self, event):
+        if self._target_scroll_area:
+            delta = event.angleDelta().y() or event.angleDelta().x()
+            if delta != 0:
+                sb = self._target_scroll_area.horizontalScrollBar()
+                if sb:
+                    sb.setValue(sb.value() - delta // 2)
+                    event.accept()
+                    return
+        super().wheelEvent(event)
+
+
 class GanttTimelineCanvas(QWidget):
-    """Native PyQt5 Gantt Chart Canvas for 7号 (L40S) & 8号 (A100) server GPU history."""
+    """Native PyQt5 Gantt Chart Canvas for 7号 (L40S) & 8号 (A100) server GPU history timeline."""
     DEFAULT_TASKS = [
         "L40S [0]",
         "L40S [1]",
@@ -210,39 +281,42 @@ class GanttTimelineCanvas(QWidget):
         self.intervals: List[Dict[str, Any]] = []
         self.days: int = 1
         self.tasks: List[str] = list(self.DEFAULT_TASKS)
-        self.setMinimumHeight(120)
         self.setMouseTracking(True)
-        self.setStyleSheet("background-color: rgba(15, 23, 42, 0.6); border-radius: 6px;")
+        self.setStyleSheet("background-color: rgba(15, 23, 42, 0.6); border-top-right-radius: 4px; border-bottom-right-radius: 4px;")
 
         self.user_palette = [
             "#3B82F6", "#10B981", "#F59E0B", "#EC4899",
             "#8B5CF6", "#06B6D4", "#E11D48", "#14B8A6"
         ]
         self.user_color_map: Dict[str, str] = {}
+        self._recalc_size()
+
+    def _recalc_size(self):
+        row_h = max(15, int(round(19 * self.scale)))
+        header_h = max(12, int(round(15 * self.scale)))
+        needed_h = max(95, len(self.tasks) * row_h + header_h + 6)
+        self.setFixedHeight(needed_h)
+        base_w = 260 + self.days * 85
+        needed_w = max(int(round(300 * self.scale)), int(round(base_w * self.scale)))
+        self.setMinimumWidth(needed_w)
 
     def set_scale(self, scale: float):
-        """Update scale and recalculate row heights."""
+        """Update scale and recalculate row heights and minimum width."""
         self.scale = max(0.5, float(scale))
-        row_h = max(18, int(round(24 * self.scale)))
-        header_h = max(14, int(round(18 * self.scale)))
-        needed_h = max(120, len(self.tasks) * row_h + header_h + 10)
-        self.setFixedHeight(needed_h)
+        self._recalc_size()
         self.update()
 
     def set_data(self, intervals: List[Dict[str, Any]], days: int = 1):
         import re
-        # Filter only 7号 and 8号
         filtered = []
         for x in intervals:
             if x.get("sid") in ("7", "8"):
-                # Normalize task: strip server prefixes like "7号 " or "8号 "
                 clean_t = re.sub(r'^\d+号\s*', '', x.get("task", "")).strip()
                 x["task"] = clean_t
                 filtered.append(x)
         self.intervals = filtered
         self.days = days
 
-        # Always include all 5 GPUs so no card is ever missing from the track
         tasks = list(self.DEFAULT_TASKS)
         for x in self.intervals:
             t = x.get("task", "")
@@ -250,10 +324,7 @@ class GanttTimelineCanvas(QWidget):
                 tasks.append(t)
         self.tasks = tasks
 
-        row_h = max(18, int(round(24 * self.scale)))
-        header_h = max(14, int(round(18 * self.scale)))
-        needed_h = max(120, len(self.tasks) * row_h + header_h + 10)
-        self.setFixedHeight(needed_h)
+        self._recalc_size()
         self.update()
 
     def _get_user_color(self, username: str) -> str:
@@ -266,7 +337,7 @@ class GanttTimelineCanvas(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
 
-        w = self.width()
+        w = max(self.width(), self.minimumWidth())
         h = self.height()
 
         now = datetime.datetime.now()
@@ -276,50 +347,43 @@ class GanttTimelineCanvas(QWidget):
             return
 
         tasks = getattr(self, "tasks", self.DEFAULT_TASKS)
-        row_h = max(18, int(round(24 * self.scale)))
-        header_h = max(14, int(round(18 * self.scale)))
-        label_w = max(40, int(round(56 * self.scale)))
-        chart_w = max(40.0, float(w - label_w - 8))
+        row_h = max(15, int(round(19 * self.scale)))
+        header_h = max(12, int(round(15 * self.scale)))
+        chart_w = max(40.0, float(w - 6))
 
-        # 1. Draw time header (2 ticks to eliminate collision)
+        # 1. Draw time header ticks
         painter.setPen(QColor("#64748B"))
         painter.setFont(QFont("Segoe UI", max(5, int(round(7 * self.scale)))))
-        num_ticks = 2
+        num_ticks = 4 if self.days == 1 else (6 if self.days == 3 else 7)
         for i in range(num_ticks + 1):
             t_frac = i / num_ticks
             tick_time = start_time + datetime.timedelta(seconds=total_seconds * t_frac)
-            x = label_w + chart_w * t_frac
+            x = chart_w * t_frac
             time_str = tick_time.strftime("%m-%d %H:%M" if self.days > 1 else "%H:%M")
             if i == 0:
-                painter.drawText(int(x), 2, 45, 12, Qt.AlignLeft | Qt.AlignVCenter, time_str)
+                painter.drawText(int(x), 1, 45, 12, Qt.AlignLeft | Qt.AlignVCenter, time_str)
             elif i == num_ticks:
-                painter.drawText(int(x - 45), 2, 45, 12, Qt.AlignRight | Qt.AlignVCenter, "现在" if self.days == 1 else time_str)
+                painter.drawText(int(x - 45), 1, 45, 12, Qt.AlignRight | Qt.AlignVCenter, "现在" if self.days == 1 else time_str)
             else:
-                painter.drawText(int(x - 25), 2, 50, 12, Qt.AlignCenter | Qt.AlignVCenter, time_str)
+                painter.drawText(int(x - 25), 1, 50, 12, Qt.AlignCenter | Qt.AlignVCenter, time_str)
 
             painter.setPen(QPen(QColor(255, 255, 255, 12), 1, Qt.DashLine))
             painter.drawLine(int(x), header_h, int(x), h - 2)
             painter.setPen(QColor("#64748B"))
 
-        # 2. Draw task rows (model + card number only, small font)
+        # 2. Draw alternating row background lines
         for r_idx, task_name in enumerate(tasks):
             y = header_h + r_idx * row_h
             if r_idx % 2 == 1:
-                painter.fillRect(label_w, y, int(chart_w), row_h, QColor(255, 255, 255, 4))
-
-            # Subtle baseline separator
+                painter.fillRect(0, y, int(chart_w), row_h, QColor(255, 255, 255, 4))
             painter.setPen(QPen(QColor(255, 255, 255, 8), 1))
-            painter.drawLine(label_w, y + row_h, int(label_w + chart_w), y + row_h)
-
-            painter.setPen(QColor("#CBD5E1"))
-            painter.setFont(QFont("Segoe UI", max(5, int(round(7 * self.scale))), QFont.Bold))
-            painter.drawText(2, y + 1, label_w - 4, row_h - 2, Qt.AlignVCenter | Qt.AlignLeft, task_name)
+            painter.drawLine(0, y + row_h, int(chart_w), y + row_h)
 
         # 3. Draw intervals
         if not self.intervals:
             painter.setPen(QColor("#475569"))
             painter.setFont(QFont("Segoe UI", max(6, int(round(8 * self.scale)))))
-            painter.drawText(label_w, header_h, int(chart_w), h - header_h, Qt.AlignCenter, "区间内暂无任务占用")
+            painter.drawText(0, header_h, int(chart_w), h - header_h, Qt.AlignCenter, "区间内暂无任务占用")
             return
 
         for itv in self.intervals:
@@ -337,8 +401,8 @@ class GanttTimelineCanvas(QWidget):
             sec_start = (itv_start - start_time).total_seconds()
             sec_end = (itv_finish - start_time).total_seconds()
 
-            x1 = label_w + (sec_start / total_seconds) * chart_w
-            x2 = label_w + (sec_end / total_seconds) * chart_w
+            x1 = (sec_start / total_seconds) * chart_w
+            x2 = (sec_end / total_seconds) * chart_w
             bar_w = max(4.0, x2 - x1)
 
             user_color = QColor(self._get_user_color(itv["user"]))
@@ -346,14 +410,28 @@ class GanttTimelineCanvas(QWidget):
             painter.setPen(Qt.NoPen)
             painter.drawRoundedRect(QRectF(x1, y, bar_w, row_h - 4), 3, 3)
 
-            if bar_w > 26:
+            if bar_w > 24:
                 painter.setPen(QColor("#FFFFFF"))
                 painter.setFont(QFont("Segoe UI", max(5, int(round(7 * self.scale))), QFont.Bold))
                 painter.drawText(QRectF(x1 + 1, y, bar_w - 2, row_h - 4), Qt.AlignCenter, itv["user"])
 
+    def wheelEvent(self, event):
+        delta = event.angleDelta().y() or event.angleDelta().x()
+        if delta != 0:
+            parent = self.parent()
+            while parent and not isinstance(parent, QScrollArea):
+                parent = parent.parent()
+            if parent and isinstance(parent, QScrollArea):
+                sb = parent.horizontalScrollBar()
+                if sb:
+                    sb.setValue(sb.value() - delta // 2)
+                    event.accept()
+                    return
+        super().wheelEvent(event)
+
     def mouseMoveEvent(self, event):
         pos = event.pos()
-        w = self.width()
+        w = max(self.width(), self.minimumWidth())
         now = datetime.datetime.now()
         start_time = now - datetime.timedelta(days=self.days)
         total_seconds = (now - start_time).total_seconds()
@@ -361,10 +439,9 @@ class GanttTimelineCanvas(QWidget):
             super().mouseMoveEvent(event)
             return
 
-        label_w = max(40, int(round(56 * self.scale)))
-        chart_w = max(40.0, float(w - label_w - 8))
-        header_h = max(14, int(round(18 * self.scale)))
-        row_h = max(18, int(round(24 * self.scale)))
+        chart_w = max(40.0, float(w - 6))
+        header_h = max(12, int(round(15 * self.scale)))
+        row_h = max(15, int(round(19 * self.scale)))
 
         found_tip = None
         for itv in self.intervals:
@@ -381,8 +458,8 @@ class GanttTimelineCanvas(QWidget):
 
             sec_start = (itv_start - start_time).total_seconds()
             sec_end = (itv_finish - start_time).total_seconds()
-            x1 = label_w + (sec_start / total_seconds) * chart_w
-            x2 = label_w + (sec_end / total_seconds) * chart_w
+            x1 = (sec_start / total_seconds) * chart_w
+            x2 = (sec_end / total_seconds) * chart_w
             bar_w = max(4.0, x2 - x1)
 
             rect = QRectF(x1, y, bar_w, row_h - 4)
@@ -411,23 +488,23 @@ class GPUServerView(QWidget):
         self.scale = max(0.5, float(scale))
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(4, 2, 4, 4)
-        root.setSpacing(6)
+        root.setContentsMargins(2, 1, 2, 2)
+        root.setSpacing(max(2, int(round(3 * self.scale))))
 
         # 1. Header Bar: Title with NVIDIA logo, Refresh, Timestamp, DB badge
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(6)
+        header.setSpacing(max(2, int(round(4 * self.scale))))
 
-        icon_sz = max(9, int(round(14 * self.scale)))
+        icon_sz = max(9, int(round(13 * self.scale)))
         self.title_icon = QLabel(self)
         self.title_icon.setPixmap(get_nvidia_pixmap(icon_sz))
 
-        title_fs = max(8, int(round(11 * self.scale)))
+        title_fs = max(8, int(round(10.5 * self.scale)))
         self.title_lbl = QLabel("GPU 服务器", self)
         self.title_lbl.setStyleSheet(f"font-size: {title_fs}px; font-weight: 800; color: #FFFFFF;")
 
-        btn_sz = max(14, int(round(20 * self.scale)))
+        btn_sz = max(14, int(round(18 * self.scale)))
         self.btn_refresh = QPushButton("🔄", self)
         self.btn_refresh.setFixedSize(btn_sz, btn_sz)
         self.btn_refresh.setToolTip("点击刷新 GPU 实时状态")
@@ -436,8 +513,8 @@ class GPUServerView(QWidget):
                 background-color: rgba(255, 255, 255, 0.08);
                 color: #E2E8F0;
                 border: 1px solid rgba(255, 255, 255, 0.12);
-                border-radius: 4px;
-                font-size: {max(7, int(round(10 * self.scale)))}px;
+                border-radius: 3px;
+                font-size: {max(7, int(round(9.5 * self.scale)))}px;
             }}
             QPushButton:hover {{
                 background-color: #0284C7;
@@ -451,9 +528,9 @@ class GPUServerView(QWidget):
         self.badge_time.setStyleSheet("""
             background-color: rgba(255, 255, 255, 0.05);
             color: #94A3B8;
-            padding: 1px 4px;
+            padding: 1px 3px;
             border-radius: 3px;
-            font-size: 9px;
+            font-size: 8.5px;
             font-family: 'Consolas', monospace;
         """)
 
@@ -467,15 +544,16 @@ class GPUServerView(QWidget):
         # 2. Tab Bar: [⚡ 实时状态] | [📅 历史占用]
         tab_bar = QHBoxLayout()
         tab_bar.setContentsMargins(0, 0, 0, 0)
-        tab_bar.setSpacing(4)
+        tab_bar.setSpacing(max(2, int(round(3 * self.scale))))
 
+        tab_h = max(16, int(round(20 * self.scale)))
         self.btn_tab_live = QPushButton("⚡ 实时状态", self)
-        self.btn_tab_live.setFixedHeight(22)
+        self.btn_tab_live.setFixedHeight(tab_h)
         self.btn_tab_live.setCursor(Qt.PointingHandCursor)
         self.btn_tab_live.clicked.connect(lambda: self.switch_tab(0))
 
         self.btn_tab_hist = QPushButton("📅 历史占用", self)
-        self.btn_tab_hist.setFixedHeight(22)
+        self.btn_tab_hist.setFixedHeight(tab_h)
         self.btn_tab_hist.setCursor(Qt.PointingHandCursor)
         self.btn_tab_hist.clicked.connect(lambda: self.switch_tab(1))
 
@@ -511,8 +589,8 @@ class GPUServerView(QWidget):
         self.live_container = QWidget()
         self.live_container.setStyleSheet("background: transparent;")
         self.live_layout = QVBoxLayout(self.live_container)
-        self.live_layout.setContentsMargins(0, 2, 2, 2)
-        self.live_layout.setSpacing(5)
+        self.live_layout.setContentsMargins(0, 1, 1, 1)
+        self.live_layout.setSpacing(max(2, int(round(3 * self.scale))))
 
         # Pre-create the 5 GPU card rows in order: 7号(3卡) + 8号(2卡)
         self.card_rows: Dict[str, GPUCardRow] = {}
@@ -535,18 +613,18 @@ class GPUServerView(QWidget):
         self.scroll_live.setWidget(self.live_container)
         self.stack.addWidget(self.scroll_live)
 
-        # --- View 1: History Gantt & Timeline ---
+        # --- View 1: History Gantt & Timeline (Supports Horizontal Scroll) ---
         self.hist_container = QWidget(self)
         hist_layout = QVBoxLayout(self.hist_container)
-        hist_layout.setContentsMargins(0, 2, 0, 2)
-        hist_layout.setSpacing(6)
+        hist_layout.setContentsMargins(0, 1, 0, 1)
+        hist_layout.setSpacing(max(2, int(round(4 * self.scale))))
 
         hist_ctrl_row = QHBoxLayout()
         hist_ctrl_row.setContentsMargins(0, 0, 0, 0)
-        hist_ctrl_row.setSpacing(6)
+        hist_ctrl_row.setSpacing(4)
 
         hist_lbl = QLabel("查看范围:", self.hist_container)
-        hist_lbl.setStyleSheet(f"font-size: {max(7, int(round(10 * self.scale)))}px; color: #94A3B8;")
+        hist_lbl.setStyleSheet(f"font-size: {max(7, int(round(9.5 * self.scale)))}px; color: #94A3B8;")
 
         self.combo_days = QComboBox(self.hist_container)
         self.combo_days.addItem("过去 1 天", 1)
@@ -557,9 +635,9 @@ class GPUServerView(QWidget):
                 background-color: #1E293B;
                 color: #E2E8F0;
                 border: 1px solid rgba(255, 255, 255, 0.12);
-                border-radius: 4px;
-                padding: 1px 6px;
-                font-size: {max(7, int(round(10 * self.scale)))}px;
+                border-radius: 3px;
+                padding: 1px 4px;
+                font-size: {max(7, int(round(9.5 * self.scale)))}px;
             }}
             QComboBox QAbstractItemView {{
                 background-color: #1E293B;
@@ -570,16 +648,16 @@ class GPUServerView(QWidget):
         self.combo_days.currentIndexChanged.connect(self._on_days_changed)
 
         self.btn_hist_refresh = QPushButton("↻ 载入历史", self.hist_container)
-        btn_w = max(45, int(round(65 * self.scale)))
-        btn_h = max(16, int(round(20 * self.scale)))
+        btn_w = max(42, int(round(60 * self.scale)))
+        btn_h = max(16, int(round(19 * self.scale)))
         self.btn_hist_refresh.setFixedSize(btn_w, btn_h)
         self.btn_hist_refresh.setStyleSheet(f"""
             QPushButton {{
                 background-color: rgba(255, 255, 255, 0.08);
                 color: #E2E8F0;
                 border: 1px solid rgba(255, 255, 255, 0.12);
-                border-radius: 4px;
-                font-size: {max(6, int(round(9 * self.scale)))}px;
+                border-radius: 3px;
+                font-size: {max(6, int(round(8.5 * self.scale)))}px;
             }}
             QPushButton:hover {{
                 background-color: #0284C7;
@@ -594,9 +672,19 @@ class GPUServerView(QWidget):
         hist_ctrl_row.addStretch()
         hist_layout.addLayout(hist_ctrl_row)
 
+        hist_body = QHBoxLayout()
+        hist_body.setContentsMargins(0, 0, 0, 0)
+        hist_body.setSpacing(0)
+
+        self.gantt_labels = GanttLabelsWidget(self.hist_container, scale=self.scale)
+        hist_body.addWidget(self.gantt_labels, 0, Qt.AlignTop)
+
         self.scroll_hist = QScrollArea(self.hist_container)
+        self.scroll_hist.setFrameShape(QFrame.NoFrame)
+        self.scroll_hist.viewport().setStyleSheet("background: transparent; border: none;")
         self.scroll_hist.setWidgetResizable(True)
-        self.scroll_hist.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll_hist.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll_hist.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.scroll_hist.setStyleSheet("""
             QScrollArea { border: none; background: transparent; }
             QScrollBar:vertical {
@@ -608,10 +696,27 @@ class GPUServerView(QWidget):
                 background: rgba(255, 255, 255, 0.15);
                 border-radius: 2px;
             }
+            QScrollBar:horizontal {
+                background: rgba(255, 255, 255, 0.02);
+                height: 5px;
+                border-radius: 2px;
+            }
+            QScrollBar::handle:horizontal {
+                background: rgba(255, 255, 255, 0.2);
+                border-radius: 2px;
+                min-width: 25px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: rgba(2, 132, 199, 0.6);
+            }
         """)
         self.gantt_canvas = GanttTimelineCanvas(self.hist_container, scale=self.scale)
         self.scroll_hist.setWidget(self.gantt_canvas)
-        hist_layout.addWidget(self.scroll_hist, 1)
+        self.scroll_hist.setFixedHeight(self.gantt_canvas.height() + 8)
+        self.gantt_labels.set_target_scroll_area(self.scroll_hist)
+        hist_body.addWidget(self.scroll_hist, 1)
+        hist_layout.addLayout(hist_body)
+        hist_layout.addStretch()
 
         self.stack.addWidget(self.hist_container)
         root.addWidget(self.stack, 1)
@@ -624,64 +729,82 @@ class GPUServerView(QWidget):
     def set_scale(self, scale: float):
         """Update scale and propagate to child card rows and gantt chart."""
         self.scale = max(0.5, float(scale))
-        icon_sz = max(9, int(round(14 * self.scale)))
+        icon_sz = max(9, int(round(13 * self.scale)))
         self.title_icon.setPixmap(get_nvidia_pixmap(icon_sz))
-        title_fs = max(8, int(round(11 * self.scale)))
+        title_fs = max(8, int(round(10.5 * self.scale)))
         self.title_lbl.setStyleSheet(f"font-size: {title_fs}px; font-weight: 800; color: #FFFFFF;")
-        btn_sz = max(14, int(round(20 * self.scale)))
+        btn_sz = max(14, int(round(18 * self.scale)))
         self.btn_refresh.setFixedSize(btn_sz, btn_sz)
-        tab_h = max(18, int(round(22 * self.scale)))
+        tab_h = max(16, int(round(20 * self.scale)))
         self.btn_tab_live.setFixedHeight(tab_h)
         self.btn_tab_hist.setFixedHeight(tab_h)
         for row in self.card_rows.values():
             row.set_scale(self.scale)
+        if hasattr(self, "gantt_labels"):
+            self.gantt_labels.set_scale(self.scale)
         if hasattr(self, "gantt_canvas"):
             self.gantt_canvas.set_scale(self.scale)
+        if hasattr(self, "scroll_hist") and hasattr(self, "gantt_canvas"):
+            self.scroll_hist.setFixedHeight(self.gantt_canvas.height() + 8)
+        if hasattr(self, "badge_time"):
+            self.badge_time.setStyleSheet(f"""
+                background-color: rgba(255, 255, 255, 0.05);
+                color: #94A3B8;
+                padding: 1px 3px;
+                border-radius: 3px;
+                font-size: {max(6, int(round(8.5 * self.scale)))}px;
+                font-family: 'Consolas', monospace;
+            """)
+        self.switch_tab(self.stack.currentIndex())
 
     def switch_tab(self, index: int):
         """Switch active tab between Live (0) and History (1)."""
         self.stack.setCurrentIndex(index)
+        tab_fs = max(7, int(round(9.5 * self.scale)))
         if index == 0:
-            self.btn_tab_live.setStyleSheet("""
+            self.btn_tab_live.setStyleSheet(f"""
                 background-color: #0284C7;
                 color: #FFFFFF;
                 border: none;
                 border-radius: 4px;
-                font-size: 10px;
+                font-size: {tab_fs}px;
                 font-weight: 700;
-                padding: 2px 10px;
+                padding: 2px 8px;
             """)
-            self.btn_tab_hist.setStyleSheet("""
+            self.btn_tab_hist.setStyleSheet(f"""
                 background-color: transparent;
                 color: #94A3B8;
                 border: 1px solid rgba(255, 255, 255, 0.1);
                 border-radius: 4px;
-                font-size: 10px;
+                font-size: {tab_fs}px;
                 font-weight: 600;
-                padding: 2px 10px;
+                padding: 2px 8px;
             """)
         else:
-            self.btn_tab_hist.setStyleSheet("""
+            self.btn_tab_hist.setStyleSheet(f"""
                 background-color: #0284C7;
                 color: #FFFFFF;
                 border: none;
                 border-radius: 4px;
-                font-size: 10px;
+                font-size: {tab_fs}px;
                 font-weight: 700;
-                padding: 2px 10px;
+                padding: 2px 8px;
             """)
-            self.btn_tab_live.setStyleSheet("""
+            self.btn_tab_live.setStyleSheet(f"""
                 background-color: transparent;
                 color: #94A3B8;
                 border: 1px solid rgba(255, 255, 255, 0.1);
                 border-radius: 4px;
-                font-size: 10px;
+                font-size: {tab_fs}px;
                 font-weight: 600;
-                padding: 2px 10px;
+                padding: 2px 8px;
             """)
             if not self.gantt_canvas.intervals:
                 days = self.combo_days.currentData()
                 self.monitor.fetch_history_async(days=days)
+            QTimer.singleShot(60, lambda: self.scroll_hist.horizontalScrollBar().setValue(
+                self.scroll_hist.horizontalScrollBar().maximum()
+            ))
 
     def _on_refresh_clicked(self):
         self.refresh_requested.emit()
@@ -718,3 +841,10 @@ class GPUServerView(QWidget):
         """Render history Gantt visualization."""
         days = self.combo_days.currentData()
         self.gantt_canvas.set_data(intervals, days=days)
+        if hasattr(self, "gantt_labels"):
+            self.gantt_labels.set_tasks(self.gantt_canvas.tasks)
+        if hasattr(self, "scroll_hist") and hasattr(self, "gantt_canvas"):
+            self.scroll_hist.setFixedHeight(self.gantt_canvas.height() + 8)
+        QTimer.singleShot(60, lambda: self.scroll_hist.horizontalScrollBar().setValue(
+            self.scroll_hist.horizontalScrollBar().maximum()
+        ))

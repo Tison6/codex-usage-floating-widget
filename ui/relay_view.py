@@ -55,13 +55,14 @@ class SuccessRateBarWidget(QWidget):
     Supports dynamic hourly time-series slices matching Square official website.
     """
 
-    def __init__(self, count: int = 10, success_rate: float = 100.0, series: Optional[List[Dict[str, Any]]] = None, parent=None):
+    def __init__(self, count: int = 8, success_rate: float = 100.0, series: Optional[List[Dict[str, Any]]] = None, parent=None, scale: float = 1.0):
         super().__init__(parent)
         self.series = series or []
         self.rate = success_rate
-        self.bar_count = max(4, min(count, 12)) if not self.series else min(len(self.series), 12)
+        self.scale = max(0.5, float(scale))
+        self.bar_count = max(4, min(count, 8)) if not self.series else min(len(self.series), 8)
         self.setFixedHeight(14)
-        self.setFixedWidth(64)
+        self.setFixedWidth(max(44, int(round(52 * self.scale))))
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
     def paintEvent(self, event):
@@ -69,8 +70,8 @@ class SuccessRateBarWidget(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
 
         bar_w = 1.0
-        bar_h = 8.5
-        gap = 0.6
+        bar_h = 7.5
+        gap = 0.5
         y = (self.height() - bar_h) / 2.0
 
         emerald = QColor("#10B981")
@@ -79,8 +80,8 @@ class SuccessRateBarWidget(QWidget):
 
         x = 0.5
         if self.series:
-            # Draw real historical time slices (last 12 points)
-            pts = self.series[-12:]
+            # Draw real historical time slices (last 6 points)
+            pts = self.series[-6:]
             for pt in pts:
                 sr = float(pt.get("success_rate", 100.0) or 0.0)
                 if sr >= 99.0:
@@ -107,12 +108,12 @@ class SuccessRateBarWidget(QWidget):
                 x += bar_w + gap
 
         # Percentage text
-        x += 2.0
+        x += 1.5
         is_bad = self.rate < 75.0
         has_fail = self.rate < 99.0
         text_color = rose if is_bad else (amber if has_fail else emerald)
         painter.setPen(text_color)
-        font = QFont("Segoe UI", 7, QFont.Bold)
+        font = QFont("Segoe UI", max(5, int(round(7 * self.scale))), QFont.Bold)
         painter.setFont(font)
 
         text = f"{self.rate:.1f}%"
@@ -170,7 +171,7 @@ class ThumbnailDownloadManager(QObject):
             if resp.status_code == 200 and resp.content:
                 qimg = QImage()
                 if qimg.loadFromData(resp.content):
-                    scaled = qimg.scaled(86, 40, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    scaled = qimg.scaled(64, 30, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     self.cache[url] = scaled
                     self.thumb_loaded.emit(url, scaled)
         except Exception:
@@ -186,7 +187,7 @@ class ClickableThumbnail(QLabel):
     def __init__(self, provider_item: Dict[str, Any], parent=None):
         super().__init__(parent)
         self.provider_item = provider_item
-        self.setFixedSize(88, 42)
+        self.setFixedSize(64, 30)
         self.setAlignment(Qt.AlignCenter)
         self.setCursor(Qt.PointingHandCursor)
         self.setToolTip("点击在线查看该供应商全部历史鹈鹕图")
@@ -288,6 +289,10 @@ class RelayStationView(QWidget):
         """Update scale and re-render header and tables."""
         self.scale = max(0.5, float(scale))
         self._apply_header_styles()
+        if hasattr(self, "sq_scroll"):
+            self.sq_scroll.setFixedHeight(max(140, int(round(195 * self.scale))))
+        if hasattr(self, "aihub_scroll"):
+            self.aihub_scroll.setFixedHeight(max(140, int(round(195 * self.scale))))
         if self._square_data:
             self.update_square_data(self._square_data)
         if self._aihub_data:
@@ -449,8 +454,7 @@ class RelayStationView(QWidget):
         # Scroll Area for Square Monitored Rows
         self.sq_scroll = QScrollArea()
         self.sq_scroll.setWidgetResizable(True)
-        self.sq_scroll.setFixedHeight(260)
-        self.sq_scroll.setMinimumWidth(340)
+        self.sq_scroll.setFixedHeight(max(140, int(round(195 * self.scale))))
         self.sq_scroll.setStyleSheet(SCROLL_STYLE)
         self.sq_scroll.viewport().setStyleSheet("background: transparent; border: none;")
         self.sq_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -458,9 +462,9 @@ class RelayStationView(QWidget):
         self.sq_scroll_content = QWidget()
         self.sq_scroll_content.setStyleSheet("background: transparent;")
         self.sq_grid = QGridLayout(self.sq_scroll_content)
-        self.sq_grid.setContentsMargins(1, 1, 6, 1)
-        self.sq_grid.setHorizontalSpacing(4)
-        self.sq_grid.setVerticalSpacing(3)
+        self.sq_grid.setContentsMargins(1, 1, 2, 1)
+        self.sq_grid.setHorizontalSpacing(3)
+        self.sq_grid.setVerticalSpacing(2)
         self.sq_scroll.setWidget(self.sq_scroll_content)
         p_layout.addWidget(self.sq_scroll)
 
@@ -529,8 +533,7 @@ class RelayStationView(QWidget):
         # Scroll Area for Providers Table
         self.aihub_scroll = QScrollArea()
         self.aihub_scroll.setWidgetResizable(True)
-        self.aihub_scroll.setFixedHeight(275)
-        self.aihub_scroll.setMinimumWidth(370)
+        self.aihub_scroll.setFixedHeight(max(140, int(round(195 * self.scale))))
         self.aihub_scroll.setStyleSheet(SCROLL_STYLE)
         self.aihub_scroll.viewport().setStyleSheet("background: transparent; border: none;")
         self.aihub_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -538,7 +541,7 @@ class RelayStationView(QWidget):
         self.aihub_scroll_content = QWidget()
         self.aihub_scroll_content.setStyleSheet("background: transparent;")
         self.aihub_grid = QGridLayout(self.aihub_scroll_content)
-        self.aihub_grid.setContentsMargins(1, 1, 4, 1)
+        self.aihub_grid.setContentsMargins(1, 1, 2, 1)
         self.aihub_grid.setHorizontalSpacing(3)
         self.aihub_grid.setVerticalSpacing(2)
         self.aihub_scroll.setWidget(self.aihub_scroll_content)
@@ -580,18 +583,27 @@ class RelayStationView(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
-        hdr_fs = max(6, int(round(8 * self.scale)))
-        row_title_fs = max(7, int(round(9 * self.scale)))
+        hdr_fs = max(6, int(round(8.5 * self.scale)))
+        row_title_fs = max(7, int(round(9.5 * self.scale)))
         row_sub_fs = max(6, int(round(8 * self.scale)))
 
-        # Header Titles: 分组 / 关注模型, 倍率, 输出/M, 速度, 首字, 延迟, 成功率
-        h_titles = ["分组 / 关注模型", "倍率", "输出/M", "速度", "首字", "延迟", "成功率"]
+        # Header Titles: 分组/模型, 倍率, 输出/M, 速度, 首字, 延迟, 成功率
+        h_titles = ["分组/模型", "倍率", "输出/M", "速度", "首字", "延迟", "成功率"]
         h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignCenter, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight]
         for col_idx, (title, align) in enumerate(zip(h_titles, h_aligns)):
             h_lbl = QLabel(title)
             h_lbl.setAlignment(align | Qt.AlignVCenter)
             h_lbl.setStyleSheet(f"font-size: {hdr_fs}px; font-weight: 700; color: #64748B;")
             self.sq_grid.addWidget(h_lbl, 0, col_idx)
+
+        # Proportional stretches to eliminate excess space and prevent clipping
+        self.sq_grid.setColumnStretch(0, 4)
+        self.sq_grid.setColumnStretch(1, 2)
+        self.sq_grid.setColumnStretch(2, 2)
+        self.sq_grid.setColumnStretch(3, 2)
+        self.sq_grid.setColumnStretch(4, 2)
+        self.sq_grid.setColumnStretch(5, 2)
+        self.sq_grid.setColumnStretch(6, 3)
 
         monitored_rows = data.get("monitored_rows", [])
         if not monitored_rows:
@@ -657,10 +669,10 @@ class RelayStationView(QWidget):
                 lat_lbl.setStyleSheet(f"font-size: {row_sub_fs}px; color: #94A3B8;")
 
                 # Sparkline bar chart with live time-series
-                bar_cnt = r.get("bar_count", 16)
+                bar_cnt = r.get("bar_count", 8)
                 sr_val = float(r.get("success_rate", 100.0))
                 series_data = r.get("series", [])
-                bar_widget = SuccessRateBarWidget(count=bar_cnt, success_rate=sr_val, series=series_data)
+                bar_widget = SuccessRateBarWidget(count=bar_cnt, success_rate=sr_val, series=series_data, scale=self.scale)
                 bar_widget.setToolTip(f"实测成功率: {sr_val:.1f}%\n24小时时段样本: {len(series_data)}个")
 
                 self.sq_grid.addWidget(g_box, row_idx, 0)
