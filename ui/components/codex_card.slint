@@ -123,17 +123,21 @@ export component CodexCard inherits Rectangle {
                     border-radius: 3px;
                     border-width: 1px;
                     border-color: rgba(59, 130, 246, 0.4);
-                    padding-left: 3px;
-                    padding-right: 3px;
                     height: 14px;
                     y: (parent.height - self.height) / 2;
 
-                    Text {
-                        text: root.plan_type;
-                        font-size: 7.5px;
-                        font-weight: 700;
-                        color: #60a5fa;
-                        vertical-alignment: center;
+                    HorizontalLayout {
+                        padding-left: 3px;
+                        padding-right: 3px;
+                        alignment: center;
+
+                        Text {
+                            text: root.plan_type;
+                            font-size: 7.5px;
+                            font-weight: 700;
+                            color: #60a5fa;
+                            vertical-alignment: center;
+                        }
                     }
                 }
                 Rectangle {
@@ -216,16 +220,20 @@ export component CodexCard inherits Rectangle {
                 border-radius: 3px;
                 border-width: 1px;
                 border-color: rgba(16, 185, 129, 0.3);
-                padding-left: 4px;
-                padding-right: 4px;
                 height: 16px;
 
-                Text {
-                    text: "🎁 积分: " + root.reset_credits;
-                    font-size: 8px;
-                    font-weight: 700;
-                    color: #34d399;
-                    vertical-alignment: center;
+                HorizontalLayout {
+                    padding-left: 4px;
+                    padding-right: 4px;
+                    alignment: center;
+
+                    Text {
+                        text: "🎁 积分: " + root.reset_credits;
+                        font-size: 8px;
+                        font-weight: 700;
+                        color: #34d399;
+                        vertical-alignment: center;
+                    }
                 }
             }
 

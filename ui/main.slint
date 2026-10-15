@@ -4,6 +4,7 @@ import { CodexCard, BluetoothDeviceInfo } from "components/codex_card.slint";
 import { RelayView, SquareRowModel, AIHubRowModel } from "components/relay_view.slint";
 import { ServerView, GPUCardItem, HostCardItem } from "components/server_view.slint";
 import { AIHubFilterDialog, DialogProviderItem } from "components/filter_dialog.slint";
+import { SettingsDialog } from "components/settings_dialog.slint";
 
 export component MainWindow inherits Window {
     title: "状态小组件";
@@ -57,11 +58,19 @@ export component MainWindow inherits Window {
     in property <int> dlg_total_count: 28;
     in-out property <[DialogProviderItem]> dlg_providers: [];
 
+    // Settings Dialog overlay properties
+    in-out property <bool> settings_dialog_open: false;
+    in property <int> cfg_codex_interval: 60;
+    in property <int> cfg_relay_interval: 60;
+    in property <bool> cfg_autostart: false;
+
     // Callbacks
     callback drag_window();
     callback expand_clicked();
     callback collapse_clicked();
     callback open_settings_clicked();
+    callback save_settings_clicked(bool, float, int, int, bool);
+    callback exit_app_clicked();
     callback refresh_codex_clicked();
     callback refresh_relay_clicked();
     callback refresh_servers_clicked();
@@ -269,6 +278,30 @@ export component MainWindow inherits Window {
                 toggle_mode(m) => { root.toggle_dlg_mode(m); }
                 toggle_provider_selected(idx, s) => { root.toggle_dlg_selected(idx, s); }
                 toggle_provider_excluded(idx, e) => { root.toggle_dlg_excluded(idx, e); }
+            }
+        }
+
+        // Overlay Dialog when Settings is open
+        if root.settings_dialog_open: Rectangle {
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+
+            SettingsDialog {
+                width: 80%;
+                height: 85%;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                cfg_always_on_top: root.cfg_always_on_top;
+                cfg_ui_scale: root.ui_scale;
+                cfg_codex_interval: root.cfg_codex_interval;
+                cfg_relay_interval: root.cfg_relay_interval;
+                cfg_autostart: root.cfg_autostart;
+                close_dialog => { root.settings_dialog_open = false; }
+                save_settings(aot, sc, cdx, rly, auto) => {
+                    root.save_settings_clicked(aot, sc, cdx, rly, auto);
+                }
+                exit_app => { root.exit_app_clicked(); }
             }
         }
     }

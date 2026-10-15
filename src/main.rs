@@ -22,6 +22,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     FindWindowW, GetForegroundWindow, GetWindowRect, SendMessageW,
     HTCAPTION, WM_NCLBUTTONDOWN,
 };
+use tray_icon::{
+    menu::{Menu, MenuItem, MenuEvent},
+    TrayIconBuilder, Icon, TrayIconEvent,
+};
 
 slint::include_modules!();
 
@@ -33,6 +37,68 @@ fn get_window_hwnd() -> Option<HWND> {
             }
         }
         None
+    }
+}
+
+fn load_tray_icon() -> Result<Icon, Box<dyn std::error::Error>> {
+    let width = 16u32;
+    let height = 16u32;
+    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+    for y in 0..height {
+        for x in 0..width {
+            let dx = (x as f32 - 7.5).abs();
+            let dy = (y as f32 - 7.5).abs();
+            let dist_sq = dx * dx + dy * dy;
+            if dist_sq <= 49.0 {
+                if dist_sq <= 16.0 {
+                    // Bright emerald #10B981
+                    rgba.extend_from_slice(&[16, 185, 129, 255]);
+                } else {
+                    // Dark Slate #1E293B
+                    rgba.extend_from_slice(&[30, 41, 59, 255]);
+                }
+            } else {
+                rgba.extend_from_slice(&[0, 0, 0, 0]);
+            }
+        }
+    }
+    Ok(Icon::from_rgba(rgba, width, height)?)
+}
+
+fn set_autostart(enable: bool) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        if let Ok(exe_path) = std::env::current_exe() {
+            let exe_str = exe_path.to_string_lossy().to_string();
+            if enable {
+                let _ = std::process::Command::new("reg")
+                    .args([
+                        "add",
+                        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                        "/v",
+                        "DesktopFloatingWidget",
+                        "/t",
+                        "REG_SZ",
+                        "/d",
+                        &exe_str,
+                        "/f",
+                    ])
+                    .creation_flags(0x08000000)
+                    .output();
+            } else {
+                let _ = std::process::Command::new("reg")
+                    .args([
+                        "delete",
+                        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                        "/v",
+                        "DesktopFloatingWidget",
+                        "/f",
+                    ])
+                    .creation_flags(0x08000000)
+                    .output();
+            }
+        }
     }
 }
 
@@ -52,6 +118,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ui.set_ui_scale(cfg.scale);
     ui.set_cfg_always_on_top(cfg.always_on_top);
     ui.set_aihub_auto_mode(cfg.aihub_auto_mode);
+    ui.set_cfg_codex_interval(cfg.codex_interval_sec as i32);
+    ui.set_cfg_relay_interval(cfg.relay_interval_sec as i32);
+    ui.set_cfg_autostart(cfg.autostart);
 
     ui.show()?;
     println!("[INIT] MainWindow shown");
@@ -67,6 +136,74 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (codex_trigger_tx, mut codex_trigger_rx) = tokio::sync::mpsc::channel::<()>(8);
     let (relay_trigger_tx, mut relay_trigger_rx) = tokio::sync::mpsc::channel::<()>(8);
     let (servers_trigger_tx, mut servers_trigger_rx) = tokio::sync::mpsc::channel::<()>(8);
+
+    // Setup System Tray Icon & Context Menu
+    let tray_menu = Menu::new();
+    let item_toggle = MenuItem::new("展开 / 收起卡片", true, None);
+    let item_refresh = MenuItem::new("🔄 强制刷新数据", true, None);
+    let item_quit = MenuItem::new("❌ 退出程序", true, None);
+    let _ = tray_menu.append(&item_toggle);
+    let _ = tray_menu.append(&item_refresh);
+    let _ = tray_menu.append(&item_quit);
+
+    let _tray_icon = match load_tray_icon() {
+        Ok(icon) => TrayIconBuilder::new()
+            .with_menu(Box::new(tray_menu))
+            .with_tooltip("状态小组件 (Rust + Slint)")
+            .with_icon(icon)
+            .build()
+            .ok(),
+        Err(e) => {
+            eprintln!("[WARN] Failed to load tray icon: {}", e);
+            None
+        }
+    };
+
+    // Tray event handler timer (every 100ms)
+    let tray_timer = slint::Timer::default();
+    let ui_weak_tray = ui.as_weak();
+    let config_mgr_tray = config_mgr.clone();
+    let codex_tx_tray = codex_trigger_tx.clone();
+    let relay_tx_tray = relay_trigger_tx.clone();
+    let servers_tx_tray = servers_trigger_tx.clone();
+    let toggle_id = item_toggle.id().clone();
+    let refresh_id = item_refresh.id().clone();
+    let quit_id = item_quit.id().clone();
+
+    tray_timer.start(
+        slint::TimerMode::Repeated,
+        Duration::from_millis(100),
+        move || {
+            while let Ok(event) = MenuEvent::receiver().try_recv() {
+                if event.id == toggle_id {
+                    if let Some(ui) = ui_weak_tray.upgrade() {
+                        let cur = ui.get_is_mini();
+                        ui.set_is_mini(!cur);
+                        config_mgr_tray.update(|c| c.is_mini_mode = !cur);
+                    }
+                } else if event.id == refresh_id {
+                    let _ = codex_tx_tray.try_send(());
+                    let _ = relay_tx_tray.try_send(());
+                    let _ = servers_tx_tray.try_send(());
+                } else if event.id == quit_id {
+                    let _ = slint::quit_event_loop();
+                }
+            }
+
+            while let Ok(event) = TrayIconEvent::receiver().try_recv() {
+                match event {
+                    TrayIconEvent::Click { button: tray_icon::MouseButton::Left, .. } => {
+                        if let Some(ui) = ui_weak_tray.upgrade() {
+                            let cur = ui.get_is_mini();
+                            ui.set_is_mini(!cur);
+                            config_mgr_tray.update(|c| c.is_mini_mode = !cur);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        },
+    );
 
     // --- UI Callbacks ---
 
@@ -233,6 +370,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // Settings Callbacks
+    let ui_weak_settings = ui.as_weak();
+    ui.on_open_settings_clicked(move || {
+        if let Some(ui) = ui_weak_settings.upgrade() {
+            ui.set_settings_dialog_open(true);
+        }
+    });
+
+    let ui_weak_save_settings = ui.as_weak();
+    let config_mgr_settings = config_mgr.clone();
+    ui.on_save_settings_clicked(move |always_on_top, scale, cdx_int, rly_int, autostart| {
+        if let Some(ui) = ui_weak_save_settings.upgrade() {
+            config_mgr_settings.update(|c| {
+                c.always_on_top = always_on_top;
+                c.scale = scale;
+                c.codex_interval_sec = cdx_int as u64;
+                c.relay_interval_sec = rly_int as u64;
+                c.autostart = autostart;
+            });
+
+            set_autostart(autostart);
+            ui.set_cfg_always_on_top(always_on_top);
+            ui.set_ui_scale(scale);
+            ui.set_settings_dialog_open(false);
+        }
+    });
+
+    ui.on_exit_app_clicked(move || {
+        let _ = slint::quit_event_loop();
+    });
+
+    let relay_tx_sq = relay_trigger_tx.clone();
+    ui.on_open_square_filter_clicked(move || {
+        let _ = relay_tx_sq.try_send(());
+    });
+
     // Auto Collapse on Focus Loss (every 250ms)
     let auto_collapse_timer = slint::Timer::default();
     let ui_weak_collapse = ui.as_weak();
@@ -242,7 +415,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Duration::from_millis(250),
         move || {
             if let Some(ui) = ui_weak_collapse.upgrade() {
-                if !ui.get_is_mini() && !ui.get_filter_dialog_open() {
+                if !ui.get_is_mini() && !ui.get_filter_dialog_open() && !ui.get_settings_dialog_open() {
                     let now_ms = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_millis() as u64)

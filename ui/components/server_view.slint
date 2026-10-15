@@ -93,12 +93,14 @@ export component ServerView inherits Rectangle {
             Rectangle {
                 background: rgba(255, 255, 255, 0.05);
                 border-radius: 3px;
-                padding-left: 4px;
-                padding-right: 4px;
                 height: 16px;
 
                 HorizontalLayout {
+                    padding-left: 4px;
+                    padding-right: 4px;
                     spacing: 3px;
+                    alignment: center;
+
                     Text {
                         text: "🕒";
                         font-size: 8px;
@@ -124,16 +126,20 @@ export component ServerView inherits Rectangle {
                 border-width: 1px;
                 border-color: root.active_tab == 0 ? #0284c7 : rgba(255, 255, 255, 0.08);
                 border-radius: 3px;
-                padding-left: 6px;
-                padding-right: 6px;
                 height: 18px;
 
-                Text {
-                    text: "⚡ 实时状态";
-                    font-size: 8px;
-                    font-weight: 700;
-                    color: root.active_tab == 0 ? #38bdf8 : #94a3b8;
-                    vertical-alignment: center;
+                HorizontalLayout {
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    alignment: center;
+
+                    Text {
+                        text: "⚡ 实时状态";
+                        font-size: 8px;
+                        font-weight: 700;
+                        color: root.active_tab == 0 ? #38bdf8 : #94a3b8;
+                        vertical-alignment: center;
+                    }
                 }
                 TouchArea {
                     clicked => { root.tab_changed(0); }
@@ -145,16 +151,20 @@ export component ServerView inherits Rectangle {
                 border-width: 1px;
                 border-color: root.active_tab == 1 ? #0284c7 : rgba(255, 255, 255, 0.08);
                 border-radius: 3px;
-                padding-left: 6px;
-                padding-right: 6px;
                 height: 18px;
 
-                Text {
-                    text: "📅 历史占用";
-                    font-size: 8px;
-                    font-weight: 700;
-                    color: root.active_tab == 1 ? #38bdf8 : #94a3b8;
-                    vertical-alignment: center;
+                HorizontalLayout {
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    alignment: center;
+
+                    Text {
+                        text: "📅 历史占用";
+                        font-size: 8px;
+                        font-weight: 700;
+                        color: root.active_tab == 1 ? #38bdf8 : #94a3b8;
+                        vertical-alignment: center;
+                    }
                 }
                 TouchArea {
                     clicked => { root.tab_changed(1); }
@@ -175,9 +185,9 @@ export component ServerView inherits Rectangle {
                     border-width: 1px;
                     border-color: rgba(255, 255, 255, 0.06);
                     border-radius: 4px;
-                    padding: 4px;
 
                     VerticalLayout {
+                        padding: 4px;
                         spacing: 2px;
 
                         // Card Header: Server Name + User Badge
@@ -198,16 +208,20 @@ export component ServerView inherits Rectangle {
                                 border-width: 1px;
                                 border-color: card.is_busy ? rgba(239, 68, 68, 0.6) : rgba(16, 185, 129, 0.4);
                                 border-radius: 3px;
-                                padding-left: 3px;
-                                padding-right: 3px;
                                 height: 13px;
 
-                                Text {
-                                    text: card.is_busy ? card.user : "🟢 空闲";
-                                    font-size: 7px;
-                                    font-weight: 700;
-                                    color: card.is_busy ? #fca5a5 : #34d399;
-                                    vertical-alignment: center;
+                                HorizontalLayout {
+                                    padding-left: 3px;
+                                    padding-right: 3px;
+                                    alignment: center;
+
+                                    Text {
+                                        text: card.is_busy ? card.user : "🟢 空闲";
+                                        font-size: 7px;
+                                        font-weight: 700;
+                                        color: card.is_busy ? #fca5a5 : #34d399;
+                                        vertical-alignment: center;
+                                    }
                                 }
                             }
                         }
@@ -263,9 +277,9 @@ export component ServerView inherits Rectangle {
                     border-width: 1px;
                     border-color: rgba(255, 255, 255, 0.05);
                     border-radius: 4px;
-                    padding: 4px;
 
                     VerticalLayout {
+                        padding: 4px;
                         spacing: 2px;
 
                         HorizontalLayout {
@@ -320,15 +334,19 @@ export component ServerView inherits Rectangle {
                 Rectangle {
                     background: rgba(255, 255, 255, 0.05);
                     border-radius: 3px;
-                    padding-left: 4px;
-                    padding-right: 4px;
                     height: 16px;
 
-                    Text {
-                        text: "范围: 1 天";
-                        font-size: 7.5px;
-                        color: #cbd5e1;
-                        vertical-alignment: center;
+                    HorizontalLayout {
+                        padding-left: 4px;
+                        padding-right: 4px;
+                        alignment: center;
+
+                        Text {
+                            text: "范围: 1 天";
+                            font-size: 7.5px;
+                            color: #cbd5e1;
+                            vertical-alignment: center;
+                        }
                     }
                 }
 
@@ -337,16 +355,20 @@ export component ServerView inherits Rectangle {
                     border-width: 1px;
                     border-color: rgba(2, 132, 199, 0.4);
                     border-radius: 3px;
-                    padding-left: 4px;
-                    padding-right: 4px;
                     height: 16px;
 
-                    Text {
-                        text: "↻ 载入";
-                        font-size: 7.5px;
-                        font-weight: 700;
-                        color: #38bdf8;
-                        vertical-alignment: center;
+                    HorizontalLayout {
+                        padding-left: 4px;
+                        padding-right: 4px;
+                        alignment: center;
+
+                        Text {
+                            text: "↻ 载入";
+                            font-size: 7.5px;
+                            font-weight: 700;
+                            color: #38bdf8;
+                            vertical-alignment: center;
+                        }
                     }
                     TouchArea {
                         clicked => { root.load_history(); }

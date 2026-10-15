@@ -75,16 +75,20 @@ export component AIHubFilterDialog inherits Rectangle {
                 border-width: 1px;
                 border-color: root.is_auto_mode ? #10b981 : rgba(255, 255, 255, 0.1);
                 border-radius: 4px;
-                padding-left: 8px;
-                padding-right: 8px;
                 height: 22px;
 
-                Text {
-                    text: "🤖 自动模式 (按默认阈值每分钟动态更新)";
-                    font-size: 8.5px;
-                    font-weight: 600;
-                    color: root.is_auto_mode ? #34d399 : #94a3b8;
-                    vertical-alignment: center;
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    alignment: center;
+
+                    Text {
+                        text: "🤖 自动模式 (按默认阈值每分钟动态更新)";
+                        font-size: 8.5px;
+                        font-weight: 600;
+                        color: root.is_auto_mode ? #34d399 : #94a3b8;
+                        vertical-alignment: center;
+                    }
                 }
                 TouchArea {
                     clicked => { root.toggle_mode(true); }
@@ -96,16 +100,20 @@ export component AIHubFilterDialog inherits Rectangle {
                 border-width: 1px;
                 border-color: !root.is_auto_mode ? #3b82f6 : rgba(255, 255, 255, 0.1);
                 border-radius: 4px;
-                padding-left: 8px;
-                padding-right: 8px;
                 height: 22px;
 
-                Text {
-                    text: "✋ 手动模式 (按勾选项监控)";
-                    font-size: 8.5px;
-                    font-weight: 600;
-                    color: !root.is_auto_mode ? #60a5fa : #94a3b8;
-                    vertical-alignment: center;
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    alignment: center;
+
+                    Text {
+                        text: "✋ 手动模式 (按勾选项监控)";
+                        font-size: 8.5px;
+                        font-weight: 600;
+                        color: !root.is_auto_mode ? #60a5fa : #94a3b8;
+                        vertical-alignment: center;
+                    }
                 }
                 TouchArea {
                     clicked => { root.toggle_mode(false); }
@@ -136,10 +144,10 @@ export component AIHubFilterDialog inherits Rectangle {
                 for p[idx] in root.providers: Rectangle {
                     background: p.is_excluded ? rgba(239, 68, 68, 0.05) : (p.is_selected ? rgba(16, 185, 129, 0.06) : rgba(255, 255, 255, 0.02));
                     border-radius: 4px;
-                    padding: 3px;
                     height: 24px;
 
                     HorizontalLayout {
+                        padding: 3px;
                         spacing: 4px;
 
                         // Detection Dot
@@ -312,16 +320,20 @@ export component AIHubFilterDialog inherits Rectangle {
             Rectangle {
                 background: #10b981;
                 border-radius: 4px;
-                padding-left: 10px;
-                padding-right: 10px;
                 height: 22px;
 
-                Text {
-                    text: "保存并应用";
-                    font-size: 9px;
-                    font-weight: 700;
-                    color: #ffffff;
-                    vertical-alignment: center;
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    alignment: center;
+
+                    Text {
+                        text: "保存并应用";
+                        font-size: 9px;
+                        font-weight: 700;
+                        color: #ffffff;
+                        vertical-alignment: center;
+                    }
                 }
                 TouchArea {
                     clicked => { root.save_and_apply(); }

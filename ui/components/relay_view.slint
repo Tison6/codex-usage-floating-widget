@@ -72,16 +72,20 @@ export component RelayView inherits Rectangle {
                     border-width: 1px;
                     border-color: root.active_tab == 0 ? #3b82f6 : rgba(255, 255, 255, 0.08);
                     border-radius: 4px;
-                    padding-left: 6px;
-                    padding-right: 6px;
                     height: 18px;
 
-                    Text {
-                        text: "Square";
-                        font-size: 8.5px;
-                        font-weight: 600;
-                        color: root.active_tab == 0 ? #60a5fa : #94a3b8;
-                        vertical-alignment: center;
+                    HorizontalLayout {
+                        padding-left: 6px;
+                        padding-right: 6px;
+                        alignment: center;
+
+                        Text {
+                            text: "Square";
+                            font-size: 8.5px;
+                            font-weight: 600;
+                            color: root.active_tab == 0 ? #60a5fa : #94a3b8;
+                            vertical-alignment: center;
+                        }
                     }
                     TouchArea {
                         clicked => { root.tab_changed(0); }
@@ -94,16 +98,20 @@ export component RelayView inherits Rectangle {
                     border-width: 1px;
                     border-color: root.active_tab == 1 ? #10b981 : rgba(255, 255, 255, 0.08);
                     border-radius: 4px;
-                    padding-left: 6px;
-                    padding-right: 6px;
                     height: 18px;
 
-                    Text {
-                        text: "AIHub";
-                        font-size: 8.5px;
-                        font-weight: 600;
-                        color: root.active_tab == 1 ? #34d399 : #94a3b8;
-                        vertical-alignment: center;
+                    HorizontalLayout {
+                        padding-left: 6px;
+                        padding-right: 6px;
+                        alignment: center;
+
+                        Text {
+                            text: "AIHub";
+                            font-size: 8.5px;
+                            font-weight: 600;
+                            color: root.active_tab == 1 ? #34d399 : #94a3b8;
+                            vertical-alignment: center;
+                        }
                     }
                     TouchArea {
                         clicked => { root.tab_changed(1); }
@@ -157,16 +165,20 @@ export component RelayView inherits Rectangle {
                     border-width: 1px;
                     border-color: root.aihub_auto_mode ? rgba(16, 185, 129, 0.4) : rgba(59, 130, 246, 0.4);
                     border-radius: 3px;
-                    padding-left: 4px;
-                    padding-right: 4px;
                     height: 15px;
 
-                    Text {
-                        text: root.aihub_auto_mode ? "🤖 自动" : "✋ 手动";
-                        font-size: 7.5px;
-                        font-weight: 700;
-                        color: root.aihub_auto_mode ? #34d399 : #60a5fa;
-                        vertical-alignment: center;
+                    HorizontalLayout {
+                        padding-left: 4px;
+                        padding-right: 4px;
+                        alignment: center;
+
+                        Text {
+                            text: root.aihub_auto_mode ? "🤖 自动" : "✋ 手动";
+                            font-size: 7.5px;
+                            font-weight: 700;
+                            color: root.aihub_auto_mode ? #34d399 : #60a5fa;
+                            vertical-alignment: center;
+                        }
                     }
                     TouchArea {
                         clicked => { root.toggle_aihub_mode(); }
@@ -179,16 +191,20 @@ export component RelayView inherits Rectangle {
                     border-width: 1px;
                     border-color: rgba(16, 185, 129, 0.35);
                     border-radius: 3px;
-                    padding-left: 4px;
-                    padding-right: 4px;
                     height: 15px;
 
-                    Text {
-                        text: "⚙ 勾选";
-                        font-size: 7.5px;
-                        font-weight: 600;
-                        color: #34d399;
-                        vertical-alignment: center;
+                    HorizontalLayout {
+                        padding-left: 4px;
+                        padding-right: 4px;
+                        alignment: center;
+
+                        Text {
+                            text: "⚙ 勾选";
+                            font-size: 7.5px;
+                            font-weight: 600;
+                            color: #34d399;
+                            vertical-alignment: center;
+                        }
                     }
                     TouchArea {
                         clicked => { root.open_aihub_filter(); }
@@ -221,16 +237,20 @@ export component RelayView inherits Rectangle {
                 border-width: 1px;
                 border-color: rgba(59, 130, 246, 0.35);
                 border-radius: 3px;
-                padding-left: 4px;
-                padding-right: 4px;
                 height: 15px;
 
-                Text {
-                    text: "⚙ 勾选";
-                    font-size: 7.5px;
-                    font-weight: 600;
-                    color: #60a5fa;
-                    vertical-alignment: center;
+                HorizontalLayout {
+                    padding-left: 4px;
+                    padding-right: 4px;
+                    alignment: center;
+
+                    Text {
+                        text: "⚙ 勾选";
+                        font-size: 7.5px;
+                        font-weight: 600;
+                        color: #60a5fa;
+                        vertical-alignment: center;
+                    }
                 }
                 TouchArea {
                     clicked => { root.open_square_filter(); }

@@ -1,0 +1,352 @@
+import { Theme } from "../style.slint";
+
+export component SettingsDialog inherits Rectangle {
+    in-out property <bool> cfg_always_on_top: true;
+    in-out property <float> cfg_ui_scale: 1.0;
+    in-out property <int> cfg_codex_interval: 60;
+    in-out property <int> cfg_relay_interval: 60;
+    in-out property <bool> cfg_autostart: false;
+
+    callback close_dialog();
+    callback save_settings(bool /*always_on_top*/, float /*ui_scale*/, int /*codex_int*/, int /*relay_int*/, bool /*autostart*/);
+    callback exit_app();
+
+    background: rgba(15, 23, 42, 0.98);
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.15);
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+
+        // Header Title Bar
+        HorizontalLayout {
+            alignment: space-between;
+
+            HorizontalLayout {
+                spacing: 5px;
+                Text {
+                    text: "⚙️";
+                    font-size: 11px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: "偏好设置与性能选项";
+                    font-size: 11px;
+                    font-weight: 700;
+                    color: #f8fafc;
+                    vertical-alignment: center;
+                }
+            }
+
+            Rectangle {
+                width: 20px;
+                height: 20px;
+                border-radius: 4px;
+                background: rgba(255, 255, 255, 0.05);
+
+                Text {
+                    text: "✕";
+                    font-size: 9px;
+                    color: #94a3b8;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                TouchArea {
+                    clicked => { root.close_dialog(); }
+                }
+            }
+        }
+
+        // Section: Display & Window
+        VerticalLayout {
+            spacing: 6px;
+
+            Text {
+                text: "外观与窗口行为";
+                font-size: 8.5px;
+                font-weight: 700;
+                color: #38bdf8;
+            }
+
+            // Always On Top
+            HorizontalLayout {
+                alignment: space-between;
+                Text {
+                    text: "📌 窗口总在最前端 (Always on Top)";
+                    font-size: 8.5px;
+                    color: #cbd5e1;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    width: 44px;
+                    height: 18px;
+                    border-radius: 9px;
+                    background: root.cfg_always_on_top ? #10b981 : rgba(255, 255, 255, 0.1);
+
+                    Rectangle {
+                        width: 14px;
+                        height: 14px;
+                        border-radius: 7px;
+                        background: #ffffff;
+                        x: root.cfg_always_on_top ? 27px : 3px;
+                        y: 2px;
+                        animate x { duration: 150ms; }
+                    }
+
+                    TouchArea {
+                        clicked => { root.cfg_always_on_top = !root.cfg_always_on_top; }
+                    }
+                }
+            }
+
+            // UI Scale
+            HorizontalLayout {
+                alignment: space-between;
+                Text {
+                    text: "🔍 界面显示缩放比例";
+                    font-size: 8.5px;
+                    color: #cbd5e1;
+                    vertical-alignment: center;
+                }
+
+                HorizontalLayout {
+                    spacing: 4px;
+
+                    // 0.8x
+                    Rectangle {
+                        background: root.cfg_ui_scale < 0.9 ? rgba(59, 130, 246, 0.3) : rgba(255, 255, 255, 0.05);
+                        border-width: 1px;
+                        border-color: root.cfg_ui_scale < 0.9 ? #3b82f6 : rgba(255, 255, 255, 0.08);
+                        border-radius: 3px;
+                        height: 18px;
+
+                        HorizontalLayout {
+                            padding-left: 5px;
+                            padding-right: 5px;
+                            alignment: center;
+                            Text {
+                                text: "80%";
+                                font-size: 7.5px;
+                                font-weight: 700;
+                                color: root.cfg_ui_scale < 0.9 ? #60a5fa : #94a3b8;
+                                vertical-alignment: center;
+                            }
+                        }
+                        TouchArea { clicked => { root.cfg_ui_scale = 0.8; } }
+                    }
+
+                    // 1.0x (Standard)
+                    Rectangle {
+                        background: (root.cfg_ui_scale >= 0.9 && root.cfg_ui_scale <= 1.1) ? rgba(59, 130, 246, 0.3) : rgba(255, 255, 255, 0.05);
+                        border-width: 1px;
+                        border-color: (root.cfg_ui_scale >= 0.9 && root.cfg_ui_scale <= 1.1) ? #3b82f6 : rgba(255, 255, 255, 0.08);
+                        border-radius: 3px;
+                        height: 18px;
+
+                        HorizontalLayout {
+                            padding-left: 5px;
+                            padding-right: 5px;
+                            alignment: center;
+                            Text {
+                                text: "100%";
+                                font-size: 7.5px;
+                                font-weight: 700;
+                                color: (root.cfg_ui_scale >= 0.9 && root.cfg_ui_scale <= 1.1) ? #60a5fa : #94a3b8;
+                                vertical-alignment: center;
+                            }
+                        }
+                        TouchArea { clicked => { root.cfg_ui_scale = 1.0; } }
+                    }
+
+                    // 1.2x
+                    Rectangle {
+                        background: root.cfg_ui_scale > 1.1 ? rgba(59, 130, 246, 0.3) : rgba(255, 255, 255, 0.05);
+                        border-width: 1px;
+                        border-color: root.cfg_ui_scale > 1.1 ? #3b82f6 : rgba(255, 255, 255, 0.08);
+                        border-radius: 3px;
+                        height: 18px;
+
+                        HorizontalLayout {
+                            padding-left: 5px;
+                            padding-right: 5px;
+                            alignment: center;
+                            Text {
+                                text: "120%";
+                                font-size: 7.5px;
+                                font-weight: 700;
+                                color: root.cfg_ui_scale > 1.1 ? #60a5fa : #94a3b8;
+                                vertical-alignment: center;
+                            }
+                        }
+                        TouchArea { clicked => { root.cfg_ui_scale = 1.2; } }
+                    }
+                }
+            }
+        }
+
+        // Section: Intervals & Autostart
+        VerticalLayout {
+            spacing: 6px;
+
+            Text {
+                text: "同步与开机项";
+                font-size: 8.5px;
+                font-weight: 700;
+                color: #38bdf8;
+            }
+
+            // Autostart on Windows
+            HorizontalLayout {
+                alignment: space-between;
+                Text {
+                    text: "🚀 开机时自动启动 (Windows Run)";
+                    font-size: 8.5px;
+                    color: #cbd5e1;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    width: 44px;
+                    height: 18px;
+                    border-radius: 9px;
+                    background: root.cfg_autostart ? #10b981 : rgba(255, 255, 255, 0.1);
+
+                    Rectangle {
+                        width: 14px;
+                        height: 14px;
+                        border-radius: 7px;
+                        background: #ffffff;
+                        x: root.cfg_autostart ? 27px : 3px;
+                        y: 2px;
+                        animate x { duration: 150ms; }
+                    }
+
+                    TouchArea {
+                        clicked => { root.cfg_autostart = !root.cfg_autostart; }
+                    }
+                }
+            }
+
+            // Refresh Rates
+            HorizontalLayout {
+                alignment: space-between;
+                Text {
+                    text: "⏱️ 数据刷新周期 (秒)";
+                    font-size: 8.5px;
+                    color: #cbd5e1;
+                    vertical-alignment: center;
+                }
+
+                HorizontalLayout {
+                    spacing: 4px;
+
+                    Rectangle {
+                        background: root.cfg_codex_interval == 30 ? rgba(16, 185, 129, 0.3) : rgba(255, 255, 255, 0.05);
+                        border-width: 1px;
+                        border-color: root.cfg_codex_interval == 30 ? #10b981 : rgba(255, 255, 255, 0.08);
+                        border-radius: 3px;
+                        height: 18px;
+
+                        HorizontalLayout {
+                            padding-left: 5px;
+                            padding-right: 5px;
+                            alignment: center;
+                            Text {
+                                text: "30秒";
+                                font-size: 7.5px;
+                                font-weight: 700;
+                                color: root.cfg_codex_interval == 30 ? #34d399 : #94a3b8;
+                                vertical-alignment: center;
+                            }
+                        }
+                        TouchArea { clicked => { root.cfg_codex_interval = 30; root.cfg_relay_interval = 30; } }
+                    }
+
+                    Rectangle {
+                        background: root.cfg_codex_interval == 60 ? rgba(16, 185, 129, 0.3) : rgba(255, 255, 255, 0.05);
+                        border-width: 1px;
+                        border-color: root.cfg_codex_interval == 60 ? #10b981 : rgba(255, 255, 255, 0.08);
+                        border-radius: 3px;
+                        height: 18px;
+
+                        HorizontalLayout {
+                            padding-left: 5px;
+                            padding-right: 5px;
+                            alignment: center;
+                            Text {
+                                text: "60秒 (推荐)";
+                                font-size: 7.5px;
+                                font-weight: 700;
+                                color: root.cfg_codex_interval == 60 ? #34d399 : #94a3b8;
+                                vertical-alignment: center;
+                            }
+                        }
+                        TouchArea { clicked => { root.cfg_codex_interval = 60; root.cfg_relay_interval = 60; } }
+                    }
+                }
+            }
+        }
+
+        // Footer Actions: Exit App & Save/Apply
+        HorizontalLayout {
+            alignment: space-between;
+
+            Rectangle {
+                background: rgba(239, 68, 68, 0.15);
+                border-width: 1px;
+                border-color: rgba(239, 68, 68, 0.35);
+                border-radius: 4px;
+                height: 22px;
+
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    alignment: center;
+                    Text {
+                        text: "❌ 退出程序";
+                        font-size: 8px;
+                        font-weight: 700;
+                        color: #f87171;
+                        vertical-alignment: center;
+                    }
+                }
+                TouchArea {
+                    clicked => { root.exit_app(); }
+                }
+            }
+
+            Rectangle {
+                background: #10b981;
+                border-radius: 4px;
+                height: 22px;
+
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    alignment: center;
+                    Text {
+                        text: "保存并应用设置";
+                        font-size: 8.5px;
+                        font-weight: 700;
+                        color: #ffffff;
+                        vertical-alignment: center;
+                    }
+                }
+                TouchArea {
+                    clicked => {
+                        root.save_settings(
+                            root.cfg_always_on_top,
+                            root.cfg_ui_scale,
+                            root.cfg_codex_interval,
+                            root.cfg_relay_interval,
+                            root.cfg_autostart
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
