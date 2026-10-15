@@ -1,0 +1,240 @@
+import { Theme } from "../style.slint";
+
+export struct BluetoothDeviceInfo {
+    name: string,
+    battery: int,
+    icon: string,
+}
+
+export component CodexCard inherits Rectangle {
+    in property <bool> codex_running: false;
+    in property <string> plan_type: "PLUS";
+    in property <int> weekly_remaining_pct: 56;
+    in property <string> countdown_str: "5d 14h";
+    in property <int> reset_credits: 1;
+    in property <string> updated_time: "刚刚";
+    in property <[BluetoothDeviceInfo]> bt_devices: [
+        { name: "DJI Mic Mini", battery: 92, icon: "🎙️" },
+        { name: "WH-1000XM5", battery: 78, icon: "🎧" }
+    ];
+
+    callback refresh_codex();
+
+    background: rgba(17, 24, 39, 0.7);
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 6px;
+
+        // Bluetooth Header
+        HorizontalLayout {
+            alignment: space-between;
+            HorizontalLayout {
+                spacing: 4px;
+                Text {
+                    text: "⚡ 蓝牙外设";
+                    font-size: 9px;
+                    font-weight: 700;
+                    color: #cbd5e1;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: root.bt_devices.length + " 已连";
+                font-size: 8px;
+                color: #64748b;
+                vertical-alignment: center;
+            }
+        }
+
+        // Bluetooth Devices
+        for dev in root.bt_devices: HorizontalLayout {
+            spacing: 6px;
+            alignment: space-between;
+
+            HorizontalLayout {
+                spacing: 4px;
+                Text {
+                    text: dev.icon;
+                    font-size: 9px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: dev.name;
+                    font-size: 8.5px;
+                    color: #e2e8f0;
+                    vertical-alignment: center;
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 4px;
+                // Battery Bar
+                Rectangle {
+                    width: 32px;
+                    height: 5px;
+                    border-radius: 2.5px;
+                    background: rgba(255, 255, 255, 0.1);
+                    y: (parent.height - self.height) / 2;
+
+                    Rectangle {
+                        width: parent.width * (dev.battery / 100.0);
+                        height: parent.height;
+                        border-radius: 2.5px;
+                        background: dev.battery > 50 ? #10b981 : (dev.battery > 20 ? #f59e0b : #ef4444);
+                        x: 0;
+                    }
+                }
+
+                Text {
+                    text: dev.battery + "%";
+                    font-size: 8px;
+                    font-weight: 600;
+                    color: dev.battery > 50 ? #34d399 : #f59e0b;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // Divider
+        Rectangle {
+            height: 1px;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        // ChatGPT Header
+        HorizontalLayout {
+            alignment: space-between;
+
+            HorizontalLayout {
+                spacing: 5px;
+                Text {
+                    text: "ChatGPT";
+                    font-size: 10px;
+                    font-weight: 700;
+                    color: #f8fafc;
+                    vertical-alignment: center;
+                }
+                Rectangle {
+                    background: rgba(59, 130, 246, 0.2);
+                    border-radius: 3px;
+                    border-width: 1px;
+                    border-color: rgba(59, 130, 246, 0.4);
+                    padding-left: 3px;
+                    padding-right: 3px;
+                    height: 14px;
+                    y: (parent.height - self.height) / 2;
+
+                    Text {
+                        text: root.plan_type;
+                        font-size: 7.5px;
+                        font-weight: 700;
+                        color: #60a5fa;
+                        vertical-alignment: center;
+                    }
+                }
+                Rectangle {
+                    width: 7px;
+                    height: 7px;
+                    border-radius: 3.5px;
+                    background: root.codex_running ? #10b981 : #64748b;
+                    y: (parent.height - self.height) / 2;
+                }
+            }
+
+            Rectangle {
+                width: 16px;
+                height: 16px;
+                border-radius: 3px;
+                background: transparent;
+                Text {
+                    text: "↻";
+                    font-size: 10px;
+                    color: #64748b;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                }
+                TouchArea {
+                    clicked => { root.refresh_codex(); }
+                }
+            }
+        }
+
+        // Weekly Quota Title & Percentage
+        HorizontalLayout {
+            alignment: space-between;
+            Text {
+                text: "周限额";
+                font-size: 9px;
+                font-weight: 600;
+                color: #94a3b8;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "剩 " + root.weekly_remaining_pct + "%";
+                font-size: 9.5px;
+                font-weight: 700;
+                color: root.weekly_remaining_pct > 30 ? #38bdf8 : #f59e0b;
+                vertical-alignment: center;
+            }
+        }
+
+        // Progress Bar
+        Rectangle {
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.08);
+
+            Rectangle {
+                width: parent.width * (root.weekly_remaining_pct / 100.0);
+                height: parent.height;
+                border-radius: 3px;
+                background: root.weekly_remaining_pct > 30 ? #3b82f6 : (root.weekly_remaining_pct > 15 ? #f59e0b : #ef4444);
+                x: 0;
+            }
+        }
+
+        // Countdown & Reset credits
+        HorizontalLayout {
+            alignment: space-between;
+            Text {
+                text: "重置倒计时: " + root.countdown_str;
+                font-size: 8px;
+                color: #64748b;
+                vertical-alignment: center;
+            }
+        }
+
+        HorizontalLayout {
+            alignment: space-between;
+
+            Rectangle {
+                background: rgba(16, 185, 129, 0.15);
+                border-radius: 3px;
+                border-width: 1px;
+                border-color: rgba(16, 185, 129, 0.3);
+                padding-left: 4px;
+                padding-right: 4px;
+                height: 16px;
+
+                Text {
+                    text: "🎁 积分: " + root.reset_credits;
+                    font-size: 8px;
+                    font-weight: 700;
+                    color: #34d399;
+                    vertical-alignment: center;
+                }
+            }
+
+            Text {
+                text: "更新: " + root.updated_time;
+                font-size: 7.5px;
+                color: #475569;
+                vertical-alignment: center;
+            }
+        }
+    }
+}

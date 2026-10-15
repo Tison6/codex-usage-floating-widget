@@ -1,0 +1,275 @@
+import { Theme } from "style.slint";
+import { MiniCapsule } from "components/mini_capsule.slint";
+import { CodexCard, BluetoothDeviceInfo } from "components/codex_card.slint";
+import { RelayView, SquareRowModel, AIHubRowModel } from "components/relay_view.slint";
+import { ServerView, GPUCardItem, HostCardItem } from "components/server_view.slint";
+import { AIHubFilterDialog, DialogProviderItem } from "components/filter_dialog.slint";
+
+export component MainWindow inherits Window {
+    title: "状态小组件";
+    no-frame: true;
+    always-on-top: root.cfg_always_on_top;
+    background: transparent;
+
+    in-out property <bool> is_mini: true;
+    in-out property <float> ui_scale: 1.0;
+    in property <bool> cfg_always_on_top: true;
+
+    // Mini Capsule properties
+    in property <bool> codex_running: false;
+    in property <string> bt_icon: "🎙️";
+    in property <string> bt_battery: "100";
+    in property <[string]> gpu_vals: ["0", "0", "0", "61", "0"];
+    in property <[color]> gpu_val_colors: [#00e676, #00e676, #00e676, #ef4444, #00e676];
+    in property <[string]> gpu_srv_cpu_vals: ["3", "4", "1"];
+    in property <[color]> gpu_srv_cpu_colors: [#00e676, #00e676, #00e676];
+    in property <string> codex_5h_val: "100";
+    in property <string> codex_wk_val: "37";
+    in property <[string]> srv_cpu_vals: ["93", "92", "49"];
+    in property <[color]> srv_cpu_val_colors: [#ef4444, #ef4444, #ef4444];
+    in property <string> time_str: "21:05:48";
+
+    // Codex Card properties (Left Column)
+    in property <string> plan_type: "PLUS";
+    in property <int> weekly_remaining_pct: 56;
+    in property <string> countdown_str: "5d 14h";
+    in property <int> reset_credits: 1;
+    in property <string> updated_time: "刚刚";
+    in property <[BluetoothDeviceInfo]> bt_devices: [];
+
+    // Relay View properties (Middle Column)
+    in-out property <int> relay_active_tab: 1;
+    in property <bool> aihub_auto_mode: true;
+    in property <string> aihub_stats_str: "1.1s · 99.2% · 06:20";
+    in property <string> square_balance_str: "🟢 Square (已用: $12.34)";
+    in property <[SquareRowModel]> square_rows: [];
+    in property <[AIHubRowModel]> aihub_rows: [];
+
+    // Server View properties (Right Column)
+    in-out property <int> server_active_tab: 0;
+    in property <[GPUCardItem]> gpu_cards: [];
+    in property <[HostCardItem]> host_cards: [];
+
+    // Filter Dialog overlay properties
+    in-out property <bool> filter_dialog_open: false;
+    in property <int> dlg_selected_count: 4;
+    in property <int> dlg_excluded_count: 0;
+    in property <int> dlg_total_count: 28;
+    in-out property <[DialogProviderItem]> dlg_providers: [];
+
+    // Callbacks
+    callback drag_window();
+    callback expand_clicked();
+    callback collapse_clicked();
+    callback open_settings_clicked();
+    callback refresh_codex_clicked();
+    callback refresh_relay_clicked();
+    callback refresh_servers_clicked();
+    callback load_history_clicked();
+    callback toggle_aihub_mode_clicked();
+    callback open_aihub_filter_clicked();
+    callback open_square_filter_clicked();
+    callback save_filter_clicked();
+    callback close_filter_clicked();
+    callback toggle_dlg_mode(bool);
+    callback toggle_dlg_selected(int, bool);
+    callback toggle_dlg_excluded(int, bool);
+
+    width: root.is_mini ? (245px * root.ui_scale) : (775px * root.ui_scale);
+    height: root.is_mini ? (34px * root.ui_scale) : (365px * root.ui_scale);
+
+    // Mini Mode
+    if root.is_mini: MiniCapsule {
+        width: 100%;
+        height: 100%;
+        codex_running: root.codex_running;
+        bt_icon: root.bt_icon;
+        bt_battery: root.bt_battery;
+        gpu_vals: root.gpu_vals;
+        gpu_val_colors: root.gpu_val_colors;
+        gpu_srv_cpu_vals: root.gpu_srv_cpu_vals;
+        gpu_srv_cpu_colors: root.gpu_srv_cpu_colors;
+        codex_5h_val: root.codex_5h_val;
+        codex_wk_val: root.codex_wk_val;
+        srv_cpu_vals: root.srv_cpu_vals;
+        srv_cpu_val_colors: root.srv_cpu_val_colors;
+        clicked => { root.expand_clicked(); }
+        drag_window => { root.drag_window(); }
+    }
+
+    // Expanded Mode
+    if !root.is_mini: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: rgba(11, 15, 25, 0.96);
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: rgba(255, 255, 255, 0.12);
+
+        VerticalLayout {
+            padding: 6px;
+            spacing: 5px;
+
+            // Window Title Bar
+            HorizontalLayout {
+                alignment: space-between;
+                height: 18px;
+
+                HorizontalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: "⚡";
+                        font-size: 10px;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: "状态小组件";
+                        font-size: 10px;
+                        font-weight: 700;
+                        color: #f8fafc;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        moved => { root.drag_window(); }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 3px;
+
+                    // Collapse to mini button
+                    Rectangle {
+                        width: 18px;
+                        height: 18px;
+                        border-radius: 3px;
+                        background: rgba(255, 255, 255, 0.05);
+
+                        Text {
+                            text: "➖";
+                            font-size: 8px;
+                            color: #94a3b8;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        TouchArea {
+                            clicked => { root.collapse_clicked(); }
+                        }
+                    }
+
+                    // Settings button
+                    Rectangle {
+                        width: 18px;
+                        height: 18px;
+                        border-radius: 3px;
+                        background: rgba(255, 255, 255, 0.05);
+
+                        Text {
+                            text: "⚙️";
+                            font-size: 8px;
+                            color: #94a3b8;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        TouchArea {
+                            clicked => { root.open_settings_clicked(); }
+                        }
+                    }
+                }
+            }
+
+            // Three Column Layout (Left: Codex, Middle: Relay, Right: Servers)
+            HorizontalLayout {
+                spacing: 6px;
+
+                // Left Column: 210px
+                Rectangle {
+                    width: 210px;
+                    CodexCard {
+                        width: 100%;
+                        height: 100%;
+                        codex_running: root.codex_running;
+                        plan_type: root.plan_type;
+                        weekly_remaining_pct: root.weekly_remaining_pct;
+                        countdown_str: root.countdown_str;
+                        reset_credits: root.reset_credits;
+                        updated_time: root.updated_time;
+                        bt_devices: root.bt_devices;
+                        refresh_codex => { root.refresh_codex_clicked(); }
+                    }
+                }
+
+                // Vertical Separator
+                Rectangle {
+                    width: 1px;
+                    background: rgba(255, 255, 255, 0.08);
+                }
+
+                // Middle Column: 330px
+                Rectangle {
+                    width: 330px;
+                    RelayView {
+                        width: 100%;
+                        height: 100%;
+                        active_tab: root.relay_active_tab;
+                        aihub_auto_mode: root.aihub_auto_mode;
+                        aihub_stats_str: root.aihub_stats_str;
+                        square_balance_str: root.square_balance_str;
+                        square_rows: root.square_rows;
+                        aihub_rows: root.aihub_rows;
+                        tab_changed(idx) => { root.relay_active_tab = idx; }
+                        toggle_aihub_mode => { root.toggle_aihub_mode_clicked(); }
+                        open_aihub_filter => { root.open_aihub_filter_clicked(); }
+                        open_square_filter => { root.open_square_filter_clicked(); }
+                        refresh_relay => { root.refresh_relay_clicked(); }
+                    }
+                }
+
+                // Vertical Separator
+                Rectangle {
+                    width: 1px;
+                    background: rgba(255, 255, 255, 0.08);
+                }
+
+                // Right Column: 210px
+                Rectangle {
+                    width: 210px;
+                    ServerView {
+                        width: 100%;
+                        height: 100%;
+                        time_str: root.time_str;
+                        active_tab: root.server_active_tab;
+                        gpu_cards: root.gpu_cards;
+                        host_cards: root.host_cards;
+                        tab_changed(idx) => { root.server_active_tab = idx; }
+                        refresh_servers => { root.refresh_servers_clicked(); }
+                        load_history => { root.load_history_clicked(); }
+                    }
+                }
+            }
+        }
+
+        // Overlay Dialog when filter is open
+        if root.filter_dialog_open: Rectangle {
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+
+            AIHubFilterDialog {
+                width: 90%;
+                height: 90%;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                is_auto_mode: root.aihub_auto_mode;
+                selected_count: root.dlg_selected_count;
+                excluded_count: root.dlg_excluded_count;
+                total_count: root.dlg_total_count;
+                providers: root.dlg_providers;
+                close_dialog => { root.close_filter_clicked(); }
+                save_and_apply => { root.save_filter_clicked(); }
+                toggle_mode(m) => { root.toggle_dlg_mode(m); }
+                toggle_provider_selected(idx, s) => { root.toggle_dlg_selected(idx, s); }
+                toggle_provider_excluded(idx, e) => { root.toggle_dlg_excluded(idx, e); }
+            }
+        }
+    }
+}

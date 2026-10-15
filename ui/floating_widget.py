@@ -256,7 +256,7 @@ class FloatingWidget(QWidget):
         
         # --- Middle Column: Relay Stations (Square API & AIHub) ---
         self.mid_col = QWidget(self.cols_widget)
-        self.mid_col.setFixedWidth(int(round(300 * self.widget_scale)))
+        self.mid_col.setFixedWidth(int(round(330 * self.widget_scale)))
         mid_layout = QVBoxLayout(self.mid_col)
         mid_layout.setContentsMargins(0, 0, 0, 0)
         mid_layout.setSpacing(6)
@@ -279,7 +279,7 @@ class FloatingWidget(QWidget):
 
         # --- Right Column: GPU Servers (matching dark aesthetic of left column) ---
         self.right_col = QWidget(self.cols_widget)
-        self.right_col.setFixedWidth(int(round(160 * self.widget_scale)))
+        self.right_col.setFixedWidth(int(round(210 * self.widget_scale)))
         right_layout = QVBoxLayout(self.right_col)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(6)
@@ -599,8 +599,8 @@ class FloatingWidget(QWidget):
 
     def update_mode_visibility(self):
         """Instant toggle between mini and expanded views with zero lag."""
-        base_w = int(round(710 * self.widget_scale))
-        base_h = int(round(302 * self.widget_scale))
+        base_w = int(round(775 * self.widget_scale))
+        base_h = int(round(365 * self.widget_scale))
         if self.is_mini:
             self.root_layout.setContentsMargins(2, 2, 2, 2)
             self.expanded_container.hide()
@@ -631,9 +631,9 @@ class FloatingWidget(QWidget):
         if hasattr(self, "left_col"):
             self.left_col.setFixedWidth(int(round(210 * self.widget_scale)))
         if hasattr(self, "mid_col"):
-            self.mid_col.setFixedWidth(int(round(300 * self.widget_scale)))
+            self.mid_col.setFixedWidth(int(round(330 * self.widget_scale)))
         if hasattr(self, "right_col"):
-            self.right_col.setFixedWidth(int(round(160 * self.widget_scale)))
+            self.right_col.setFixedWidth(int(round(210 * self.widget_scale)))
             
         # 4. Notify subviews to update their custom internal fonts and item heights
         if hasattr(self, "battery_view") and hasattr(self.battery_view, "set_scale"):
@@ -660,7 +660,7 @@ class FloatingWidget(QWidget):
         """Restore saved window coordinates or place near top-right."""
         pos = self.cfg.get("window_pos")
         screen = QApplication.primaryScreen().availableGeometry()
-        expected_w = int(round(710 * self.widget_scale)) if not self.is_mini else int(round(208 * self.widget_scale))
+        expected_w = int(round(775 * self.widget_scale)) if not self.is_mini else int(round(208 * self.widget_scale))
         if pos and len(pos) == 2:
             x = max(screen.left() + 10, min(pos[0], screen.right() - expected_w))
             y = max(screen.top() + 10, min(pos[1], screen.bottom() - 150))

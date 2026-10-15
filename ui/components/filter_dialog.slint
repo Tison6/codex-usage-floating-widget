@@ -1,0 +1,332 @@
+import { Theme } from "../style.slint";
+
+export struct DialogProviderItem {
+    code: string,
+    multiplier_str: string,
+    effective_multiplier_str: string,
+    cache_hit_rate: string,
+    ttft_str: string,
+    success_rate_str: string,
+    detection_status: string,
+    has_image: bool,
+    is_selected: bool,
+    is_excluded: bool,
+}
+
+export component AIHubFilterDialog inherits Rectangle {
+    in property <bool> is_auto_mode: true;
+    in property <int> selected_count: 4;
+    in property <int> excluded_count: 0;
+    in property <int> total_count: 28;
+    in-out property <[DialogProviderItem]> providers: [];
+
+    callback close_dialog();
+    callback save_and_apply();
+    callback toggle_mode(bool);
+    callback toggle_provider_selected(int, bool);
+    callback toggle_provider_excluded(int, bool);
+
+    background: rgba(15, 23, 42, 0.98);
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.12);
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+
+        // Title Bar
+        HorizontalLayout {
+            alignment: space-between;
+
+            Text {
+                text: "⚙ 勾选 AIHub 监控供应商 (实时参数筛选)";
+                font-size: 11px;
+                font-weight: 700;
+                color: #f8fafc;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                background: rgba(255, 255, 255, 0.05);
+
+                Text {
+                    text: "✕";
+                    font-size: 9px;
+                    color: #94a3b8;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                TouchArea {
+                    clicked => { root.close_dialog(); }
+                }
+            }
+        }
+
+        // Mode Selector
+        HorizontalLayout {
+            spacing: 8px;
+
+            Rectangle {
+                background: root.is_auto_mode ? rgba(16, 185, 129, 0.25) : rgba(255, 255, 255, 0.05);
+                border-width: 1px;
+                border-color: root.is_auto_mode ? #10b981 : rgba(255, 255, 255, 0.1);
+                border-radius: 4px;
+                padding-left: 8px;
+                padding-right: 8px;
+                height: 22px;
+
+                Text {
+                    text: "🤖 自动模式 (按默认阈值每分钟动态更新)";
+                    font-size: 8.5px;
+                    font-weight: 600;
+                    color: root.is_auto_mode ? #34d399 : #94a3b8;
+                    vertical-alignment: center;
+                }
+                TouchArea {
+                    clicked => { root.toggle_mode(true); }
+                }
+            }
+
+            Rectangle {
+                background: !root.is_auto_mode ? rgba(59, 130, 246, 0.25) : rgba(255, 255, 255, 0.05);
+                border-width: 1px;
+                border-color: !root.is_auto_mode ? #3b82f6 : rgba(255, 255, 255, 0.1);
+                border-radius: 4px;
+                padding-left: 8px;
+                padding-right: 8px;
+                height: 22px;
+
+                Text {
+                    text: "✋ 手动模式 (按勾选项监控)";
+                    font-size: 8.5px;
+                    font-weight: 600;
+                    color: !root.is_auto_mode ? #60a5fa : #94a3b8;
+                    vertical-alignment: center;
+                }
+                TouchArea {
+                    clicked => { root.toggle_mode(false); }
+                }
+            }
+        }
+
+        // Table Header
+        HorizontalLayout {
+            spacing: 4px;
+            Text { text: "检测 / 供应商代码"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: left; }
+            Rectangle { width: 36px; Text { text: "倍率"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: center; } }
+            Rectangle { width: 42px; Text { text: "真实倍率"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: center; } }
+            Rectangle { width: 38px; Text { text: "缓存率"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: center; } }
+            Rectangle { width: 36px; Text { text: "TTFT"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: center; } }
+            Rectangle { width: 44px; Text { text: "成功率"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: center; } }
+            Rectangle { width: 32px; Text { text: "实测图"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: center; } }
+            Rectangle { width: 36px; Text { text: "剔除"; font-size: 8px; font-weight: 700; color: #ef4444; horizontal-alignment: center; } }
+        }
+
+        // Table Provider List
+        Flickable {
+            content-height: 280px;
+
+            VerticalLayout {
+                spacing: 3px;
+
+                for p[idx] in root.providers: Rectangle {
+                    background: p.is_excluded ? rgba(239, 68, 68, 0.05) : (p.is_selected ? rgba(16, 185, 129, 0.06) : rgba(255, 255, 255, 0.02));
+                    border-radius: 4px;
+                    padding: 3px;
+                    height: 24px;
+
+                    HorizontalLayout {
+                        spacing: 4px;
+
+                        // Detection Dot
+                        Rectangle {
+                            width: 14px;
+                            Rectangle {
+                                width: 7px;
+                                height: 7px;
+                                border-radius: 3.5px;
+                                background: p.detection_status == "passed" ? #10b981 : (p.detection_status == "suspected" ? #f59e0b : #64748b);
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+                        }
+
+                        // Selected Checkbox & Code
+                        HorizontalLayout {
+                            spacing: 4px;
+                            Rectangle {
+                                width: 13px;
+                                height: 13px;
+                                border-radius: 3px;
+                                border-width: 1px;
+                                border-color: p.is_selected ? #10b981 : rgba(255, 255, 255, 0.2);
+                                background: p.is_selected ? #10b981 : transparent;
+                                y: (parent.height - self.height) / 2;
+
+                                if p.is_selected: Text {
+                                    text: "✓";
+                                    font-size: 8px;
+                                    color: #ffffff;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        if !p.is_excluded {
+                                            root.toggle_provider_selected(idx, !p.is_selected);
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: p.code;
+                                font-size: 8.5px;
+                                font-weight: 600;
+                                color: p.is_excluded ? #64748b : #e2e8f0;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        // Nominal Multiplier
+                        Rectangle {
+                            width: 36px;
+                            Text {
+                                text: p.multiplier_str;
+                                font-size: 8px;
+                                color: #60a5fa;
+                                vertical-alignment: center;
+                                horizontal-alignment: center;
+                            }
+                        }
+
+                        // Effective Multiplier
+                        Rectangle {
+                            width: 42px;
+                            Text {
+                                text: p.effective_multiplier_str;
+                                font-size: 8px;
+                                font-weight: 700;
+                                color: #34d399;
+                                vertical-alignment: center;
+                                horizontal-alignment: center;
+                            }
+                        }
+
+                        // Cache Hit Rate
+                        Rectangle {
+                            width: 38px;
+                            Text {
+                                text: p.cache_hit_rate;
+                                font-size: 8px;
+                                color: #94a3b8;
+                                vertical-alignment: center;
+                                horizontal-alignment: center;
+                            }
+                        }
+
+                        // TTFT
+                        Rectangle {
+                            width: 36px;
+                            Text {
+                                text: p.ttft_str;
+                                font-size: 8px;
+                                color: #94a3b8;
+                                vertical-alignment: center;
+                                horizontal-alignment: center;
+                            }
+                        }
+
+                        // Success Rate
+                        Rectangle {
+                            width: 44px;
+                            Text {
+                                text: p.success_rate_str;
+                                font-size: 8px;
+                                font-weight: 700;
+                                color: #10b981;
+                                vertical-alignment: center;
+                                horizontal-alignment: center;
+                            }
+                        }
+
+                        // Image icon
+                        Rectangle {
+                            width: 32px;
+                            Text {
+                                text: p.has_image ? "📷" : "-";
+                                font-size: 8px;
+                                color: p.has_image ? #10b981 : #475569;
+                                vertical-alignment: center;
+                                horizontal-alignment: center;
+                            }
+                        }
+
+                        // Red Exclusion Checkbox (剔除)
+                        Rectangle {
+                            width: 36px;
+                            Rectangle {
+                                width: 13px;
+                                height: 13px;
+                                border-radius: 3px;
+                                border-width: 1px;
+                                border-color: p.is_excluded ? #ef4444 : rgba(239, 68, 68, 0.4);
+                                background: p.is_excluded ? #ef4444 : transparent;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+
+                                if p.is_excluded: Text {
+                                    text: "✕";
+                                    font-size: 8px;
+                                    color: #ffffff;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                                TouchArea {
+                                    clicked => {
+                                        root.toggle_provider_excluded(idx, !p.is_excluded);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Footer: Count summary & Save button
+        HorizontalLayout {
+            alignment: space-between;
+
+            Text {
+                text: "已勾选: " + root.selected_count + "  |  🚫 已剔除: " + root.excluded_count + "  |  总计: " + root.total_count + " 个供应商";
+                font-size: 8px;
+                color: #94a3b8;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                background: #10b981;
+                border-radius: 4px;
+                padding-left: 10px;
+                padding-right: 10px;
+                height: 22px;
+
+                Text {
+                    text: "保存并应用";
+                    font-size: 9px;
+                    font-weight: 700;
+                    color: #ffffff;
+                    vertical-alignment: center;
+                }
+                TouchArea {
+                    clicked => { root.save_and_apply(); }
+                }
+            }
+        }
+    }
+}

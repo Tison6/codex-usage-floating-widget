@@ -17,3 +17,8 @@ config.json
 .idea/
 *.sublime-project
 *.sublime-workspace
+
+
+# Added by cargo
+
+/target

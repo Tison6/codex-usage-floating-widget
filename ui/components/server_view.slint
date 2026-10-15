@@ -1,0 +1,393 @@
+import { Theme } from "../style.slint";
+
+export struct GPUCardItem {
+    sid: string,
+    index: string,
+    server_name: string,
+    model: string,
+    memory_used_gb: float,
+    memory_total_gb: float,
+    vram_pct: float,
+    utilization: int,
+    power_draw: string,
+    user: string,
+    is_busy: bool,
+}
+
+export struct HostCardItem {
+    id: string,
+    name: string,
+    cpu_pct: float,
+    mem_used_gb: float,
+    mem_total_gb: float,
+    mem_pct: float,
+    disk_free_gb: float,
+    is_online: bool,
+}
+
+export component ServerView inherits Rectangle {
+    in property <int> active_tab: 0; // 0 = Live, 1 = History
+    in property <[GPUCardItem]> gpu_cards: [];
+    in property <[HostCardItem]> host_cards: [];
+    in property <string> time_str: "21:05:48";
+
+    callback tab_changed(int);
+    callback refresh_servers();
+    callback load_history();
+
+    background: rgba(17, 24, 39, 0.7);
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+
+    VerticalLayout {
+        padding: 6px;
+        spacing: 5px;
+
+        // Header Row 1: NVIDIA + CPU Logos + "服务器" + Refresh + Clock
+        HorizontalLayout {
+            alignment: space-between;
+
+            HorizontalLayout {
+                spacing: 4px;
+                alignment: start;
+
+                Image {
+                    source: @image-url("../../assets/nvidia.svg");
+                    width: 12px;
+                    height: 12px;
+                    vertical-alignment: center;
+                }
+                Image {
+                    source: @image-url("../../assets/cpu.svg");
+                    width: 12px;
+                    height: 12px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: "服务器";
+                    font-size: 10px;
+                    font-weight: 800;
+                    color: #ffffff;
+                    vertical-alignment: center;
+                }
+                Rectangle {
+                    width: 16px;
+                    height: 16px;
+                    border-radius: 3px;
+                    background: transparent;
+                    Text {
+                        text: "↻";
+                        font-size: 10px;
+                        color: #94a3b8;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => { root.refresh_servers(); }
+                    }
+                }
+            }
+
+            // Live Clock Badge
+            Rectangle {
+                background: rgba(255, 255, 255, 0.05);
+                border-radius: 3px;
+                padding-left: 4px;
+                padding-right: 4px;
+                height: 16px;
+
+                HorizontalLayout {
+                    spacing: 3px;
+                    Text {
+                        text: "🕒";
+                        font-size: 8px;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: root.time_str;
+                        font-size: 8px;
+                        font-weight: 600;
+                        color: #94a3b8;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Header Row 2: Tabs [⚡ 实时状态] | [📅 历史占用]
+        HorizontalLayout {
+            spacing: 5px;
+
+            Rectangle {
+                background: root.active_tab == 0 ? rgba(2, 132, 199, 0.35) : rgba(255, 255, 255, 0.05);
+                border-width: 1px;
+                border-color: root.active_tab == 0 ? #0284c7 : rgba(255, 255, 255, 0.08);
+                border-radius: 3px;
+                padding-left: 6px;
+                padding-right: 6px;
+                height: 18px;
+
+                Text {
+                    text: "⚡ 实时状态";
+                    font-size: 8px;
+                    font-weight: 700;
+                    color: root.active_tab == 0 ? #38bdf8 : #94a3b8;
+                    vertical-alignment: center;
+                }
+                TouchArea {
+                    clicked => { root.tab_changed(0); }
+                }
+            }
+
+            Rectangle {
+                background: root.active_tab == 1 ? rgba(2, 132, 199, 0.35) : rgba(255, 255, 255, 0.05);
+                border-width: 1px;
+                border-color: root.active_tab == 1 ? #0284c7 : rgba(255, 255, 255, 0.08);
+                border-radius: 3px;
+                padding-left: 6px;
+                padding-right: 6px;
+                height: 18px;
+
+                Text {
+                    text: "📅 历史占用";
+                    font-size: 8px;
+                    font-weight: 700;
+                    color: root.active_tab == 1 ? #38bdf8 : #94a3b8;
+                    vertical-alignment: center;
+                }
+                TouchArea {
+                    clicked => { root.tab_changed(1); }
+                }
+            }
+        }
+
+        // Live View: Scrollable GPU Cards + Host Resource Cards
+        if root.active_tab == 0: Flickable {
+            content-height: 480px;
+
+            VerticalLayout {
+                spacing: 4px;
+
+                // 5 GPU Cards
+                for card in root.gpu_cards: Rectangle {
+                    background: rgba(15, 23, 42, 0.7);
+                    border-width: 1px;
+                    border-color: rgba(255, 255, 255, 0.06);
+                    border-radius: 4px;
+                    padding: 4px;
+
+                    VerticalLayout {
+                        spacing: 2px;
+
+                        // Card Header: Server Name + User Badge
+                        HorizontalLayout {
+                            alignment: space-between;
+
+                            Text {
+                                text: card.server_name;
+                                font-size: 8px;
+                                font-weight: 700;
+                                color: #f1f5f9;
+                                vertical-alignment: center;
+                            }
+
+                            // User Status Badge
+                            Rectangle {
+                                background: card.is_busy ? rgba(239, 68, 68, 0.25) : rgba(16, 185, 129, 0.2);
+                                border-width: 1px;
+                                border-color: card.is_busy ? rgba(239, 68, 68, 0.6) : rgba(16, 185, 129, 0.4);
+                                border-radius: 3px;
+                                padding-left: 3px;
+                                padding-right: 3px;
+                                height: 13px;
+
+                                Text {
+                                    text: card.is_busy ? card.user : "🟢 空闲";
+                                    font-size: 7px;
+                                    font-weight: 700;
+                                    color: card.is_busy ? #fca5a5 : #34d399;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                        // VRAM Progress Bar
+                        Rectangle {
+                            height: 3px;
+                            border-radius: 1.5px;
+                            background: rgba(255, 255, 255, 0.08);
+
+                            Rectangle {
+                                width: parent.width * (card.vram_pct / 100.0);
+                                height: parent.height;
+                                border-radius: 1.5px;
+                                background: card.vram_pct > 30.0 ? #ef4444 : (card.vram_pct > 10.0 ? #f59e0b : #10b981);
+                                x: 0;
+                            }
+                        }
+
+                        // VRAM / Power / Util Stats
+                        HorizontalLayout {
+                            alignment: space-between;
+
+                            Text {
+                                text: "🧠 " + card.memory_used_gb + "/" + card.memory_total_gb + "G (" + card.vram_pct + "%)";
+                                font-size: 7.5px;
+                                color: #94a3b8;
+                                vertical-alignment: center;
+                            }
+
+                            HorizontalLayout {
+                                spacing: 3px;
+                                Text {
+                                    text: "⚡ " + card.power_draw + "W";
+                                    font-size: 7.5px;
+                                    color: #f59e0b;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: "⚙ " + card.utilization + "%";
+                                    font-size: 7.5px;
+                                    color: #64748b;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Host Resource Cards (quad, e5, 8375c)
+                for h in root.host_cards: Rectangle {
+                    background: rgba(30, 41, 59, 0.6);
+                    border-width: 1px;
+                    border-color: rgba(255, 255, 255, 0.05);
+                    border-radius: 4px;
+                    padding: 4px;
+
+                    VerticalLayout {
+                        spacing: 2px;
+
+                        HorizontalLayout {
+                            alignment: space-between;
+
+                            Text {
+                                text: "🖥️ " + h.name;
+                                font-size: 8px;
+                                font-weight: 700;
+                                color: #cbd5e1;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: "CPU " + h.cpu_pct + "%";
+                                font-size: 7.5px;
+                                font-weight: 700;
+                                color: h.cpu_pct > 30.0 ? #ef4444 : (h.cpu_pct > 10.0 ? #f59e0b : #10b981);
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        HorizontalLayout {
+                            alignment: space-between;
+
+                            Text {
+                                text: "🧠 " + h.mem_used_gb + "/" + h.mem_total_gb + "G";
+                                font-size: 7.5px;
+                                color: #94a3b8;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                text: "💾 剩 " + h.disk_free_gb + "G";
+                                font-size: 7.5px;
+                                color: #64748b;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // History View: Timeline Gantt Chart
+        if root.active_tab == 1: VerticalLayout {
+            spacing: 4px;
+
+            HorizontalLayout {
+                alignment: space-between;
+
+                Rectangle {
+                    background: rgba(255, 255, 255, 0.05);
+                    border-radius: 3px;
+                    padding-left: 4px;
+                    padding-right: 4px;
+                    height: 16px;
+
+                    Text {
+                        text: "范围: 1 天";
+                        font-size: 7.5px;
+                        color: #cbd5e1;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle {
+                    background: rgba(2, 132, 199, 0.2);
+                    border-width: 1px;
+                    border-color: rgba(2, 132, 199, 0.4);
+                    border-radius: 3px;
+                    padding-left: 4px;
+                    padding-right: 4px;
+                    height: 16px;
+
+                    Text {
+                        text: "↻ 载入";
+                        font-size: 7.5px;
+                        font-weight: 700;
+                        color: #38bdf8;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => { root.load_history(); }
+                    }
+                }
+            }
+
+            // Compact Gantt labels (35px width) and timeline
+            VerticalLayout {
+                spacing: 2px;
+                for t in ["L40S [0]", "L40S [1]", "L40S [2]", "A100 [0]", "A100 [1]"]: HorizontalLayout {
+                    spacing: 2px;
+                    height: 18px;
+
+                    Rectangle {
+                        width: 35px;
+                        Text {
+                            text: t;
+                            font-size: 7.5px;
+                            font-weight: 600;
+                            color: #94a3b8;
+                            vertical-alignment: center;
+                            horizontal-alignment: left;
+                        }
+                    }
+
+                    Rectangle {
+                        background: rgba(15, 23, 42, 0.6);
+                        border-radius: 2px;
+
+                        Rectangle {
+                            width: parent.width * 0.4;
+                            height: 10px;
+                            border-radius: 2px;
+                            background: #3b82f6;
+                            x: parent.width * 0.1;
+                            y: (parent.height - self.height) / 2;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

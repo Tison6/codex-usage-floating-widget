@@ -7,6 +7,12 @@ import sys
 import os
 import traceback
 
+# Ensure pythonw does not crash when printing
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
 # Ensure current directory is in sys.path
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:

@@ -656,6 +656,7 @@ class GPUServerView(QWidget):
         self.btn_refresh.clicked.connect(self._on_refresh_clicked)
 
         self.badge_time = QLabel("🕒 --:--:--", self)
+        self.badge_time.setFont(QFont("Consolas", max(7, int(round(8 * self.scale)))))
         self.badge_time.setStyleSheet("""
             background-color: rgba(255, 255, 255, 0.05);
             color: #94A3B8;
@@ -701,7 +702,7 @@ class GPUServerView(QWidget):
         self.scroll_live = QScrollArea(self)
         self.scroll_live.setWidgetResizable(True)
         self.scroll_live.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.scroll_live.setFixedHeight(max(150, int(round(214 * self.scale))))
+        self.scroll_live.setFixedHeight(max(160, int(round(270 * self.scale))))
         self.scroll_live.viewport().setAutoFillBackground(False)
         self.scroll_live.setStyleSheet("""
             QScrollArea, QScrollArea > QWidget, QScrollArea > QWidget > QWidget {
@@ -926,7 +927,7 @@ class GPUServerView(QWidget):
         title_fs = max(8, int(round(10.0 * self.scale)))
         self.title_lbl.setStyleSheet(f"font-size: {title_fs}px; font-weight: 800; color: #FFFFFF;")
         if hasattr(self, "scroll_live"):
-            self.scroll_live.setFixedHeight(max(150, int(round(214 * self.scale))))
+            self.scroll_live.setFixedHeight(max(160, int(round(270 * self.scale))))
         btn_sz = max(14, int(round(18 * self.scale)))
         self.btn_refresh.setFixedSize(btn_sz, btn_sz)
         tab_h = max(16, int(round(20 * self.scale)))
@@ -949,6 +950,7 @@ class GPUServerView(QWidget):
         if hasattr(self, "scroll_hist") and hasattr(self, "gantt_canvas"):
             self.scroll_hist.setFixedHeight(self.gantt_canvas.height() + 8)
         if hasattr(self, "badge_time"):
+            self.badge_time.setFont(QFont("Consolas", max(7, int(round(8 * self.scale)))))
             self.badge_time.setStyleSheet(f"""
                 background-color: rgba(255, 255, 255, 0.05);
                 color: #94A3B8;

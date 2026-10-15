@@ -341,9 +341,9 @@ class RelayStationView(QWidget):
         self.scale = max(0.5, float(scale))
         self._apply_header_styles()
         if hasattr(self, "sq_scroll"):
-            self.sq_scroll.setFixedHeight(max(140, int(round(185 * self.scale))))
+            self.sq_scroll.setFixedHeight(max(150, int(round(240 * self.scale))))
         if hasattr(self, "aihub_scroll"):
-            self.aihub_scroll.setFixedHeight(max(140, int(round(185 * self.scale))))
+            self.aihub_scroll.setFixedHeight(max(150, int(round(240 * self.scale))))
         if self._square_data:
             self.update_square_data(self._square_data)
         if self._aihub_data:
@@ -506,7 +506,7 @@ class RelayStationView(QWidget):
         # Scroll Area for Square Monitored Rows
         self.sq_scroll = QScrollArea()
         self.sq_scroll.setWidgetResizable(True)
-        self.sq_scroll.setFixedHeight(max(140, int(round(185 * self.scale))))
+        self.sq_scroll.setFixedHeight(max(150, int(round(240 * self.scale))))
         self.sq_scroll.setStyleSheet(SCROLL_STYLE)
         self.sq_scroll.viewport().setStyleSheet("background: transparent; border: none;")
         self.sq_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -585,7 +585,7 @@ class RelayStationView(QWidget):
         # Scroll Area for Providers Table
         self.aihub_scroll = QScrollArea()
         self.aihub_scroll.setWidgetResizable(True)
-        self.aihub_scroll.setFixedHeight(max(140, int(round(185 * self.scale))))
+        self.aihub_scroll.setFixedHeight(max(150, int(round(240 * self.scale))))
         self.aihub_scroll.setStyleSheet(SCROLL_STYLE)
         self.aihub_scroll.viewport().setStyleSheet("background: transparent; border: none;")
         self.aihub_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -640,12 +640,12 @@ class RelayStationView(QWidget):
         h_aligns = [Qt.AlignLeft, Qt.AlignCenter, Qt.AlignCenter, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight, Qt.AlignRight]
         sq_col_widths = [
             None,
-            max(24, int(round(28 * self.scale))),
-            max(28, int(round(34 * self.scale))),
-            max(24, int(round(28 * self.scale))),
             max(22, int(round(26 * self.scale))),
-            max(22, int(round(26 * self.scale))),
-            max(42, int(round(48 * self.scale))),
+            max(26, int(round(30 * self.scale))),
+            max(32, int(round(38 * self.scale))),
+            max(26, int(round(32 * self.scale))),
+            max(26, int(round(32 * self.scale))),
+            max(46, int(round(52 * self.scale))),
         ]
         for col_idx, (title, align, col_w) in enumerate(zip(h_titles, h_aligns, sq_col_widths)):
             h_lbl = QLabel(title)

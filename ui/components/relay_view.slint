@@ -1,0 +1,460 @@
+import { Theme } from "../style.slint";
+
+export struct SquareRowModel {
+    group_name: string,
+    short_name: string,
+    focus_model: string,
+    ratio_str: string,
+    output_price: string,
+    tps: string,
+    ttft: string,
+    latency: string,
+    success_rate: float,
+    color: string,
+}
+
+export struct AIHubRowModel {
+    code: string,
+    multiplier_str: string,
+    effective_multiplier_str: string,
+    cache_hit_rate: string,
+    ttft_str: string,
+    tps_str: string,
+    success_rate_str: string,
+    detection_status: string,
+    detection_label: string,
+    detection_dot: string,
+    has_image: bool,
+    image_url: string,
+}
+
+export component RelayView inherits Rectangle {
+    in property <int> active_tab: 1; // 0 = Square, 1 = AIHub
+    in property <bool> aihub_auto_mode: true;
+    in property <string> aihub_stats_str: "1.1s · 99.2% · 06:20";
+    in property <string> square_balance_str: "🟢 Square (已用: $12.34)";
+    in property <[SquareRowModel]> square_rows: [];
+    in property <[AIHubRowModel]> aihub_rows: [];
+
+    callback tab_changed(int);
+    callback toggle_aihub_mode();
+    callback open_square_filter();
+    callback open_aihub_filter();
+    callback refresh_relay();
+
+    background: rgba(17, 24, 39, 0.7);
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+
+    VerticalLayout {
+        padding: 6px;
+        spacing: 5px;
+
+        // Top Header with Tab Switcher
+        HorizontalLayout {
+            alignment: space-between;
+
+            Text {
+                text: "中转站";
+                font-size: 10px;
+                font-weight: 700;
+                color: #e2e8f0;
+                vertical-alignment: center;
+            }
+
+            HorizontalLayout {
+                spacing: 4px;
+
+                // Square Tab Button
+                Rectangle {
+                    background: root.active_tab == 0 ? rgba(59, 130, 246, 0.25) : rgba(255, 255, 255, 0.05);
+                    border-width: 1px;
+                    border-color: root.active_tab == 0 ? #3b82f6 : rgba(255, 255, 255, 0.08);
+                    border-radius: 4px;
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    height: 18px;
+
+                    Text {
+                        text: "Square";
+                        font-size: 8.5px;
+                        font-weight: 600;
+                        color: root.active_tab == 0 ? #60a5fa : #94a3b8;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => { root.tab_changed(0); }
+                    }
+                }
+
+                // AIHub Tab Button
+                Rectangle {
+                    background: root.active_tab == 1 ? rgba(16, 185, 129, 0.25) : rgba(255, 255, 255, 0.05);
+                    border-width: 1px;
+                    border-color: root.active_tab == 1 ? #10b981 : rgba(255, 255, 255, 0.08);
+                    border-radius: 4px;
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    height: 18px;
+
+                    Text {
+                        text: "AIHub";
+                        font-size: 8.5px;
+                        font-weight: 600;
+                        color: root.active_tab == 1 ? #34d399 : #94a3b8;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => { root.tab_changed(1); }
+                    }
+                }
+
+                // Refresh Button
+                Rectangle {
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 3px;
+                    background: transparent;
+
+                    Text {
+                        text: "🔄";
+                        font-size: 9px;
+                        color: #64748b;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => { root.refresh_relay(); }
+                    }
+                }
+            }
+        }
+
+        // Divider
+        Rectangle {
+            height: 1px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        // Subheader - AIHub Mode
+        if root.active_tab == 1: HorizontalLayout {
+            alignment: space-between;
+
+            HorizontalLayout {
+                spacing: 5px;
+                Text {
+                    text: "🟢 AIHub 实测";
+                    font-size: 9px;
+                    font-weight: 700;
+                    color: #10b981;
+                    vertical-alignment: center;
+                }
+
+                // Mode button (Auto / Manual)
+                Rectangle {
+                    background: root.aihub_auto_mode ? rgba(16, 185, 129, 0.18) : rgba(59, 130, 246, 0.18);
+                    border-width: 1px;
+                    border-color: root.aihub_auto_mode ? rgba(16, 185, 129, 0.4) : rgba(59, 130, 246, 0.4);
+                    border-radius: 3px;
+                    padding-left: 4px;
+                    padding-right: 4px;
+                    height: 15px;
+
+                    Text {
+                        text: root.aihub_auto_mode ? "🤖 自动" : "✋ 手动";
+                        font-size: 7.5px;
+                        font-weight: 700;
+                        color: root.aihub_auto_mode ? #34d399 : #60a5fa;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => { root.toggle_aihub_mode(); }
+                    }
+                }
+
+                // Filter button
+                Rectangle {
+                    background: rgba(16, 185, 129, 0.15);
+                    border-width: 1px;
+                    border-color: rgba(16, 185, 129, 0.35);
+                    border-radius: 3px;
+                    padding-left: 4px;
+                    padding-right: 4px;
+                    height: 15px;
+
+                    Text {
+                        text: "⚙ 勾选";
+                        font-size: 7.5px;
+                        font-weight: 600;
+                        color: #34d399;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => { root.open_aihub_filter(); }
+                    }
+                }
+            }
+
+            Text {
+                text: root.aihub_stats_str;
+                font-size: 7.5px;
+                color: #94a3b8;
+                vertical-alignment: center;
+            }
+        }
+
+        // Subheader - Square Mode
+        if root.active_tab == 0: HorizontalLayout {
+            alignment: space-between;
+
+            Text {
+                text: root.square_balance_str;
+                font-size: 8.5px;
+                font-weight: 700;
+                color: #10b981;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                background: rgba(59, 130, 246, 0.15);
+                border-width: 1px;
+                border-color: rgba(59, 130, 246, 0.35);
+                border-radius: 3px;
+                padding-left: 4px;
+                padding-right: 4px;
+                height: 15px;
+
+                Text {
+                    text: "⚙ 勾选";
+                    font-size: 7.5px;
+                    font-weight: 600;
+                    color: #60a5fa;
+                    vertical-alignment: center;
+                }
+                TouchArea {
+                    clicked => { root.open_square_filter(); }
+                }
+            }
+        }
+
+        // AIHub Table
+        if root.active_tab == 1: VerticalLayout {
+            spacing: 3px;
+
+            // AIHub Header Titles
+            HorizontalLayout {
+                spacing: 3px;
+                Rectangle { width: 16px; Text { text: "检测"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: center; } }
+                Text { text: "供应商"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: left; }
+                Rectangle { width: 28px; Text { text: "倍率"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: center; } }
+                Rectangle { width: 36px; Text { text: "真实倍率"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: center; } }
+                Rectangle { width: 30px; Text { text: "缓存率"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: right; } }
+                Rectangle { width: 44px; Text { text: "实测图"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: center; } }
+            }
+
+            // AIHub Rows
+            for p in root.aihub_rows: HorizontalLayout {
+                spacing: 3px;
+                height: 20px;
+
+                // Status Dot
+                Rectangle {
+                    width: 16px;
+                    Rectangle {
+                        width: 7px;
+                        height: 7px;
+                        border-radius: 3.5px;
+                        background: p.detection_status == "passed" ? #10b981 : (p.detection_status == "suspected" ? #f59e0b : #64748b);
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+
+                // Provider Name
+                Text {
+                    text: p.code;
+                    font-size: 8.5px;
+                    font-weight: 600;
+                    color: #cbd5e1;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+
+                // Nominal Multiplier
+                Rectangle {
+                    width: 28px;
+                    Text {
+                        text: p.multiplier_str;
+                        font-size: 8.5px;
+                        font-weight: 600;
+                        color: #60a5fa;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                // Effective Multiplier
+                Rectangle {
+                    width: 36px;
+                    Text {
+                        text: p.effective_multiplier_str;
+                        font-size: 8.5px;
+                        font-weight: 700;
+                        color: #34d399;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                // Cache Rate
+                Rectangle {
+                    width: 30px;
+                    Text {
+                        text: p.cache_hit_rate;
+                        font-size: 8.5px;
+                        color: #94a3b8;
+                        vertical-alignment: center;
+                        horizontal-alignment: right;
+                    }
+                }
+
+                // Thumbnail Button
+                Rectangle {
+                    width: 44px;
+                    height: 18px;
+                    background: p.has_image ? rgba(16, 185, 129, 0.15) : rgba(255, 255, 255, 0.03);
+                    border-width: 1px;
+                    border-color: p.has_image ? rgba(16, 185, 129, 0.45) : rgba(255, 255, 255, 0.06);
+                    border-radius: 3px;
+                    y: (parent.height - self.height) / 2;
+
+                    Text {
+                        text: p.has_image ? "📷 实测" : "-";
+                        font-size: 7.5px;
+                        font-weight: 700;
+                        color: p.has_image ? #34d399 : #64748b;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Square Table
+        if root.active_tab == 0: VerticalLayout {
+            spacing: 3px;
+
+            // Square Header Titles
+            HorizontalLayout {
+                spacing: 3px;
+                Text { text: "分组/模型"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: left; }
+                Rectangle { width: 28px; Text { text: "倍率"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: center; } }
+                Rectangle { width: 34px; Text { text: "输出/M"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: center; } }
+                Rectangle { width: 28px; Text { text: "速度"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: right; } }
+                Rectangle { width: 26px; Text { text: "首字"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: right; } }
+                Rectangle { width: 26px; Text { text: "延迟"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: right; } }
+                Rectangle { width: 44px; Text { text: "成功率"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: right; } }
+            }
+
+            // Square Rows
+            for r in root.square_rows: HorizontalLayout {
+                spacing: 3px;
+                height: 24px;
+
+                // Group / Focus Model
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: r.short_name;
+                        font-size: 8.5px;
+                        font-weight: 700;
+                        color: #10b981;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: r.focus_model;
+                        font-size: 7.5px;
+                        color: #94a3b8;
+                        overflow: elide;
+                    }
+                }
+
+                // Ratio
+                Rectangle {
+                    width: 28px;
+                    Text {
+                        text: r.ratio_str;
+                        font-size: 8px;
+                        font-weight: 600;
+                        color: #60a5fa;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                // Output Price
+                Rectangle {
+                    width: 34px;
+                    Text {
+                        text: r.output_price;
+                        font-size: 8px;
+                        font-weight: 700;
+                        color: #f59e0b;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                // TPS
+                Rectangle {
+                    width: 28px;
+                    Text {
+                        text: r.tps;
+                        font-size: 8px;
+                        color: #cbd5e1;
+                        vertical-alignment: center;
+                        horizontal-alignment: right;
+                    }
+                }
+
+                // TTFT
+                Rectangle {
+                    width: 26px;
+                    Text {
+                        text: r.ttft;
+                        font-size: 7.5px;
+                        color: #94a3b8;
+                        vertical-alignment: center;
+                        horizontal-alignment: right;
+                    }
+                }
+
+                // Latency
+                Rectangle {
+                    width: 26px;
+                    Text {
+                        text: r.latency;
+                        font-size: 7.5px;
+                        color: #94a3b8;
+                        vertical-alignment: center;
+                        horizontal-alignment: right;
+                    }
+                }
+
+                // Success Rate
+                Rectangle {
+                    width: 44px;
+                    Text {
+                        text: r.success_rate + "%";
+                        font-size: 7.5px;
+                        font-weight: 700;
+                        color: #10b981;
+                        vertical-alignment: center;
+                        horizontal-alignment: right;
+                    }
+                }
+            }
+        }
+    }
+}
