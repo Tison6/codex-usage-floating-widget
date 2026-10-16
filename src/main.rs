@@ -648,9 +648,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Filter Dialog Callbacks
     let ui_weak_dlg_open = ui.as_weak();
+    let config_mgr_open = config_mgr.clone();
     ui.on_open_aihub_filter_clicked(move || {
         if let Some(ui) = ui_weak_dlg_open.upgrade() {
+            let cfg = config_mgr_open.get();
+            ui.set_aihub_auto_mode(cfg.aihub_auto_mode);
+            let model = ui.get_dlg_providers();
+            let mut sel_cnt = 0;
+            let mut exc_cnt = 0;
+            for i in 0..model.row_count() {
+                if let Some(mut item) = model.row_data(i) {
+                    let code = item.code.to_string();
+                    item.is_selected = cfg.aihub_selected_providers.contains(&code);
+                    item.is_excluded = cfg.aihub_excluded_providers.contains(&code);
+                    if item.is_selected {
+                        sel_cnt += 1;
+                    }
+                    if item.is_excluded {
+                        exc_cnt += 1;
+                    }
+                    model.set_row_data(i, item);
+                }
+            }
+            ui.set_dlg_selected_count(sel_cnt);
+            ui.set_dlg_excluded_count(exc_cnt);
             ui.set_filter_dialog_open(true);
+        }
+    });
+
+    let ui_weak_dlg_mode = ui.as_weak();
+    let config_mgr_dlg_mode = config_mgr.clone();
+    ui.on_toggle_dlg_mode(move |is_auto| {
+        if let Some(ui) = ui_weak_dlg_mode.upgrade() {
+            ui.set_aihub_auto_mode(is_auto);
+            config_mgr_dlg_mode.update(|c| c.aihub_auto_mode = is_auto);
         }
     });
 
@@ -681,10 +712,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
+            let auto_mode = if !selected.is_empty() {
+                false
+            } else {
+                ui.get_aihub_auto_mode()
+            };
+            ui.set_aihub_auto_mode(auto_mode);
+
             config_mgr_dlg.update(|c| {
                 c.aihub_selected_providers = selected;
                 c.aihub_excluded_providers = excluded;
-                c.aihub_auto_mode = ui.get_aihub_auto_mode();
+                c.aihub_auto_mode = auto_mode;
             });
 
             ui.set_filter_dialog_open(false);
@@ -693,6 +731,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let ui_weak_dlg_toggle_sel = ui.as_weak();
+    let config_mgr_dlg_toggle = config_mgr.clone();
     ui.on_toggle_dlg_selected(move |idx, sel| {
         if let Some(ui) = ui_weak_dlg_toggle_sel.upgrade() {
             let model = ui.get_dlg_providers();
@@ -709,6 +748,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     ui.set_dlg_selected_count(count);
+                    if sel {
+                        ui.set_aihub_auto_mode(false);
+                        config_mgr_dlg_toggle.update(|c| c.aihub_auto_mode = false);
+                    }
                 }
             }
         }
@@ -1451,10 +1494,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 ui.set_aihub_rows(Rc::new(VecModel::from(ai_models)).into());
 
-                ui.set_dlg_selected_count(selected_count);
-                ui.set_dlg_excluded_count(excluded_count);
-                ui.set_dlg_total_count(total_count);
-                ui.set_dlg_providers(Rc::new(VecModel::from(dlg_items)).into());
+                if !ui.get_filter_dialog_open() {
+                    ui.set_dlg_selected_count(selected_count);
+                    ui.set_dlg_excluded_count(excluded_count);
+                    ui.set_dlg_total_count(total_count);
+                    ui.set_dlg_providers(Rc::new(VecModel::from(dlg_items)).into());
+                }
             });
 
             tokio::select! {

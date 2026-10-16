@@ -355,7 +355,10 @@ export component MainWindow inherits Window {
 
             // Click gray backdrop to close
             TouchArea {
-                clicked => { root.close_filter_clicked(); }
+                clicked => {
+                    root.filter_dialog_open = false;
+                    root.close_filter_clicked();
+                }
             }
 
             AIHubFilterDialog {
@@ -369,8 +372,14 @@ export component MainWindow inherits Window {
                 excluded_count: root.dlg_excluded_count;
                 total_count: root.dlg_total_count;
                 providers: root.dlg_providers;
-                close_dialog => { root.close_filter_clicked(); }
-                save_and_apply => { root.save_filter_clicked(); }
+                close_dialog => {
+                    root.filter_dialog_open = false;
+                    root.close_filter_clicked();
+                }
+                save_and_apply => {
+                    root.filter_dialog_open = false;
+                    root.save_filter_clicked();
+                }
                 toggle_mode(m) => { root.toggle_dlg_mode(m); }
                 toggle_provider_selected(idx, s) => { root.toggle_dlg_selected(idx, s); }
                 toggle_provider_excluded(idx, e) => { root.toggle_dlg_excluded(idx, e); }
@@ -403,7 +412,10 @@ export component MainWindow inherits Window {
                 groups: root.dlg_square_groups;
                 models: root.dlg_square_models;
                 close_dialog => { root.square_filter_dialog_open = false; }
-                save_and_apply => { root.save_square_filter_clicked(); }
+                save_and_apply => {
+                    root.square_filter_dialog_open = false;
+                    root.save_square_filter_clicked();
+                }
                 toggle_group_selected(idx, s) => { root.toggle_square_group_selected(idx, s); }
                 toggle_model_selected(idx, s) => { root.toggle_square_model_selected(idx, s); }
                 select_all_groups => { root.select_all_square_groups(); }

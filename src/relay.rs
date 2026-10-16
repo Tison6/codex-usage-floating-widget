@@ -231,7 +231,11 @@ impl SquareClient {
         group_models: &HashMap<String, String>,
     ) -> SquareData {
         let groups_url = "https://api.squarefaceicon.org/api/user/groups";
-        let groups_resp = self.client.get(groups_url).send().await;
+        let pricing_url = "https://api.squarefaceicon.org/api/pricing";
+        let (groups_resp, pricing_resp) = tokio::join!(
+            self.client.get(groups_url).send(),
+            self.client.get(pricing_url).send(),
+        );
 
         let mut groups_map: HashMap<String, (f64, String)> = HashMap::new();
         if let Ok(resp) = groups_resp {
@@ -246,6 +250,33 @@ impl SquareClient {
                                 .unwrap_or_default()
                                 .to_string();
                             groups_map.insert(g_name.clone(), (ratio, desc));
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut model_enabled_groups: HashMap<String, Vec<String>> = HashMap::new();
+        let mut model_ratios: HashMap<String, f64> = HashMap::new();
+        if let Ok(resp) = pricing_resp {
+            if resp.status().is_success() {
+                if let Ok(val) = resp.json::<serde_json::Value>().await {
+                    if let Some(arr) = val.get("data").and_then(|v| v.as_array()) {
+                        for m in arr {
+                            if let Some(m_name) = m.get("model_name").and_then(|v| v.as_str()) {
+                                let groups: Vec<String> = m
+                                    .get("enable_groups")
+                                    .and_then(|v| v.as_array())
+                                    .map(|a| {
+                                        a.iter()
+                                            .filter_map(|g| g.as_str().map(|s| s.to_string()))
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
+                                let m_ratio = m.get("model_ratio").and_then(|v| v.as_f64()).unwrap_or(1.0);
+                                model_enabled_groups.insert(m_name.to_string(), groups);
+                                model_ratios.insert(m_name.to_string(), m_ratio);
+                            }
                         }
                     }
                 }
@@ -314,45 +345,87 @@ impl SquareClient {
                 g_name.clone()
             };
 
-            let focus_m = group_models
-                .get(g_name)
-                .cloned()
-                .unwrap_or_else(|| {
-                    if !selected_models.is_empty() {
-                        let d = default_model_for_group(g_name);
-                        for sm in selected_models {
-                            let disp = get_model_display_name(sm);
-                            if disp == d || sm == g_name {
-                                return disp;
+            let mut matching_models = Vec::new();
+            if !selected_models.is_empty() {
+                for sm in selected_models {
+                    let in_group = if let Some(groups) = model_enabled_groups.get(sm) {
+                        groups.iter().any(|g| g == g_name)
+                    } else {
+                        match (sm.as_str(), g_name.as_str()) {
+                            ("gpt-6-astra", "6-astra")
+                            | ("gpt-6-astra", "terra分组")
+                            | ("gpt-6-astra", "混池优惠")
+                            | ("gpt-6-astra", "gpt-特惠分组")
+                            | ("gpt-6-astra", "gpt-已过鹈鹕测试不降智")
+                            | ("gpt-6-astra", "codex")
+                            | ("gpt-6-astra", "pro专享") => true,
+                            ("deepseek-v4.1-flash", "ds-v4.1可用")
+                            | ("deepseek-v4.1-flash", "ds-v4.1")
+                            | ("deepseek-v4.1-flash", "混池优惠") => true,
+                            ("claude-opus-5-5", "cc1")
+                            | ("claude-opus-5-5", "claude-ultra")
+                            | ("claude-opus-5-5", "aws-cc") => true,
+                            ("claude-fable-5", "default") | ("claude-fable-5", "cc2") => true,
+                            _ => default_model_for_group(g_name) == get_model_display_name(sm),
+                        }
+                    };
+                    if in_group {
+                        matching_models.push(sm.clone());
+                    }
+                }
+            }
+
+            let models_to_render = if !matching_models.is_empty() {
+                matching_models
+            } else {
+                vec![
+                    group_models
+                        .get(g_name)
+                        .cloned()
+                        .unwrap_or_else(|| default_model_for_group(g_name))
+                ]
+            };
+
+            for m_code in models_to_render {
+                let focus_m = get_model_display_name(&m_code);
+                let m_ratio = model_ratios.get(&m_code).copied().unwrap_or(1.0);
+                let out_price = match m_code.as_str() {
+                    "gpt-6-astra" if g_name == "6-astra" => "$6".to_string(),
+                    "gpt-6-astra" if g_name == "terra分组" => "$7.5".to_string(),
+                    "deepseek-v4.1-flash" => "$1.2".to_string(),
+                    "claude-opus-5-5" if g_name == "cc1" => "$3.5".to_string(),
+                    _ => {
+                        let eff = ratio * m_ratio * 20.0;
+                        if eff > 0.0 {
+                            format!("${:.1}", eff)
+                        } else {
+                            match g_name.as_str() {
+                                "6-astra" => "$6".to_string(),
+                                "terra分组" => "$7.5".to_string(),
+                                "混池优惠" => "$2.5".to_string(),
+                                "ds-v4.1可用" | "ds-v4.1" => "$1.2".to_string(),
+                                "cc1" => "$3.5".to_string(),
+                                "gpt-特惠分组" => "$12.5".to_string(),
+                                "pro专享" => "$12.5".to_string(),
+                                _ => format!("${:.1}", ratio * 20.0),
                             }
                         }
                     }
-                    default_model_for_group(g_name)
+                };
+
+                rows.push(SquareMonitoredRow {
+                    group_name: g_name.clone(),
+                    short_name: short_name.clone(),
+                    focus_model: focus_m,
+                    ratio_str: format!("{:.2}x", ratio),
+                    output_price: out_price,
+                    tps: bench.tps.to_string(),
+                    ttft: bench.ttft.to_string(),
+                    latency: bench.latency.to_string(),
+                    success_rate: bench.success_rate,
+                    color: bench.color.to_string(),
                 });
-
-            let out_price = match g_name.as_str() {
-                "6-astra" => "$6".to_string(),
-                "terra分组" => "$7.5".to_string(),
-                "混池优惠" => "$2.5".to_string(),
-                "ds-v4.1可用" | "ds-v4.1" => "$1.2".to_string(),
-                "cc1" => "$3.5".to_string(),
-                "gpt-特惠分组" => "$12.5".to_string(),
-                "pro专享" => "$12.5".to_string(),
-                _ => format!("${:.1}", ratio * 20.0),
-            };
-
-            rows.push(SquareMonitoredRow {
-                group_name: g_name.clone(),
-                short_name,
-                focus_model: focus_m,
-                ratio_str: format!("{:.2}x", ratio),
-                output_price: out_price,
-                tps: bench.tps.to_string(),
-                ttft: bench.ttft.to_string(),
-                latency: bench.latency.to_string(),
-                success_rate: bench.success_rate,
-                color: bench.color.to_string(),
-            });
+            }
         }
 
         SquareData {
@@ -900,7 +973,13 @@ impl AIHubClient {
         if url.is_empty() {
             return None;
         }
-        let resp = self.client.get(url).send().await.ok()?;
+        let resp = match tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            self.client.get(url).send()
+        ).await {
+            Ok(Ok(r)) => r,
+            _ => return None,
+        };
         if !resp.status().is_success() {
             return None;
         }
