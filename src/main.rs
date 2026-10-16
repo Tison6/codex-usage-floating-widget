@@ -289,6 +289,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     app_log!("[INIT] Tokio runtime initialized");
+    let _rt_guard = rt.enter();
+    let rt_handle = rt.handle().clone();
     let config_mgr = Arc::new(ConfigManager::new("config.json"));
     let cfg = config_mgr.get();
     app_log!("[INIT] Config loaded. Mini mode: {}", cfg.is_mini_mode);
@@ -781,13 +783,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ui_weak_sq_open = ui.as_weak();
     let config_mgr_sq = config_mgr.clone();
     let square_client_filter = SquareClient::new();
+    let rt_handle_sq = rt_handle.clone();
     ui.on_open_square_filter_clicked(move || {
         if let Some(ui) = ui_weak_sq_open.upgrade() {
+            ui.set_square_filter_dialog_open(true);
             let selected_groups = config_mgr_sq.get().square_selected_groups.clone();
             let sq_client = square_client_filter.clone();
             let ui_weak_inner = ui.as_weak();
 
-            tokio::spawn(async move {
+            rt_handle_sq.spawn(async move {
                 let all_groups = sq_client.fetch_all_groups().await;
                 let _ = ui_weak_inner.upgrade_in_event_loop(move |ui| {
                     let mut group_items = Vec::new();
@@ -807,7 +811,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ui.set_dlg_sq_selected_count(sel_count);
                     ui.set_dlg_sq_total_count(group_items.len() as i32);
                     ui.set_dlg_square_groups(Rc::new(VecModel::from(group_items)).into());
-                    ui.set_square_filter_dialog_open(true);
                 });
             });
         }
@@ -858,6 +861,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Pelican Viewer Callbacks
     let ui_weak_pelican = ui.as_weak();
     let aihub_client_pelican = aihub_client.clone();
+    let rt_handle_pelican = rt_handle.clone();
     ui.on_open_pelican_viewer(move |code, group_id| {
         if let Some(ui) = ui_weak_pelican.upgrade() {
             ui.set_pelican_provider_code(code.clone());
@@ -869,7 +873,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let client = aihub_client_pelican.clone();
             let gid = group_id as i64;
 
-            tokio::spawn(async move {
+            rt_handle_pelican.spawn(async move {
                 let images = client.get_provider_history_images(gid, 30).await;
                 if images.is_empty() {
                     let _ = ui_weak_inner.upgrade_in_event_loop(|ui| {
@@ -1460,8 +1464,10 @@ mod tests {
     }
 
     #[test]
-    fn test_pelican_dialog_render() {
+    fn test_all_dialogs_interaction() {
         let ui = MainWindow::new().unwrap();
+
+        // 1. Pelican dialog test
         ui.set_pelican_provider_code("A018-Plus/K12".into());
         ui.set_pelican_status_text("共 2 张实测图".into());
         let raw = vec![128u8; 480 * 300 * 4];
@@ -1479,11 +1485,9 @@ mod tests {
         ];
         ui.set_pelican_cards(std::rc::Rc::new(slint::VecModel::from(cards)).into());
         ui.set_pelican_dialog_open(true);
-    }
+        ui.set_pelican_dialog_open(false);
 
-    #[test]
-    fn test_toggle_dlg_selected_and_excluded() {
-        let ui = MainWindow::new().unwrap();
+        // 2. AIHub provider filter dialog test
         let items = vec![
             DialogProviderItem {
                 code: "prov1".into(),
@@ -1516,6 +1520,42 @@ mod tests {
         let m = ui.get_dlg_providers();
         let row = m.row_data(0).unwrap();
         assert_eq!(row.is_selected, false);
+        ui.set_filter_dialog_open(false);
+
+        // 3. Square groups filter dialog test
+        let groups = vec![
+            SquareDialogGroupItem {
+                name: "6-astra".into(),
+                model: "GPT-6 Astra".into(),
+                multiplier: "0.12x".into(),
+                is_selected: true,
+            },
+            SquareDialogGroupItem {
+                name: "cc1".into(),
+                model: "Claude Opus 5.5".into(),
+                multiplier: "0.40x".into(),
+                is_selected: false,
+            },
+        ];
+        ui.set_dlg_square_groups(std::rc::Rc::new(slint::VecModel::from(groups)).into());
+        ui.set_square_filter_dialog_open(true);
+
+        let ui_weak_sq = ui.as_weak();
+        ui.on_toggle_square_group_selected(move |idx, sel| {
+            if let Some(ui) = ui_weak_sq.upgrade() {
+                let model = ui.get_dlg_square_groups();
+                if let Some(mut item) = model.row_data(idx as usize) {
+                    item.is_selected = sel;
+                    model.set_row_data(idx as usize, item);
+                }
+            }
+        });
+
+        ui.invoke_toggle_square_group_selected(1, true);
+        let m_sq = ui.get_dlg_square_groups();
+        let row1 = m_sq.row_data(1).unwrap();
+        assert_eq!(row1.is_selected, true);
+        ui.set_square_filter_dialog_open(false);
     }
 }
 
