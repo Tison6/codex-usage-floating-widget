@@ -595,7 +595,7 @@ class FloatingWidget(QWidget):
             self.root_layout.setContentsMargins(0, 0, 0, 0)
             self.expanded_container.hide()
             self.mini_container.show()
-            self.setFixedSize(int(round(168 * self.widget_scale)), int(round(35 * self.widget_scale)))
+            self.setFixedSize(int(round(178 * self.widget_scale)), int(round(35 * self.widget_scale)))
         else:
             self.root_layout.setContentsMargins(0, 0, 0, 0)
             self.mini_container.hide()
@@ -650,7 +650,7 @@ class FloatingWidget(QWidget):
         """Restore saved window coordinates or place near top-right."""
         pos = self.cfg.get("window_pos")
         screen = QApplication.primaryScreen().availableGeometry()
-        expected_w = int(round(775 * self.widget_scale)) if not self.is_mini else int(round(208 * self.widget_scale))
+        expected_w = int(round(775 * self.widget_scale)) if not self.is_mini else int(round(178 * self.widget_scale))
         if pos and len(pos) == 2:
             x = max(screen.left() + 10, min(pos[0], screen.right() - expected_w))
             y = max(screen.top() + 10, min(pos[1], screen.bottom() - 150))
@@ -833,27 +833,35 @@ class FloatingWidget(QWidget):
 
     def open_square_filter_dialog(self):
         """Open Square API interactive group and model filter selection dialog."""
-        from ui.square_filter_dialog import SquareFilterDialog
-        dlg = SquareFilterDialog(self.square_client, parent=self)
-        dlg.filters_changed.connect(lambda: self.fetch_relay_async(force=True))
         try:
-            dlg.exec_()
-        finally:
-            dlg.deleteLater()
-            self.raise_()
-            self.activateWindow()
+            from ui.square_filter_dialog import SquareFilterDialog
+            dlg = SquareFilterDialog(self.square_client, parent=self)
+            dlg.filters_changed.connect(lambda: self.fetch_relay_async(force=True))
+            try:
+                dlg.exec_()
+            finally:
+                dlg.deleteLater()
+                self.raise_()
+                self.activateWindow()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
 
     def open_aihub_filter_dialog(self):
         """Open AIHub interactive provider filter selection dialog with live stats."""
-        from ui.square_filter_dialog import AIHubFilterDialog
-        dlg = AIHubFilterDialog(self.aihub_client, parent=self)
-        dlg.filters_changed.connect(lambda: self.fetch_relay_async(force=True))
         try:
-            dlg.exec_()
-        finally:
-            dlg.deleteLater()
-            self.raise_()
-            self.activateWindow()
+            from ui.square_filter_dialog import AIHubFilterDialog
+            dlg = AIHubFilterDialog(self.aihub_client, parent=self)
+            dlg.filters_changed.connect(lambda: self.fetch_relay_async(force=True))
+            try:
+                dlg.exec_()
+            finally:
+                dlg.deleteLater()
+                self.raise_()
+                self.activateWindow()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
 
     def update_mini_quota_display(self):
         """Render mini quota with concise 5H · Week format and dynamic health colors."""

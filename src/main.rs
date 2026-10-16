@@ -158,7 +158,7 @@ fn resize_window_for_mode(hwnd: HWND, is_mini: bool, scale: f32) {
         let dpi = GetDpiForWindow(hwnd);
         let dpi_scale = if dpi == 0 { 1.0 } else { dpi as f32 / 96.0 };
         let (base_w, base_h) = if is_mini {
-            (160.0, 35.0)
+            (178.0, 35.0)
         } else {
             (775.0, 365.0)
         };
@@ -1479,6 +1479,43 @@ mod tests {
         ];
         ui.set_pelican_cards(std::rc::Rc::new(slint::VecModel::from(cards)).into());
         ui.set_pelican_dialog_open(true);
+    }
+
+    #[test]
+    fn test_toggle_dlg_selected_and_excluded() {
+        let ui = MainWindow::new().unwrap();
+        let items = vec![
+            DialogProviderItem {
+                code: "prov1".into(),
+                multiplier_str: "1.0x".into(),
+                effective_multiplier_str: "1.0x".into(),
+                cache_hit_rate: "90%".into(),
+                ttft_str: "0.5s".into(),
+                success_rate_str: "100%".into(),
+                detection_status: "passed".into(),
+                has_image: false,
+                is_selected: true,
+                is_excluded: false,
+            },
+        ];
+        ui.set_dlg_providers(std::rc::Rc::new(slint::VecModel::from(items)).into());
+        ui.set_filter_dialog_open(true);
+
+        let ui_weak = ui.as_weak();
+        ui.on_toggle_dlg_selected(move |idx, sel| {
+            if let Some(ui) = ui_weak.upgrade() {
+                let model = ui.get_dlg_providers();
+                if let Some(mut item) = model.row_data(idx as usize) {
+                    item.is_selected = sel;
+                    model.set_row_data(idx as usize, item);
+                }
+            }
+        });
+
+        ui.invoke_toggle_dlg_selected(0, false);
+        let m = ui.get_dlg_providers();
+        let row = m.row_data(0).unwrap();
+        assert_eq!(row.is_selected, false);
     }
 }
 

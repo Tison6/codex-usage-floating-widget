@@ -15,7 +15,40 @@ from PyQt5.QtGui import QColor, QFont, QCursor
 
 from core.square_client import DEFAULT_SELECTED_GROUPS, DEFAULT_SELECTED_MODELS, DEFAULT_GROUP_MODELS
 from core.aihub_client import DEFAULT_SELECTED_PROVIDERS
-from ui.relay_view import DetectionDot
+from PyQt5.QtCore import QRectF
+from PyQt5.QtGui import QPainter
+
+class DetectionDot(QWidget):
+    """Compact circular status dot for AIHub model verification status."""
+    def __init__(self, status: str = "other", tooltip: str = "", size: int = 8, parent=None):
+        super().__init__(parent)
+        self.status = status
+        self._size = size
+        self.setFixedSize(size, size)
+        self.setCursor(Qt.PointingHandCursor)
+        if tooltip:
+            self.setToolTip(tooltip)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        if self.status == "passed":
+            color = QColor("#10B981")
+            glow = QColor(16, 185, 129, 65)
+        elif self.status == "suspected":
+            color = QColor("#F59E0B")
+            glow = QColor(245, 158, 11, 65)
+        else:
+            color = QColor("#64748B")
+            glow = QColor(100, 116, 139, 45)
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(glow)
+        r = float(self._size) / 2.0
+        painter.drawEllipse(0, 0, self._size, self._size)
+        painter.setBrush(color)
+        inner = max(2.0, r * 0.65)
+        painter.drawEllipse(QRectF(r - inner / 2.0, r - inner / 2.0, inner, inner))
 
 SCROLL_STYLE = """
     QScrollArea {
