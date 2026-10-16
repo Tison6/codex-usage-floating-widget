@@ -373,18 +373,38 @@ export struct SquareDialogGroupItem {
     name: string,
     model: string,
     multiplier: string,
+    tps: string,
+    latency: string,
+    success_rate: string,
+    is_selected: bool,
+}
+
+export struct SquareDialogModelItem {
+    name: string,
+    label: string,
+    supported_groups_count: int,
     is_selected: bool,
 }
 
 export component SquareFilterDialog inherits Rectangle {
     in property <float> scale: 1.0;
-    in property <int> selected_count: 3;
-    in property <int> total_count: 12;
+    in-out property <int> active_tab: 0;
+    in property <int> selected_groups_count: 4;
+    in property <int> total_groups_count: 32;
+    in property <int> selected_models_count: 4;
+    in property <int> total_models_count: 24;
     in-out property <[SquareDialogGroupItem]> groups: [];
+    in-out property <[SquareDialogModelItem]> models: [];
 
     callback close_dialog();
     callback save_and_apply();
     callback toggle_group_selected(int, bool);
+    callback toggle_model_selected(int, bool);
+    callback select_all_groups();
+    callback clear_all_groups();
+    callback select_all_models();
+    callback clear_all_models();
+    callback apply_preset();
     callback drag_window();
 
     background: rgba(15, 23, 42, 0.98);
@@ -444,48 +464,171 @@ export component SquareFilterDialog inherits Rectangle {
             }
         }
 
-        // Subtitle
-        Text {
-            text: "勾选需要重点监控的 Square 分组与模型，面板将按勾选实时轮询刷新";
-            font-size: 9.5px * root.scale;
-            color: #64748b;
+        // Two Tabs: Groups vs Models
+        HorizontalLayout {
+            spacing: 6px * root.scale;
+            height: 26px * root.scale;
+
+            Rectangle {
+                background: root.active_tab == 0 ? rgba(59, 130, 246, 0.25) : rgba(255, 255, 255, 0.05);
+                border-width: 1px;
+                border-color: root.active_tab == 0 ? rgba(59, 130, 246, 0.5) : rgba(255, 255, 255, 0.08);
+                border-radius: 4px * root.scale;
+
+                HorizontalLayout {
+                    padding-left: 10px * root.scale;
+                    padding-right: 10px * root.scale;
+                    alignment: center;
+                    Text {
+                        text: "1. 勾选关注分组 (含实时参数)";
+                        font-size: 10px * root.scale;
+                        font-weight: 600;
+                        color: root.active_tab == 0 ? #60a5fa : #94a3b8;
+                        vertical-alignment: center;
+                    }
+                }
+                TouchArea {
+                    clicked => { root.active_tab = 0; }
+                }
+            }
+
+            Rectangle {
+                background: root.active_tab == 1 ? rgba(59, 130, 246, 0.25) : rgba(255, 255, 255, 0.05);
+                border-width: 1px;
+                border-color: root.active_tab == 1 ? rgba(59, 130, 246, 0.5) : rgba(255, 255, 255, 0.08);
+                border-radius: 4px * root.scale;
+
+                HorizontalLayout {
+                    padding-left: 10px * root.scale;
+                    padding-right: 10px * root.scale;
+                    alignment: center;
+                    Text {
+                        text: "2. 勾选关注模型";
+                        font-size: 10px * root.scale;
+                        font-weight: 600;
+                        color: root.active_tab == 1 ? #60a5fa : #94a3b8;
+                        vertical-alignment: center;
+                    }
+                }
+                TouchArea {
+                    clicked => { root.active_tab = 1; }
+                }
+            }
         }
 
-        // Scrollable Group List
-        Flickable {
-            content-height: root.groups.length * (28px * root.scale);
+        // Subheader Action Row with Tips and Select All / Clear
+        HorizontalLayout {
+            alignment: space-between;
+            height: 18px * root.scale;
 
-            VerticalLayout {
-                spacing: 2px * root.scale;
-                for item[idx] in root.groups: Rectangle {
-                    height: 26px * root.scale;
-                    border-radius: 4px * root.scale;
-                    background: item.is_selected ? rgba(59, 130, 246, 0.15) : (ta_sq_row.has-hover ? rgba(255, 255, 255, 0.05) : rgba(255, 255, 255, 0.02));
-                    border-width: 1px;
-                    border-color: item.is_selected ? rgba(59, 130, 246, 0.4) : transparent;
+            Text {
+                text: root.active_tab == 0 ? "提示: 勾选分组将在主界面展示其速度、延迟与成功率" : "提示: 勾选的模型将自动映射并在所属分组下列出";
+                font-size: 9.5px * root.scale;
+                color: #94a3b8;
+                vertical-alignment: center;
+            }
 
-                    ta_sq_row := TouchArea {
-                        clicked => { root.toggle_group_selected(idx, !item.is_selected); }
+            HorizontalLayout {
+                spacing: 10px * root.scale;
+                alignment: end;
+
+                Rectangle {
+                    Text {
+                        text: "全选";
+                        font-size: 9.5px * root.scale;
+                        font-weight: 600;
+                        color: #60a5fa;
+                        vertical-alignment: center;
                     }
+                    TouchArea {
+                        clicked => {
+                            if root.active_tab == 0 {
+                                root.select_all_groups();
+                            } else {
+                                root.select_all_models();
+                            }
+                        }
+                    }
+                }
 
-                    HorizontalLayout {
-                        padding-left: 8px * root.scale;
-                        padding-right: 8px * root.scale;
-                        spacing: 8px * root.scale;
-                        alignment: space-between;
+                Rectangle {
+                    Text {
+                        text: "清空";
+                        font-size: 9.5px * root.scale;
+                        font-weight: 600;
+                        color: #64748b;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => {
+                            if root.active_tab == 0 {
+                                root.clear_all_groups();
+                            } else {
+                                root.clear_all_models();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Content: Tab 0 (Groups) vs Tab 1 (Models)
+        if root.active_tab == 0 : VerticalLayout {
+            spacing: 3px * root.scale;
+
+            // Table Column Header
+            HorizontalLayout {
+                height: 18px * root.scale;
+                padding-left: 8px * root.scale;
+                padding-right: 8px * root.scale;
+                spacing: 4px * root.scale;
+
+                Text {
+                    text: "分组名称";
+                    font-size: 9px * root.scale;
+                    font-weight: 700;
+                    color: #64748b;
+                    horizontal-alignment: left;
+                    vertical-alignment: center;
+                }
+
+                Rectangle { width: 44px * root.scale; Text { text: "倍率"; font-size: 9px * root.scale; font-weight: 700; color: #64748b; horizontal-alignment: center; vertical-alignment: center; } }
+                Rectangle { width: 50px * root.scale; Text { text: "速度"; font-size: 9px * root.scale; font-weight: 700; color: #64748b; horizontal-alignment: right; vertical-alignment: center; } }
+                Rectangle { width: 48px * root.scale; Text { text: "延迟"; font-size: 9px * root.scale; font-weight: 700; color: #64748b; horizontal-alignment: right; vertical-alignment: center; } }
+                Rectangle { width: 52px * root.scale; Text { text: "成功率"; font-size: 9px * root.scale; font-weight: 700; color: #64748b; horizontal-alignment: center; vertical-alignment: center; } }
+            }
+
+            // Scrollable Group List
+            Flickable {
+                content-height: root.groups.length * (28px * root.scale);
+
+                VerticalLayout {
+                    spacing: 3px * root.scale;
+
+                    for item[idx] in root.groups: Rectangle {
+                        height: 25px * root.scale;
+                        border-radius: 4px * root.scale;
+                        background: item.is_selected ? rgba(16, 185, 129, 0.08) : (ta_grp.has-hover ? rgba(255, 255, 255, 0.05) : rgba(255, 255, 255, 0.02));
+                        border-width: 1px;
+                        border-color: item.is_selected ? rgba(16, 185, 129, 0.3) : rgba(255, 255, 255, 0.05);
+
+                        ta_grp := TouchArea {
+                            clicked => { root.toggle_group_selected(idx, !item.is_selected); }
+                        }
 
                         HorizontalLayout {
-                            spacing: 8px * root.scale;
-                            alignment: start;
+                            padding-left: 8px * root.scale;
+                            padding-right: 8px * root.scale;
+                            spacing: 6px * root.scale;
 
                             // Checkbox
                             Rectangle {
                                 width: 14px * root.scale;
                                 height: 14px * root.scale;
                                 border-radius: 3px * root.scale;
-                                border-width: 1.2px;
-                                border-color: item.is_selected ? #3b82f6 : #64748b;
-                                background: item.is_selected ? #3b82f6 : transparent;
+                                border-width: 1px;
+                                border-color: item.is_selected ? #10b981 : rgba(255, 255, 255, 0.25);
+                                background: item.is_selected ? #10b981 : rgba(255, 255, 255, 0.05);
                                 y: (parent.height - self.height) / 2;
 
                                 if item.is_selected: Text {
@@ -498,43 +641,68 @@ export component SquareFilterDialog inherits Rectangle {
                                 }
                             }
 
+                            // Group Name
                             Text {
                                 text: item.name;
                                 font-size: 10px * root.scale;
-                                font-weight: 700;
+                                font-weight: 600;
                                 color: item.is_selected ? #ffffff : #cbd5e1;
                                 vertical-alignment: center;
-                            }
-                        }
-
-                        HorizontalLayout {
-                            spacing: 8px * root.scale;
-                            alignment: end;
-
-                            Text {
-                                text: item.model;
-                                font-size: 9.5px * root.scale;
-                                color: #94a3b8;
-                                vertical-alignment: center;
+                                horizontal-alignment: left;
                             }
 
+                            // Multiplier
                             Rectangle {
+                                width: 44px * root.scale;
+                                height: 18px * root.scale;
                                 background: rgba(59, 130, 246, 0.2);
                                 border-radius: 3px * root.scale;
-                                height: 16px * root.scale;
                                 y: (parent.height - self.height) / 2;
 
-                                HorizontalLayout {
-                                    padding-left: 5px * root.scale;
-                                    padding-right: 5px * root.scale;
-                                    alignment: center;
-                                    Text {
-                                        text: item.multiplier;
-                                        font-size: 9px * root.scale;
-                                        font-weight: 700;
-                                        color: #60a5fa;
-                                        vertical-alignment: center;
-                                    }
+                                Text {
+                                    text: item.multiplier;
+                                    font-size: 9px * root.scale;
+                                    font-weight: 700;
+                                    color: #60a5fa;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            // Speed
+                            Rectangle {
+                                width: 50px * root.scale;
+                                Text {
+                                    text: item.tps;
+                                    font-size: 9px * root.scale;
+                                    color: #cbd5e1;
+                                    horizontal-alignment: right;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            // Latency
+                            Rectangle {
+                                width: 48px * root.scale;
+                                Text {
+                                    text: item.latency;
+                                    font-size: 9px * root.scale;
+                                    color: #94a3b8;
+                                    horizontal-alignment: right;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            // Success rate
+                            Rectangle {
+                                width: 52px * root.scale;
+                                Text {
+                                    text: item.success_rate;
+                                    font-size: 9px * root.scale;
+                                    font-weight: 700;
+                                    color: #10b981;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
                                 }
                             }
                         }
@@ -543,30 +711,128 @@ export component SquareFilterDialog inherits Rectangle {
             }
         }
 
-        // Footer
+        if root.active_tab == 1 : VerticalLayout {
+            spacing: 3px * root.scale;
+
+            // Scrollable Model List
+            Flickable {
+                content-height: root.models.length * (28px * root.scale);
+
+                VerticalLayout {
+                    spacing: 3px * root.scale;
+
+                    for m[idx] in root.models: Rectangle {
+                        height: 25px * root.scale;
+                        border-radius: 4px * root.scale;
+                        background: m.is_selected ? rgba(16, 185, 129, 0.08) : (ta_mdl.has-hover ? rgba(255, 255, 255, 0.05) : rgba(255, 255, 255, 0.02));
+                        border-width: 1px;
+                        border-color: m.is_selected ? rgba(16, 185, 129, 0.3) : rgba(255, 255, 255, 0.05);
+
+                        ta_mdl := TouchArea {
+                            clicked => { root.toggle_model_selected(idx, !m.is_selected); }
+                        }
+
+                        HorizontalLayout {
+                            padding-left: 8px * root.scale;
+                            padding-right: 8px * root.scale;
+                            spacing: 8px * root.scale;
+
+                            // Checkbox
+                            Rectangle {
+                                width: 14px * root.scale;
+                                height: 14px * root.scale;
+                                border-radius: 3px * root.scale;
+                                border-width: 1px;
+                                border-color: m.is_selected ? #10b981 : rgba(255, 255, 255, 0.25);
+                                background: m.is_selected ? #10b981 : rgba(255, 255, 255, 0.05);
+                                y: (parent.height - self.height) / 2;
+
+                                if m.is_selected: Text {
+                                    text: "✓";
+                                    font-size: 9px * root.scale;
+                                    font-weight: 800;
+                                    color: #ffffff;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            // Model Name / Label (e.g. claude-fable-5 (claude-fable-5))
+                            Text {
+                                text: m.label;
+                                font-size: 10px * root.scale;
+                                font-weight: 600;
+                                color: m.is_selected ? #ffffff : #cbd5e1;
+                                vertical-alignment: center;
+                                horizontal-alignment: left;
+                            }
+
+                            // Badge: 支持 X 个分组
+                            Rectangle {
+                                width: 90px * root.scale;
+                                Text {
+                                    text: "支持 " + m.supported_groups_count + " 个分组";
+                                    font-size: 9.5px * root.scale;
+                                    color: #64748b;
+                                    horizontal-alignment: right;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Footer: Preset button on left, count summary in center, Save button on right
         HorizontalLayout {
             alignment: space-between;
-
-            Text {
-                text: "已勾选: " + root.selected_count + " / " + root.total_count + " 个监控分组";
-                font-size: 9.5px * root.scale;
-                color: #94a3b8;
-                vertical-alignment: center;
-            }
+            height: 26px * root.scale;
 
             Rectangle {
-                background: #3b82f6;
-                border-radius: 4px * root.scale;
+                background: rgba(59, 130, 246, 0.15);
+                border-width: 1px;
+                border-color: rgba(59, 130, 246, 0.3);
+                border-radius: 5px * root.scale;
                 height: 24px * root.scale;
 
                 HorizontalLayout {
                     padding-left: 10px * root.scale;
                     padding-right: 10px * root.scale;
                     alignment: center;
+                    Text {
+                        text: "推荐预设";
+                        font-size: 10px * root.scale;
+                        color: #60a5fa;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
+                TouchArea {
+                    clicked => { root.apply_preset(); }
+                }
+            }
 
+            Text {
+                text: "已勾选: " + root.selected_groups_count + " 个分组 / " + root.selected_models_count + " 个模型";
+                font-size: 9.5px * root.scale;
+                color: #94a3b8;
+                vertical-alignment: center;
+                horizontal-alignment: center;
+            }
+
+            Rectangle {
+                background: #10b981;
+                border-radius: 5px * root.scale;
+                height: 24px * root.scale;
+
+                HorizontalLayout {
+                    padding-left: 12px * root.scale;
+                    padding-right: 12px * root.scale;
+                    alignment: center;
                     Text {
                         text: "保存并应用";
-                        font-size: 10px * root.scale;
+                        font-size: 10.5px * root.scale;
                         font-weight: 700;
                         color: #ffffff;
                         vertical-alignment: center;

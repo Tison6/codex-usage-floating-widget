@@ -227,6 +227,7 @@ impl SquareClient {
     pub async fn fetch_data(
         &self,
         selected_groups: &[String],
+        selected_models: &[String],
         group_models: &HashMap<String, String>,
     ) -> SquareData {
         let groups_url = "https://api.squarefaceicon.org/api/user/groups";
@@ -316,7 +317,18 @@ impl SquareClient {
             let focus_m = group_models
                 .get(g_name)
                 .cloned()
-                .unwrap_or_else(|| default_model_for_group(g_name));
+                .unwrap_or_else(|| {
+                    if !selected_models.is_empty() {
+                        let d = default_model_for_group(g_name);
+                        for sm in selected_models {
+                            let disp = get_model_display_name(sm);
+                            if disp == d || sm == g_name {
+                                return disp;
+                            }
+                        }
+                    }
+                    default_model_for_group(g_name)
+                });
 
             let out_price = match g_name.as_str() {
                 "6-astra" => "$6".to_string(),
@@ -351,9 +363,9 @@ impl SquareClient {
         }
     }
 
-    pub async fn fetch_all_groups(&self) -> Vec<(String, String, String)> {
+    pub async fn fetch_all_groups(&self) -> Vec<SquareDialogGroupData> {
         let url = "https://api.squarefaceicon.org/api/user/groups";
-        let mut list: Vec<(String, String, String, f64)> = Vec::new();
+        let mut list: Vec<(SquareDialogGroupData, f64)> = Vec::new();
 
         if let Ok(resp) = self.client.get(url).send().await {
             if resp.status().is_success() {
@@ -362,7 +374,18 @@ impl SquareClient {
                         for (g_name, g_val) in obj {
                             let ratio = g_val.get("ratio").and_then(|r| r.as_f64()).unwrap_or(1.0);
                             let model = default_model_for_group(g_name);
-                            list.push((g_name.clone(), model, format!("{:.2}x", ratio), ratio));
+                            let bench = get_benchmark_for_group(g_name, ratio);
+                            list.push((
+                                SquareDialogGroupData {
+                                    name: g_name.clone(),
+                                    model,
+                                    multiplier: format!("{:.2}x", ratio),
+                                    tps: bench.tps.to_string(),
+                                    latency: bench.latency.to_string(),
+                                    success_rate: format!("{:.1}%", bench.success_rate),
+                                },
+                                ratio,
+                            ));
                         }
                     }
                 }
@@ -371,25 +394,171 @@ impl SquareClient {
 
         if list.is_empty() {
             let statics = [
-                ("6-astra", "GPT-6 Astra", "0.12x", 0.12),
-                ("terra分组", "GPT-6 Astra / Sol", "0.15x", 0.15),
-                ("混池优惠", "GPT-6 Astra", "0.08x", 0.08),
-                ("ds-v4.1可用", "DeepSeek-V4.1", "0.10x", 0.10),
-                ("cc1", "Claude-Opus-5-5", "0.40x", 0.40),
-                ("gpt-特惠分组", "GPT-6 Astra", "0.25x", 0.25),
-                ("pro专享", "GPT-6 Astra", "0.25x", 0.25),
-                ("codex", "GPT-6 Astra", "0.25x", 0.25),
-                ("claude-ultra", "Claude-Fable-5", "0.40x", 0.40),
-                ("aws-cc", "Claude-Opus-5-5", "0.40x", 0.40),
-                ("官方max", "Claude-Fable-5", "1.20x", 1.20),
+                ("6-astra", 0.12),
+                ("terra分组", 0.15),
+                ("混池优惠", 0.08),
+                ("ds-v4.1可用", 0.10),
+                ("cc1", 0.40),
+                ("gpt-特惠分组", 0.25),
+                ("pro专享", 0.25),
+                ("codex", 0.25),
+                ("claude-ultra", 0.40),
+                ("aws-cc", 0.40),
+                ("官方max", 1.20),
+                ("gpt-已过鹈鹕测试不降智", 0.25),
             ];
-            for (g, m, r_str, r) in statics {
-                list.push((g.to_string(), m.to_string(), r_str.to_string(), r));
+            for (g, r) in statics {
+                let model = default_model_for_group(g);
+                let bench = get_benchmark_for_group(g, r);
+                list.push((
+                    SquareDialogGroupData {
+                        name: g.to_string(),
+                        model,
+                        multiplier: format!("{:.2}x", r),
+                        tps: bench.tps.to_string(),
+                        latency: bench.latency.to_string(),
+                        success_rate: format!("{:.1}%", bench.success_rate),
+                    },
+                    r,
+                ));
             }
         }
 
-        list.sort_by(|a, b| a.3.partial_cmp(&b.3).unwrap_or(std::cmp::Ordering::Equal));
-        list.into_iter().map(|(g, m, r, _)| (g, m, r)).collect()
+        list.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        list.into_iter().map(|(item, _)| item).collect()
+    }
+
+    pub async fn fetch_all_models(&self) -> Vec<SquareDialogModelData> {
+        let url = "https://api.squarefaceicon.org/api/pricing";
+        let mut list: Vec<SquareDialogModelData> = Vec::new();
+
+        if let Ok(resp) = self.client.get(url).send().await {
+            if resp.status().is_success() {
+                if let Ok(val) = resp.json::<serde_json::Value>().await {
+                    if let Some(arr) = val.get("data").and_then(|v| v.as_array()) {
+                        for m in arr {
+                            if let Some(m_name) = m.get("model_name").and_then(|n| n.as_str()) {
+                                let eg_count = m
+                                    .get("enable_groups")
+                                    .and_then(|g| g.as_array())
+                                    .map(|a| a.len() as i32)
+                                    .unwrap_or(0);
+                                let d_name = get_model_display_name(m_name);
+                                let label = if d_name != m_name {
+                                    format!("{} ({})", d_name, m_name)
+                                } else {
+                                    format!("{} ({})", m_name, m_name)
+                                };
+                                list.push(SquareDialogModelData {
+                                    name: m_name.to_string(),
+                                    label,
+                                    supported_groups_count: eg_count,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if list.is_empty() {
+            let statics = [
+                ("claude-fable-5", 7),
+                ("claude-fable-5-1", 7),
+                ("claude-haiku-4-5", 4),
+                ("claude-haiku-4-5-20251001", 7),
+                ("claude-haiku-4-5-20251001-thinking", 3),
+                ("claude-opus-4-5-20251101", 4),
+                ("claude-opus-4-5-20251101-thinking", 2),
+                ("claude-opus-4-6", 9),
+                ("claude-opus-4-6-thinking", 6),
+                ("claude-opus-4-7", 9),
+                ("claude-opus-4-7-thinking", 4),
+                ("claude-opus-5-5", 8),
+                ("claude-sonnet-4-6", 8),
+                ("claude-sonnet-5", 10),
+                ("claude-sonnet-5-5", 10),
+                ("deepseek-v4-flash", 6),
+                ("deepseek-v4.1-flash", 6),
+                ("gpt-5.5", 5),
+                ("gpt-5.6-terra", 4),
+                ("gpt-6-astra", 12),
+                ("gpt-6.1-sol", 8),
+                ("grok-4.7", 4),
+                ("glm-5.3", 3),
+                ("kimi-k3", 3),
+            ];
+            for (m_name, cnt) in statics {
+                let d_name = get_model_display_name(m_name);
+                let label = if d_name != m_name {
+                    format!("{} ({})", d_name, m_name)
+                } else {
+                    format!("{} ({})", m_name, m_name)
+                };
+                list.push(SquareDialogModelData {
+                    name: m_name.to_string(),
+                    label,
+                    supported_groups_count: cnt,
+                });
+            }
+        }
+
+        list.sort_by(|a, b| a.name.cmp(&b.name));
+        list
+    }
+}
+
+pub const DEFAULT_SELECTED_GROUPS: &[&str] = &[
+    "混池优惠",
+    "ds-v4.1可用",
+    "terra分组",
+    "gpt-已过鹈鹕测试不降智",
+    "cc1",
+];
+
+pub const DEFAULT_SELECTED_MODELS: &[&str] = &[
+    "claude-opus-5-5",
+    "deepseek-v4.1-flash",
+    "gpt-6-astra",
+    "gpt-6.1-sol",
+];
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SquareDialogGroupData {
+    pub name: String,
+    pub model: String,
+    pub multiplier: String,
+    pub tps: String,
+    pub latency: String,
+    pub success_rate: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SquareDialogModelData {
+    pub name: String,
+    pub label: String,
+    pub supported_groups_count: i32,
+}
+
+pub fn get_model_display_name(model: &str) -> String {
+    match model {
+        "gpt-6-astra" => "GPT-6 Astra".to_string(),
+        "gpt-6.1-sol" => "GPT-6.1 Sol".to_string(),
+        "claude-opus-5-5" => "Claude Opus 5.5".to_string(),
+        "deepseek-v4.1-flash" => "DS-v4.1 Flash".to_string(),
+        "gpt-5.5" => "GPT-5.5".to_string(),
+        "claude-sonnet-5" => "Claude Sonnet 5".to_string(),
+        "claude-sonnet-5-5" => "Claude Sonnet 5.5".to_string(),
+        "claude-sonnet-4-6" => "Claude Sonnet 4.6".to_string(),
+        "gpt-5.6-terra" => "GPT-5.6 Terra".to_string(),
+        "gpt-5.6-sol" => "GPT-5.6 Sol".to_string(),
+        "gpt-5.6-luna" => "GPT-5.6 Luna".to_string(),
+        "gpt-6-sol" => "GPT-6 Sol".to_string(),
+        "claude-ultra" => "Claude Ultra".to_string(),
+        "grok-4.7" => "Grok 4.7".to_string(),
+        "glm-5.3" => "GLM-5.3".to_string(),
+        "kimi-k3" => "Kimi K3".to_string(),
+        _ => model.to_string(),
     }
 }
 

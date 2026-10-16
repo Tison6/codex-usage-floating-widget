@@ -3,7 +3,7 @@ import { MiniCapsule } from "components/mini_capsule.slint";
 import { CodexCard, BluetoothDeviceInfo } from "components/codex_card.slint";
 import { RelayView, SquareRowModel, AIHubRowModel } from "components/relay_view.slint";
 import { ServerView, GPUCardItem, HostCardItem, GanttRowModel } from "components/server_view.slint";
-import { AIHubFilterDialog, DialogProviderItem, SquareFilterDialog, SquareDialogGroupItem } from "components/filter_dialog.slint";
+import { AIHubFilterDialog, DialogProviderItem, SquareFilterDialog, SquareDialogGroupItem, SquareDialogModelItem } from "components/filter_dialog.slint";
 import { SettingsDialog } from "components/settings_dialog.slint";
 import { PelicanDialog, PelicanDialogCardItem } from "components/pelican_dialog.slint";
 
@@ -72,9 +72,13 @@ export component MainWindow inherits Window {
 
     // Filter Dialog overlay properties (Square)
     in-out property <bool> square_filter_dialog_open: false;
-    in property <int> dlg_sq_selected_count: 3;
-    in property <int> dlg_sq_total_count: 12;
+    in-out property <int> dlg_sq_active_tab: 0;
+    in property <int> dlg_sq_selected_count: 4;
+    in property <int> dlg_sq_total_count: 32;
+    in property <int> dlg_sq_selected_models_count: 4;
+    in property <int> dlg_sq_total_models_count: 24;
     in-out property <[SquareDialogGroupItem]> dlg_square_groups: [];
+    in-out property <[SquareDialogModelItem]> dlg_square_models: [];
 
     // Settings Dialog overlay properties
     in-out property <bool> settings_dialog_open: false;
@@ -111,6 +115,12 @@ export component MainWindow inherits Window {
     callback toggle_dlg_excluded(int, bool);
     callback save_square_filter_clicked();
     callback toggle_square_group_selected(int, bool);
+    callback toggle_square_model_selected(int, bool);
+    callback select_all_square_groups();
+    callback clear_all_square_groups();
+    callback select_all_square_models();
+    callback clear_all_square_models();
+    callback apply_square_preset();
     callback open_pelican_viewer(string, int);
     callback close_pelican_viewer();
     callback open_external_url(string);
@@ -380,17 +390,27 @@ export component MainWindow inherits Window {
             }
 
             SquareFilterDialog {
-                width: 85%;
-                height: 85%;
+                width: 90%;
+                height: 90%;
                 scale: root.ui_scale;
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
-                selected_count: root.dlg_sq_selected_count;
-                total_count: root.dlg_sq_total_count;
+                active_tab: root.dlg_sq_active_tab;
+                selected_groups_count: root.dlg_sq_selected_count;
+                total_groups_count: root.dlg_sq_total_count;
+                selected_models_count: root.dlg_sq_selected_models_count;
+                total_models_count: root.dlg_sq_total_models_count;
                 groups: root.dlg_square_groups;
+                models: root.dlg_square_models;
                 close_dialog => { root.square_filter_dialog_open = false; }
                 save_and_apply => { root.save_square_filter_clicked(); }
                 toggle_group_selected(idx, s) => { root.toggle_square_group_selected(idx, s); }
+                toggle_model_selected(idx, s) => { root.toggle_square_model_selected(idx, s); }
+                select_all_groups => { root.select_all_square_groups(); }
+                clear_all_groups => { root.clear_all_square_groups(); }
+                select_all_models => { root.select_all_square_models(); }
+                clear_all_models => { root.clear_all_square_models(); }
+                apply_preset => { root.apply_square_preset(); }
                 drag_window => { root.drag_window(); }
             }
         }

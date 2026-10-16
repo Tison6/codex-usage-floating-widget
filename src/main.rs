@@ -788,29 +788,53 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ui) = ui_weak_sq_open.upgrade() {
             ui.set_square_filter_dialog_open(true);
             let selected_groups = config_mgr_sq.get().square_selected_groups.clone();
+            let selected_models = config_mgr_sq.get().square_selected_models.clone();
             let sq_client = square_client_filter.clone();
             let ui_weak_inner = ui.as_weak();
 
             rt_handle_sq.spawn(async move {
                 let all_groups = sq_client.fetch_all_groups().await;
+                let all_models = sq_client.fetch_all_models().await;
                 let _ = ui_weak_inner.upgrade_in_event_loop(move |ui| {
                     let mut group_items = Vec::new();
-                    let mut sel_count = 0;
-                    for (gname, mname, mult) in all_groups {
-                        let is_sel = selected_groups.contains(&gname);
+                    let mut sel_groups_count = 0;
+                    for g in all_groups {
+                        let is_sel = selected_groups.contains(&g.name);
                         if is_sel {
-                            sel_count += 1;
+                            sel_groups_count += 1;
                         }
                         group_items.push(SquareDialogGroupItem {
-                            name: gname.into(),
-                            model: mname.into(),
-                            multiplier: mult.into(),
+                            name: g.name.into(),
+                            model: g.model.into(),
+                            multiplier: g.multiplier.into(),
+                            tps: g.tps.into(),
+                            latency: g.latency.into(),
+                            success_rate: g.success_rate.into(),
                             is_selected: is_sel,
                         });
                     }
-                    ui.set_dlg_sq_selected_count(sel_count);
+
+                    let mut model_items = Vec::new();
+                    let mut sel_models_count = 0;
+                    for m in all_models {
+                        let is_sel = selected_models.contains(&m.name);
+                        if is_sel {
+                            sel_models_count += 1;
+                        }
+                        model_items.push(SquareDialogModelItem {
+                            name: m.name.into(),
+                            label: m.label.into(),
+                            supported_groups_count: m.supported_groups_count,
+                            is_selected: is_sel,
+                        });
+                    }
+
+                    ui.set_dlg_sq_selected_count(sel_groups_count);
                     ui.set_dlg_sq_total_count(group_items.len() as i32);
+                    ui.set_dlg_sq_selected_models_count(sel_models_count);
+                    ui.set_dlg_sq_total_models_count(model_items.len() as i32);
                     ui.set_dlg_square_groups(Rc::new(VecModel::from(group_items)).into());
+                    ui.set_dlg_square_models(Rc::new(VecModel::from(model_items)).into());
                 });
             });
         }
@@ -836,22 +860,145 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    let ui_weak_sq_tog_m = ui.as_weak();
+    ui.on_toggle_square_model_selected(move |idx, sel| {
+        if let Some(ui) = ui_weak_sq_tog_m.upgrade() {
+            let model = ui.get_dlg_square_models();
+            if let Some(mut item) = model.row_data(idx as usize) {
+                item.is_selected = sel;
+                model.set_row_data(idx as usize, item);
+                let mut count = 0;
+                for i in 0..model.row_count() {
+                    if let Some(it) = model.row_data(i) {
+                        if it.is_selected {
+                            count += 1;
+                        }
+                    }
+                }
+                ui.set_dlg_sq_selected_models_count(count);
+            }
+        }
+    });
+
+    let ui_weak_sq_all_g = ui.as_weak();
+    ui.on_select_all_square_groups(move || {
+        if let Some(ui) = ui_weak_sq_all_g.upgrade() {
+            let model = ui.get_dlg_square_groups();
+            let total = model.row_count();
+            for i in 0..total {
+                if let Some(mut it) = model.row_data(i) {
+                    it.is_selected = true;
+                    model.set_row_data(i, it);
+                }
+            }
+            ui.set_dlg_sq_selected_count(total as i32);
+        }
+    });
+
+    let ui_weak_sq_clr_g = ui.as_weak();
+    ui.on_clear_all_square_groups(move || {
+        if let Some(ui) = ui_weak_sq_clr_g.upgrade() {
+            let model = ui.get_dlg_square_groups();
+            for i in 0..model.row_count() {
+                if let Some(mut it) = model.row_data(i) {
+                    it.is_selected = false;
+                    model.set_row_data(i, it);
+                }
+            }
+            ui.set_dlg_sq_selected_count(0);
+        }
+    });
+
+    let ui_weak_sq_all_m = ui.as_weak();
+    ui.on_select_all_square_models(move || {
+        if let Some(ui) = ui_weak_sq_all_m.upgrade() {
+            let model = ui.get_dlg_square_models();
+            let total = model.row_count();
+            for i in 0..total {
+                if let Some(mut it) = model.row_data(i) {
+                    it.is_selected = true;
+                    model.set_row_data(i, it);
+                }
+            }
+            ui.set_dlg_sq_selected_models_count(total as i32);
+        }
+    });
+
+    let ui_weak_sq_clr_m = ui.as_weak();
+    ui.on_clear_all_square_models(move || {
+        if let Some(ui) = ui_weak_sq_clr_m.upgrade() {
+            let model = ui.get_dlg_square_models();
+            for i in 0..model.row_count() {
+                if let Some(mut it) = model.row_data(i) {
+                    it.is_selected = false;
+                    model.set_row_data(i, it);
+                }
+            }
+            ui.set_dlg_sq_selected_models_count(0);
+        }
+    });
+
+    let ui_weak_sq_preset = ui.as_weak();
+    ui.on_apply_square_preset(move || {
+        if let Some(ui) = ui_weak_sq_preset.upgrade() {
+            let g_model = ui.get_dlg_square_groups();
+            let mut g_count = 0;
+            for i in 0..g_model.row_count() {
+                if let Some(mut it) = g_model.row_data(i) {
+                    let is_preset = relay::DEFAULT_SELECTED_GROUPS.contains(&it.name.as_str());
+                    it.is_selected = is_preset;
+                    if is_preset {
+                        g_count += 1;
+                    }
+                    g_model.set_row_data(i, it);
+                }
+            }
+            ui.set_dlg_sq_selected_count(g_count);
+
+            let m_model = ui.get_dlg_square_models();
+            let mut m_count = 0;
+            for i in 0..m_model.row_count() {
+                if let Some(mut it) = m_model.row_data(i) {
+                    let is_preset = relay::DEFAULT_SELECTED_MODELS.contains(&it.name.as_str());
+                    it.is_selected = is_preset;
+                    if is_preset {
+                        m_count += 1;
+                    }
+                    m_model.set_row_data(i, it);
+                }
+            }
+            ui.set_dlg_sq_selected_models_count(m_count);
+        }
+    });
+
     let ui_weak_sq_save = ui.as_weak();
     let config_mgr_sq_save = config_mgr.clone();
     let relay_tx_sq_save = relay_trigger_tx.clone();
     ui.on_save_square_filter_clicked(move || {
         if let Some(ui) = ui_weak_sq_save.upgrade() {
-            let model = ui.get_dlg_square_groups();
-            let mut selected = Vec::new();
-            for i in 0..model.row_count() {
-                if let Some(it) = model.row_data(i) {
+            let g_model = ui.get_dlg_square_groups();
+            let mut selected_groups = Vec::new();
+            for i in 0..g_model.row_count() {
+                if let Some(it) = g_model.row_data(i) {
                     if it.is_selected {
-                        selected.push(it.name.to_string());
+                        selected_groups.push(it.name.to_string());
                     }
                 }
             }
+
+            let m_model = ui.get_dlg_square_models();
+            let mut selected_models = Vec::new();
+            for i in 0..m_model.row_count() {
+                if let Some(it) = m_model.row_data(i) {
+                    if it.is_selected {
+                        selected_models.push(it.name.to_string());
+                    }
+                }
+            }
+
             config_mgr_sq_save.update(|c| {
-                c.square_selected_groups = selected;
+                c.square_selected_groups = selected_groups;
+                c.square_selected_models = selected_models;
             });
             ui.set_square_filter_dialog_open(false);
             let _ = relay_tx_sq_save.try_send(());
@@ -1200,7 +1347,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         loop {
             let cfg = config_mgr_relay.get();
             let square_res = square_client
-                .fetch_data(&cfg.square_selected_groups, &cfg.square_group_models)
+                .fetch_data(
+                    &cfg.square_selected_groups,
+                    &cfg.square_selected_models,
+                    &cfg.square_group_models,
+                )
                 .await;
             let aihub_res = aihub_client
                 .fetch_data(
@@ -1522,22 +1673,43 @@ mod tests {
         assert_eq!(row.is_selected, false);
         ui.set_filter_dialog_open(false);
 
-        // 3. Square groups filter dialog test
+        // 3. Square groups and models filter dialog test
         let groups = vec![
             SquareDialogGroupItem {
                 name: "6-astra".into(),
                 model: "GPT-6 Astra".into(),
                 multiplier: "0.12x".into(),
+                tps: "35.6 t/s".into(),
+                latency: "26.39s".into(),
+                success_rate: "100.0%".into(),
                 is_selected: true,
             },
             SquareDialogGroupItem {
                 name: "cc1".into(),
                 model: "Claude Opus 5.5".into(),
                 multiplier: "0.40x".into(),
+                tps: "32.0 t/s".into(),
+                latency: "18.00s".into(),
+                success_rate: "100.0%".into(),
                 is_selected: false,
             },
         ];
+        let models = vec![
+            SquareDialogModelItem {
+                name: "claude-fable-5".into(),
+                label: "claude-fable-5 (claude-fable-5)".into(),
+                supported_groups_count: 7,
+                is_selected: false,
+            },
+            SquareDialogModelItem {
+                name: "gpt-6-astra".into(),
+                label: "GPT-6 Astra (gpt-6-astra)".into(),
+                supported_groups_count: 12,
+                is_selected: true,
+            },
+        ];
         ui.set_dlg_square_groups(std::rc::Rc::new(slint::VecModel::from(groups)).into());
+        ui.set_dlg_square_models(std::rc::Rc::new(slint::VecModel::from(models)).into());
         ui.set_square_filter_dialog_open(true);
 
         let ui_weak_sq = ui.as_weak();
@@ -1551,10 +1723,28 @@ mod tests {
             }
         });
 
+        let ui_weak_sq_m = ui.as_weak();
+        ui.on_toggle_square_model_selected(move |idx, sel| {
+            if let Some(ui) = ui_weak_sq_m.upgrade() {
+                let model = ui.get_dlg_square_models();
+                if let Some(mut item) = model.row_data(idx as usize) {
+                    item.is_selected = sel;
+                    model.set_row_data(idx as usize, item);
+                }
+            }
+        });
+
         ui.invoke_toggle_square_group_selected(1, true);
         let m_sq = ui.get_dlg_square_groups();
         let row1 = m_sq.row_data(1).unwrap();
         assert_eq!(row1.is_selected, true);
+
+        ui.invoke_toggle_square_model_selected(0, true);
+        let m_sq_models = ui.get_dlg_square_models();
+        let m_row0 = m_sq_models.row_data(0).unwrap();
+        assert_eq!(m_row0.is_selected, true);
+        assert_eq!(m_row0.supported_groups_count, 7);
+
         ui.set_square_filter_dialog_open(false);
     }
 }
