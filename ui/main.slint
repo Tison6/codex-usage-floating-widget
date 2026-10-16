@@ -197,13 +197,13 @@ export component MainWindow inherits Window {
                         background: ta_col.has-hover ? rgba(255, 255, 255, 0.15) : transparent;
                         y: (parent.height - self.height) / 2;
 
-                        Text {
-                            text: "⚊";
-                            font-size: 11px * root.ui_scale;
-                            font-weight: 800;
-                            color: #94a3b8;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
+                        Rectangle {
+                            width: 10px * root.ui_scale;
+                            height: 2px * root.ui_scale;
+                            border-radius: 1px * root.ui_scale;
+                            background: ta_col.has-hover ? #ffffff : #94a3b8;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
                         }
                         ta_col := TouchArea {
                             clicked => { root.collapse_clicked(); }

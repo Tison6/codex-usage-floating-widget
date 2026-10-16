@@ -52,8 +52,8 @@ use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, DestroyMenu, EnumWindows, FindWindowW, GetClassNameW,
-    GetCursorPos, GetWindowRect, GetWindowThreadProcessId,
-    PostMessageW, IsWindow, SetForegroundWindow, SetWindowPos, TrackPopupMenu, HTCAPTION, MF_CHECKED,
+    GetCursorPos, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId,
+    SendMessageW, IsWindow, SetForegroundWindow, SetWindowPos, TrackPopupMenu, HTCAPTION, MF_CHECKED,
     MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
     TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_NCLBUTTONDOWN, GetWindowLongW, SetWindowLongW, GWL_EXSTYLE, GWL_STYLE,
     WS_EX_TOOLWINDOW, WS_EX_APPWINDOW, HWND_TOPMOST, HWND_NOTOPMOST, SWP_FRAMECHANGED,
@@ -72,10 +72,19 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
         let mut class_buf = [0u16; 64];
         let len = GetClassNameW(hwnd, &mut class_buf);
         let class_name = String::from_utf16_lossy(&class_buf[..len as usize]);
-        if !class_name.is_empty() && !class_name.contains("Message") && class_name != "tooltips_class32" {
+        let mut rect = RECT::default();
+        let _ = GetWindowRect(hwnd, &mut rect);
+        let w = rect.right - rect.left;
+        let h = rect.bottom - rect.top;
+
+        let mut title_buf = [0u16; 64];
+        let t_len = GetWindowTextW(hwnd, &mut title_buf);
+        let title = String::from_utf16_lossy(&title_buf[..t_len as usize]);
+
+        if (title.contains("状态小组件") || class_name == "Window Class") && w > 50 && h > 20 {
             let found = &mut *(lparam.0 as *mut Option<HWND>);
             *found = Some(hwnd);
-            return BOOL(0); // Stop enumerating
+            return BOOL(0); // Found the real Slint UI window!
         }
     }
     BOOL(1) // Continue
@@ -103,7 +112,7 @@ fn get_window_hwnd() -> Option<HWND> {
             return Some(h);
         }
 
-        if let Ok(hwnd) = FindWindowW(None, w!("状态小组件")) {
+        if let Ok(hwnd) = FindWindowW(w!("Window Class"), w!("状态小组件")) {
             if !hwnd.0.is_null() {
                 CACHED_HWND.store(hwnd.0 as isize, std::sync::atomic::Ordering::Relaxed);
                 return Some(hwnd);
@@ -413,16 +422,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --- UI Callbacks ---
 
     // Window Dragging Callback
+    let config_mgr_drag = config_mgr.clone();
     ui.on_drag_window(move || {
         unsafe {
             if let Some(hwnd) = get_window_hwnd() {
+                let mut pt = POINT::default();
+                let _ = GetCursorPos(&mut pt);
+                let lparam = ((pt.y as u32) << 16) | ((pt.x as u32) & 0xFFFF);
                 let _ = ReleaseCapture();
-                let _ = PostMessageW(
+                let _ = SendMessageW(
                     hwnd,
                     WM_NCLBUTTONDOWN,
                     WPARAM(HTCAPTION as usize),
-                    LPARAM(0),
+                    LPARAM(lparam as isize),
                 );
+                let mut rect = RECT::default();
+                if GetWindowRect(hwnd, &mut rect).is_ok() {
+                    config_mgr_drag.update(|c| {
+                        c.window_pos = [rect.left, rect.top];
+                    });
+                }
             }
         }
     });
@@ -958,11 +977,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let _ = GetCursorPos(&mut pt);
                                 let mut rect = RECT::default();
                                 if GetWindowRect(hwnd, &mut rect).is_ok() {
-                                    // If click occurs outside the window rect, immediately collapse
-                                    if pt.x < rect.left || pt.x > rect.right || pt.y < rect.top || pt.y > rect.bottom {
-                                        ui.set_is_mini(true);
-                                        config_mgr_collapse.update(|c| c.is_mini_mode = true);
-                                        resize_window_for_mode(hwnd, true, ui.get_ui_scale());
+                                    let w = rect.right - rect.left;
+                                    let h = rect.bottom - rect.top;
+                                    // Guard: only test for outside clicks if window is truly in expanded dimensions
+                                    if w > 300 && h > 150 {
+                                        let pad = 6;
+                                        // If click occurs outside the window rect (with tolerance margin), immediately collapse
+                                        if pt.x < (rect.left - pad) || pt.x > (rect.right + pad) || pt.y < (rect.top - pad) || pt.y > (rect.bottom + pad) {
+                                            ui.set_is_mini(true);
+                                            config_mgr_collapse.update(|c| c.is_mini_mode = true);
+                                            resize_window_for_mode(hwnd, true, ui.get_ui_scale());
+                                        }
                                     }
                                 }
                             }
