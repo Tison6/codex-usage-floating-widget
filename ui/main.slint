@@ -2,9 +2,10 @@ import { Theme } from "style.slint";
 import { MiniCapsule } from "components/mini_capsule.slint";
 import { CodexCard, BluetoothDeviceInfo } from "components/codex_card.slint";
 import { RelayView, SquareRowModel, AIHubRowModel } from "components/relay_view.slint";
-import { ServerView, GPUCardItem, HostCardItem } from "components/server_view.slint";
-import { AIHubFilterDialog, DialogProviderItem } from "components/filter_dialog.slint";
+import { ServerView, GPUCardItem, HostCardItem, GanttRowModel } from "components/server_view.slint";
+import { AIHubFilterDialog, DialogProviderItem, SquareFilterDialog, SquareDialogGroupItem } from "components/filter_dialog.slint";
 import { SettingsDialog } from "components/settings_dialog.slint";
+import { PelicanDialog, PelicanDialogCardItem } from "components/pelican_dialog.slint";
 
 export component MainWindow inherits Window {
     title: "状态小组件";
@@ -25,7 +26,9 @@ export component MainWindow inherits Window {
     in property <[string]> gpu_srv_cpu_vals: ["3", "4", "1"];
     in property <[color]> gpu_srv_cpu_colors: [#00e676, #00e676, #00e676];
     in property <string> codex_5h_val: "100";
+    in property <color> codex_5h_color: #10b981;
     in property <string> codex_wk_val: "37";
+    in property <color> codex_wk_color: #10b981;
     in property <[string]> srv_cpu_vals: ["93", "92", "49"];
     in property <[color]> srv_cpu_val_colors: [#ef4444, #ef4444, #ef4444];
     in property <string> time_str: "21:05:48";
@@ -34,8 +37,14 @@ export component MainWindow inherits Window {
     in property <string> plan_type: "PLUS";
     in property <int> weekly_remaining_pct: 56;
     in property <string> countdown_str: "5d 14h";
+    in property <int> five_hour_remaining_pct: 100;
+    in property <string> five_hour_countdown_str: "3h 12m";
+    in property <color> five_hour_color: #10b981;
+    in property <bool> has_five_hour: true;
     in property <int> reset_credits: 1;
     in property <string> updated_time: "刚刚";
+    in property <image> sparkline_image;
+    in property <string> exhaustion_str: "预计分析中...";
     in property <[BluetoothDeviceInfo]> bt_devices: [];
 
     // Relay View properties (Middle Column)
@@ -50,13 +59,22 @@ export component MainWindow inherits Window {
     in-out property <int> server_active_tab: 0;
     in property <[GPUCardItem]> gpu_cards: [];
     in property <[HostCardItem]> host_cards: [];
+    in property <[GanttRowModel]> gantt_rows: [];
+    in property <int> gantt_range_days: 1;
+    in property <bool> codex_is_error: false;
 
-    // Filter Dialog overlay properties
+    // Filter Dialog overlay properties (AIHub)
     in-out property <bool> filter_dialog_open: false;
     in property <int> dlg_selected_count: 4;
     in property <int> dlg_excluded_count: 0;
     in property <int> dlg_total_count: 28;
     in-out property <[DialogProviderItem]> dlg_providers: [];
+
+    // Filter Dialog overlay properties (Square)
+    in-out property <bool> square_filter_dialog_open: false;
+    in property <int> dlg_sq_selected_count: 3;
+    in property <int> dlg_sq_total_count: 12;
+    in-out property <[SquareDialogGroupItem]> dlg_square_groups: [];
 
     // Settings Dialog overlay properties
     in-out property <bool> settings_dialog_open: false;
@@ -64,10 +82,17 @@ export component MainWindow inherits Window {
     in property <int> cfg_relay_interval: 60;
     in property <bool> cfg_autostart: false;
 
+    // Pelican Viewer Dialog overlay properties
+    in-out property <bool> pelican_dialog_open: false;
+    in property <string> pelican_provider_code: "";
+    in property <string> pelican_status_text: "";
+    in property <[PelicanDialogCardItem]> pelican_cards: [];
+
     // Callbacks
     callback drag_window();
     callback expand_clicked();
     callback collapse_clicked();
+    callback right_clicked();
     callback open_settings_clicked();
     callback save_settings_clicked(bool, float, int, int, bool);
     callback exit_app_clicked();
@@ -75,6 +100,7 @@ export component MainWindow inherits Window {
     callback refresh_relay_clicked();
     callback refresh_servers_clicked();
     callback load_history_clicked();
+    callback cycle_history_range();
     callback toggle_aihub_mode_clicked();
     callback open_aihub_filter_clicked();
     callback open_square_filter_clicked();
@@ -83,14 +109,20 @@ export component MainWindow inherits Window {
     callback toggle_dlg_mode(bool);
     callback toggle_dlg_selected(int, bool);
     callback toggle_dlg_excluded(int, bool);
+    callback save_square_filter_clicked();
+    callback toggle_square_group_selected(int, bool);
+    callback open_pelican_viewer(string, int);
+    callback close_pelican_viewer();
+    callback open_external_url(string);
 
-    width: root.is_mini ? (245px * root.ui_scale) : (775px * root.ui_scale);
-    height: root.is_mini ? (34px * root.ui_scale) : (365px * root.ui_scale);
+    width: root.is_mini ? (160px * root.ui_scale) : (775px * root.ui_scale);
+    height: root.is_mini ? (35px * root.ui_scale) : (365px * root.ui_scale);
 
     // Mini Mode
     if root.is_mini: MiniCapsule {
         width: 100%;
         height: 100%;
+        scale: root.ui_scale;
         codex_running: root.codex_running;
         bt_icon: root.bt_icon;
         bt_battery: root.bt_battery;
@@ -99,10 +131,13 @@ export component MainWindow inherits Window {
         gpu_srv_cpu_vals: root.gpu_srv_cpu_vals;
         gpu_srv_cpu_colors: root.gpu_srv_cpu_colors;
         codex_5h_val: root.codex_5h_val;
+        codex_5h_color: root.codex_5h_color;
         codex_wk_val: root.codex_wk_val;
+        codex_wk_color: root.codex_wk_color;
         srv_cpu_vals: root.srv_cpu_vals;
         srv_cpu_val_colors: root.srv_cpu_val_colors;
         clicked => { root.expand_clicked(); }
+        right_clicked => { root.right_clicked(); }
         drag_window => { root.drag_window(); }
     }
 
@@ -112,97 +147,136 @@ export component MainWindow inherits Window {
         height: 100%;
         background: rgba(11, 15, 25, 0.96);
         border-radius: 8px;
-        border-width: 1px;
-        border-color: rgba(255, 255, 255, 0.12);
+        border-width: 2px;
+        border-color: root.codex_running ? #f59e0b : #10b981;
 
         VerticalLayout {
             padding: 6px;
             spacing: 5px;
 
-            // Window Title Bar
-            HorizontalLayout {
-                alignment: space-between;
-                height: 18px;
+            // Window Title Bar (Full Draggable Header)
+            Rectangle {
+                height: 20px * root.ui_scale;
 
+                // Title label on left
                 HorizontalLayout {
-                    spacing: 4px;
+                    x: 4px * root.ui_scale;
+                    y: 0;
+                    height: 100%;
+                    spacing: 4px * root.ui_scale;
+                    alignment: start;
+
                     Text {
                         text: "⚡";
-                        font-size: 10px;
+                        font-size: 10px * root.ui_scale;
                         vertical-alignment: center;
                     }
                     Text {
                         text: "状态小组件";
-                        font-size: 10px;
+                        font-size: 10px * root.ui_scale;
                         font-weight: 700;
                         color: #f8fafc;
                         vertical-alignment: center;
                     }
-                    TouchArea {
-                        moved => { root.drag_window(); }
-                    }
                 }
 
+                // Buttons on right
                 HorizontalLayout {
-                    spacing: 3px;
+                    x: parent.width - 54px * root.ui_scale;
+                    y: 0;
+                    width: 50px * root.ui_scale;
+                    height: 100%;
+                    spacing: 4px * root.ui_scale;
+                    alignment: end;
 
-                    // Collapse to mini button
+                    // Collapse to mini button (Prominent and responsive)
                     Rectangle {
-                        width: 18px;
-                        height: 18px;
-                        border-radius: 3px;
-                        background: rgba(255, 255, 255, 0.05);
+                        width: 22px * root.ui_scale;
+                        height: 18px * root.ui_scale;
+                        border-radius: 3px * root.ui_scale;
+                        background: ta_col.has-hover ? rgba(255, 255, 255, 0.15) : transparent;
+                        y: (parent.height - self.height) / 2;
 
                         Text {
-                            text: "➖";
-                            font-size: 8px;
+                            text: "⚊";
+                            font-size: 11px * root.ui_scale;
+                            font-weight: 800;
                             color: #94a3b8;
                             horizontal-alignment: center;
                             vertical-alignment: center;
                         }
-                        TouchArea {
+                        ta_col := TouchArea {
                             clicked => { root.collapse_clicked(); }
                         }
                     }
 
                     // Settings button
                     Rectangle {
-                        width: 18px;
-                        height: 18px;
-                        border-radius: 3px;
-                        background: rgba(255, 255, 255, 0.05);
+                        width: 20px * root.ui_scale;
+                        height: 18px * root.ui_scale;
+                        border-radius: 3px * root.ui_scale;
+                        background: ta_set.has-hover ? rgba(255, 255, 255, 0.15) : transparent;
+                        y: (parent.height - self.height) / 2;
 
                         Text {
                             text: "⚙️";
-                            font-size: 8px;
+                            font-size: 9px * root.ui_scale;
                             color: #94a3b8;
                             horizontal-alignment: center;
                             vertical-alignment: center;
                         }
-                        TouchArea {
+                        ta_set := TouchArea {
                             clicked => { root.open_settings_clicked(); }
                         }
+                    }
+                }
+
+                // Drag TouchArea spanning the entire title bar except the buttons on the right
+                TouchArea {
+                    width: parent.width - 56px * root.ui_scale;
+                    height: 100%;
+                    x: 0;
+                    y: 0;
+                    pointer-event(event) => {
+                        if (event.kind == PointerEventKind.down) {
+                            if (event.button == PointerEventButton.left) {
+                                root.drag_window();
+                            } else if (event.button == PointerEventButton.right) {
+                                root.right_clicked();
+                            }
+                        }
+                    }
+                    double-clicked => {
+                        root.collapse_clicked();
                     }
                 }
             }
 
             // Three Column Layout (Left: Codex, Middle: Relay, Right: Servers)
             HorizontalLayout {
-                spacing: 6px;
+                spacing: 6px * root.ui_scale;
 
                 // Left Column: 210px
                 Rectangle {
-                    width: 210px;
+                    width: 210px * root.ui_scale;
                     CodexCard {
                         width: 100%;
                         height: 100%;
+                        scale: root.ui_scale;
                         codex_running: root.codex_running;
                         plan_type: root.plan_type;
                         weekly_remaining_pct: root.weekly_remaining_pct;
                         countdown_str: root.countdown_str;
+                        five_hour_remaining_pct: root.five_hour_remaining_pct;
+                        five_hour_countdown_str: root.five_hour_countdown_str;
+                        five_hour_color: root.five_hour_color;
+                        has_five_hour: root.has_five_hour;
                         reset_credits: root.reset_credits;
                         updated_time: root.updated_time;
+                        sparkline_image: root.sparkline_image;
+                        exhaustion_str: root.exhaustion_str;
                         bt_devices: root.bt_devices;
+                        is_error: root.codex_is_error;
                         refresh_codex => { root.refresh_codex_clicked(); }
                     }
                 }
@@ -215,10 +289,11 @@ export component MainWindow inherits Window {
 
                 // Middle Column: 330px
                 Rectangle {
-                    width: 330px;
+                    width: 330px * root.ui_scale;
                     RelayView {
                         width: 100%;
                         height: 100%;
+                        scale: root.ui_scale;
                         active_tab: root.relay_active_tab;
                         aihub_auto_mode: root.aihub_auto_mode;
                         aihub_stats_str: root.aihub_stats_str;
@@ -230,6 +305,7 @@ export component MainWindow inherits Window {
                         open_aihub_filter => { root.open_aihub_filter_clicked(); }
                         open_square_filter => { root.open_square_filter_clicked(); }
                         refresh_relay => { root.refresh_relay_clicked(); }
+                        open_pelican_viewer(code, gid) => { root.open_pelican_viewer(code, gid); }
                     }
                 }
 
@@ -241,31 +317,41 @@ export component MainWindow inherits Window {
 
                 // Right Column: 210px
                 Rectangle {
-                    width: 210px;
+                    width: 210px * root.ui_scale;
                     ServerView {
                         width: 100%;
                         height: 100%;
+                        scale: root.ui_scale;
                         time_str: root.time_str;
                         active_tab: root.server_active_tab;
                         gpu_cards: root.gpu_cards;
                         host_cards: root.host_cards;
+                        gantt_rows: root.gantt_rows;
+                        gantt_range_days: root.gantt_range_days;
                         tab_changed(idx) => { root.server_active_tab = idx; }
                         refresh_servers => { root.refresh_servers_clicked(); }
                         load_history => { root.load_history_clicked(); }
+                        cycle_range => { root.cycle_history_range(); }
                     }
                 }
             }
         }
 
-        // Overlay Dialog when filter is open
+        // Overlay Dialog when AIHub filter is open
         if root.filter_dialog_open: Rectangle {
             width: 100%;
             height: 100%;
             background: rgba(0, 0, 0, 0.7);
 
+            // Click gray backdrop to close
+            TouchArea {
+                clicked => { root.close_filter_clicked(); }
+            }
+
             AIHubFilterDialog {
-                width: 90%;
-                height: 90%;
+                width: 92%;
+                height: 92%;
+                scale: root.ui_scale;
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
                 is_auto_mode: root.aihub_auto_mode;
@@ -278,6 +364,34 @@ export component MainWindow inherits Window {
                 toggle_mode(m) => { root.toggle_dlg_mode(m); }
                 toggle_provider_selected(idx, s) => { root.toggle_dlg_selected(idx, s); }
                 toggle_provider_excluded(idx, e) => { root.toggle_dlg_excluded(idx, e); }
+                drag_window => { root.drag_window(); }
+            }
+        }
+
+        // Overlay Dialog when Square filter is open
+        if root.square_filter_dialog_open: Rectangle {
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+
+            // Click gray backdrop to close
+            TouchArea {
+                clicked => { root.square_filter_dialog_open = false; }
+            }
+
+            SquareFilterDialog {
+                width: 85%;
+                height: 85%;
+                scale: root.ui_scale;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                selected_count: root.dlg_sq_selected_count;
+                total_count: root.dlg_sq_total_count;
+                groups: root.dlg_square_groups;
+                close_dialog => { root.square_filter_dialog_open = false; }
+                save_and_apply => { root.save_square_filter_clicked(); }
+                toggle_group_selected(idx, s) => { root.toggle_square_group_selected(idx, s); }
+                drag_window => { root.drag_window(); }
             }
         }
 
@@ -286,6 +400,11 @@ export component MainWindow inherits Window {
             width: 100%;
             height: 100%;
             background: rgba(0, 0, 0, 0.7);
+
+            // Click gray backdrop to close
+            TouchArea {
+                clicked => { root.settings_dialog_open = false; }
+            }
 
             SettingsDialog {
                 width: 80%;
@@ -302,7 +421,20 @@ export component MainWindow inherits Window {
                     root.save_settings_clicked(aot, sc, cdx, rly, auto);
                 }
                 exit_app => { root.exit_app_clicked(); }
+                drag_window => { root.drag_window(); }
             }
+        }
+
+        // Overlay Dialog when Pelican Viewer is open
+        if root.pelican_dialog_open: PelicanDialog {
+            width: 100%;
+            height: 100%;
+            scale: root.ui_scale;
+            provider_code: root.pelican_provider_code;
+            status_text: root.pelican_status_text;
+            items: root.pelican_cards;
+            close => { root.close_pelican_viewer(); }
+            open_image_url(url) => { root.open_external_url(url); }
         }
     }
 }

@@ -10,51 +10,66 @@ export component SettingsDialog inherits Rectangle {
     callback close_dialog();
     callback save_settings(bool /*always_on_top*/, float /*ui_scale*/, int /*codex_int*/, int /*relay_int*/, bool /*autostart*/);
     callback exit_app();
+    callback drag_window();
 
     background: rgba(15, 23, 42, 0.98);
     border-radius: 8px;
     border-width: 1px;
     border-color: rgba(255, 255, 255, 0.15);
 
+    // Consume clicks inside dialog so backdrop TouchArea does not trigger
+    TouchArea {}
+
     VerticalLayout {
         padding: 12px;
         spacing: 10px;
 
         // Header Title Bar
-        HorizontalLayout {
-            alignment: space-between;
-
-            HorizontalLayout {
-                spacing: 5px;
-                Text {
-                    text: "⚙️";
-                    font-size: 11px;
-                    vertical-alignment: center;
-                }
-                Text {
-                    text: "偏好设置与性能选项";
-                    font-size: 11px;
-                    font-weight: 700;
-                    color: #f8fafc;
-                    vertical-alignment: center;
+        Rectangle {
+            height: 24px;
+            TouchArea {
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                        root.drag_window();
+                    }
                 }
             }
 
-            Rectangle {
-                width: 20px;
-                height: 20px;
-                border-radius: 4px;
-                background: rgba(255, 255, 255, 0.05);
+            HorizontalLayout {
+                alignment: space-between;
 
-                Text {
-                    text: "✕";
-                    font-size: 9px;
-                    color: #94a3b8;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                HorizontalLayout {
+                    spacing: 5px;
+                    Text {
+                        text: "⚙️";
+                        font-size: 11px;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: "偏好设置与性能选项";
+                        font-size: 11px;
+                        font-weight: 700;
+                        color: #f8fafc;
+                        vertical-alignment: center;
+                    }
                 }
-                TouchArea {
-                    clicked => { root.close_dialog(); }
+
+                Rectangle {
+                    width: 20px;
+                    height: 20px;
+                    border-radius: 4px;
+                    background: rgba(255, 255, 255, 0.05);
+
+                    Text {
+                        text: "✕";
+                        font-size: 9px;
+                        color: #94a3b8;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => { root.close_dialog(); }
+                    }
                 }
             }
         }

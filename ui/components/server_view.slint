@@ -11,6 +11,7 @@ export struct GPUCardItem {
     utilization: int,
     power_draw: string,
     user: string,
+    user_color: color,
     is_busy: bool,
 }
 
@@ -22,66 +23,80 @@ export struct HostCardItem {
     mem_total_gb: float,
     mem_pct: float,
     disk_free_gb: float,
+    disk_str: string,
     is_online: bool,
 }
 
+export struct GanttRowModel {
+    task: string,
+    has_activity: bool,
+    start_pct: float,
+    width_pct: float,
+    user: string,
+    user_color: color,
+}
+
 export component ServerView inherits Rectangle {
+    in property <float> scale: 1.0;
     in property <int> active_tab: 0; // 0 = Live, 1 = History
     in property <[GPUCardItem]> gpu_cards: [];
     in property <[HostCardItem]> host_cards: [];
+    in property <[GanttRowModel]> gantt_rows: [];
     in property <string> time_str: "21:05:48";
+    in property <int> gantt_range_days: 1;
 
     callback tab_changed(int);
     callback refresh_servers();
     callback load_history();
+    callback cycle_range();
 
     background: rgba(17, 24, 39, 0.7);
-    border-radius: 6px;
+    border-radius: 6px * root.scale;
     border-width: 1px;
     border-color: rgba(255, 255, 255, 0.08);
 
     VerticalLayout {
-        padding: 6px;
-        spacing: 5px;
+        padding: 6px * root.scale;
+        spacing: 5px * root.scale;
 
         // Header Row 1: NVIDIA + CPU Logos + "服务器" + Refresh + Clock
         HorizontalLayout {
             alignment: space-between;
 
             HorizontalLayout {
-                spacing: 4px;
+                spacing: 4px * root.scale;
                 alignment: start;
 
                 Image {
                     source: @image-url("../../assets/nvidia.svg");
-                    width: 12px;
-                    height: 12px;
+                    width: 12px * root.scale;
+                    height: 12px * root.scale;
                     vertical-alignment: center;
                 }
                 Image {
                     source: @image-url("../../assets/cpu.svg");
-                    width: 12px;
-                    height: 12px;
+                    width: 12px * root.scale;
+                    height: 12px * root.scale;
                     vertical-alignment: center;
                 }
                 Text {
                     text: "服务器";
-                    font-size: 10px;
+                    font-size: 10px * root.scale;
                     font-weight: 800;
                     color: #ffffff;
                     vertical-alignment: center;
                 }
                 Rectangle {
-                    width: 16px;
-                    height: 16px;
-                    border-radius: 3px;
+                    width: 16px * root.scale;
+                    height: 16px * root.scale;
+                    border-radius: 3px * root.scale;
                     background: transparent;
-                    Text {
-                        text: "↻";
-                        font-size: 10px;
-                        color: #94a3b8;
-                        horizontal-alignment: center;
+                    Image {
+                        source: @image-url("../../assets/refresh.svg");
+                        width: 10px * root.scale;
+                        height: 10px * root.scale;
                         vertical-alignment: center;
+                        horizontal-alignment: center;
                     }
                     TouchArea {
                         clicked => { root.refresh_servers(); }
@@ -92,23 +107,24 @@ export component ServerView inherits Rectangle {
             // Live Clock Badge
             Rectangle {
                 background: rgba(255, 255, 255, 0.05);
-                border-radius: 3px;
-                height: 16px;
+                border-radius: 3px * root.scale;
+                height: 16px * root.scale;
 
                 HorizontalLayout {
-                    padding-left: 4px;
-                    padding-right: 4px;
-                    spacing: 3px;
+                    padding-left: 4px * root.scale;
+                    padding-right: 4px * root.scale;
+                    spacing: 3px * root.scale;
                     alignment: center;
 
                     Text {
                         text: "🕒";
-                        font-size: 8px;
+                        font-size: 8px * root.scale;
                         vertical-alignment: center;
                     }
                     Text {
                         text: root.time_str;
-                        font-size: 8px;
+                        font-size: 8px * root.scale;
+                        font-family: "Segoe UI";
                         font-weight: 600;
                         color: #94a3b8;
                         vertical-alignment: center;
@@ -117,27 +133,27 @@ export component ServerView inherits Rectangle {
             }
         }
 
-        // Header Row 2: Tabs [⚡ 实时状态] | [📅 历史占用]
+        // Header Row 2: Sub-tabs (实时状态 / 历史占用甘特图)
         HorizontalLayout {
-            spacing: 5px;
+            spacing: 4px * root.scale;
 
             Rectangle {
-                background: root.active_tab == 0 ? rgba(2, 132, 199, 0.35) : rgba(255, 255, 255, 0.05);
+                background: root.active_tab == 0 ? rgba(59, 130, 246, 0.25) : rgba(255, 255, 255, 0.05);
                 border-width: 1px;
-                border-color: root.active_tab == 0 ? #0284c7 : rgba(255, 255, 255, 0.08);
-                border-radius: 3px;
-                height: 18px;
+                border-color: root.active_tab == 0 ? #3b82f6 : rgba(255, 255, 255, 0.08);
+                border-radius: 4px * root.scale;
+                height: 18px * root.scale;
 
                 HorizontalLayout {
-                    padding-left: 6px;
-                    padding-right: 6px;
+                    padding-left: 6px * root.scale;
+                    padding-right: 6px * root.scale;
                     alignment: center;
 
                     Text {
                         text: "⚡ 实时状态";
-                        font-size: 8px;
-                        font-weight: 700;
-                        color: root.active_tab == 0 ? #38bdf8 : #94a3b8;
+                        font-size: 8px * root.scale;
+                        font-weight: 600;
+                        color: root.active_tab == 0 ? #60a5fa : #94a3b8;
                         vertical-alignment: center;
                     }
                 }
@@ -147,22 +163,22 @@ export component ServerView inherits Rectangle {
             }
 
             Rectangle {
-                background: root.active_tab == 1 ? rgba(2, 132, 199, 0.35) : rgba(255, 255, 255, 0.05);
+                background: root.active_tab == 1 ? rgba(59, 130, 246, 0.25) : rgba(255, 255, 255, 0.05);
                 border-width: 1px;
-                border-color: root.active_tab == 1 ? #0284c7 : rgba(255, 255, 255, 0.08);
-                border-radius: 3px;
-                height: 18px;
+                border-color: root.active_tab == 1 ? #3b82f6 : rgba(255, 255, 255, 0.08);
+                border-radius: 4px * root.scale;
+                height: 18px * root.scale;
 
                 HorizontalLayout {
-                    padding-left: 6px;
-                    padding-right: 6px;
+                    padding-left: 6px * root.scale;
+                    padding-right: 6px * root.scale;
                     alignment: center;
 
                     Text {
-                        text: "📅 历史占用";
-                        font-size: 8px;
-                        font-weight: 700;
-                        color: root.active_tab == 1 ? #38bdf8 : #94a3b8;
+                        text: "📊 历史占用";
+                        font-size: 8px * root.scale;
+                        font-weight: 600;
+                        color: root.active_tab == 1 ? #60a5fa : #94a3b8;
                         vertical-alignment: center;
                     }
                 }
@@ -174,21 +190,22 @@ export component ServerView inherits Rectangle {
 
         // Live View: Scrollable GPU Cards + Host Resource Cards
         if root.active_tab == 0: Flickable {
-            content-height: 480px;
+            height: 275px * root.scale;
+            content-height: 380px * root.scale;
 
             VerticalLayout {
-                spacing: 4px;
+                spacing: 4px * root.scale;
 
                 // 5 GPU Cards
                 for card in root.gpu_cards: Rectangle {
                     background: rgba(15, 23, 42, 0.7);
                     border-width: 1px;
                     border-color: rgba(255, 255, 255, 0.06);
-                    border-radius: 4px;
+                    border-radius: 4px * root.scale;
 
                     VerticalLayout {
-                        padding: 4px;
-                        spacing: 2px;
+                        padding: 4px * root.scale;
+                        spacing: 2px * root.scale;
 
                         // Card Header: Server Name + User Badge
                         HorizontalLayout {
@@ -196,30 +213,30 @@ export component ServerView inherits Rectangle {
 
                             Text {
                                 text: card.server_name;
-                                font-size: 8px;
+                                font-size: 8px * root.scale;
                                 font-weight: 700;
                                 color: #f1f5f9;
                                 vertical-alignment: center;
                             }
 
-                            // User Status Badge
+                            // User Status Badge with Distinct User Color
                             Rectangle {
-                                background: card.is_busy ? rgba(239, 68, 68, 0.25) : rgba(16, 185, 129, 0.2);
+                                background: card.is_busy ? rgba(30, 41, 59, 0.8) : rgba(16, 185, 129, 0.2);
                                 border-width: 1px;
-                                border-color: card.is_busy ? rgba(239, 68, 68, 0.6) : rgba(16, 185, 129, 0.4);
-                                border-radius: 3px;
-                                height: 13px;
+                                border-color: card.is_busy ? card.user_color : rgba(16, 185, 129, 0.4);
+                                border-radius: 3px * root.scale;
+                                height: 13px * root.scale;
 
                                 HorizontalLayout {
-                                    padding-left: 3px;
-                                    padding-right: 3px;
+                                    padding-left: 3px * root.scale;
+                                    padding-right: 3px * root.scale;
                                     alignment: center;
 
                                     Text {
-                                        text: card.is_busy ? card.user : "🟢 空闲";
-                                        font-size: 7px;
+                                        text: card.is_busy ? ("👤 " + card.user) : "🟢 空闲";
+                                        font-size: 7px * root.scale;
                                         font-weight: 700;
-                                        color: card.is_busy ? #fca5a5 : #34d399;
+                                        color: card.is_busy ? card.user_color : #34d399;
                                         vertical-alignment: center;
                                     }
                                 }
@@ -228,15 +245,15 @@ export component ServerView inherits Rectangle {
 
                         // VRAM Progress Bar
                         Rectangle {
-                            height: 3px;
-                            border-radius: 1.5px;
+                            height: 3px * root.scale;
+                            border-radius: 1.5px * root.scale;
                             background: rgba(255, 255, 255, 0.08);
 
                             Rectangle {
                                 width: parent.width * (card.vram_pct / 100.0);
                                 height: parent.height;
-                                border-radius: 1.5px;
-                                background: card.vram_pct > 30.0 ? #ef4444 : (card.vram_pct > 10.0 ? #f59e0b : #10b981);
+                                border-radius: 1.5px * root.scale;
+                                background: card.vram_pct >= 30.0 ? #ef4444 : (card.vram_pct >= 10.0 ? #f59e0b : #10b981);
                                 x: 0;
                             }
                         }
@@ -247,22 +264,22 @@ export component ServerView inherits Rectangle {
 
                             Text {
                                 text: "🧠 " + card.memory_used_gb + "/" + card.memory_total_gb + "G (" + card.vram_pct + "%)";
-                                font-size: 7.5px;
+                                font-size: 7.5px * root.scale;
                                 color: #94a3b8;
                                 vertical-alignment: center;
                             }
 
                             HorizontalLayout {
-                                spacing: 3px;
+                                spacing: 3px * root.scale;
                                 Text {
                                     text: "⚡ " + card.power_draw + "W";
-                                    font-size: 7.5px;
+                                    font-size: 7.5px * root.scale;
                                     color: #f59e0b;
                                     vertical-alignment: center;
                                 }
                                 Text {
                                     text: "⚙ " + card.utilization + "%";
-                                    font-size: 7.5px;
+                                    font-size: 7.5px * root.scale;
                                     color: #64748b;
                                     vertical-alignment: center;
                                 }
@@ -276,46 +293,116 @@ export component ServerView inherits Rectangle {
                     background: rgba(30, 41, 59, 0.6);
                     border-width: 1px;
                     border-color: rgba(255, 255, 255, 0.05);
-                    border-radius: 4px;
+                    border-radius: 4px * root.scale;
 
                     VerticalLayout {
-                        padding: 4px;
-                        spacing: 2px;
+                        padding: 4px * root.scale;
+                        spacing: 2px * root.scale;
 
                         HorizontalLayout {
                             alignment: space-between;
 
                             Text {
                                 text: "🖥️ " + h.name;
-                                font-size: 8px;
+                                font-size: 8px * root.scale;
                                 font-weight: 700;
-                                color: #cbd5e1;
+                                color: #e2e8f0;
                                 vertical-alignment: center;
                             }
 
-                            Text {
-                                text: "CPU " + h.cpu_pct + "%";
-                                font-size: 7.5px;
-                                font-weight: 700;
-                                color: h.cpu_pct > 30.0 ? #ef4444 : (h.cpu_pct > 10.0 ? #f59e0b : #10b981);
-                                vertical-alignment: center;
+                            Rectangle {
+                                background: h.is_online ? rgba(16, 185, 129, 0.2) : rgba(239, 68, 68, 0.2);
+                                border-radius: 2px * root.scale;
+                                height: 11px * root.scale;
+
+                                HorizontalLayout {
+                                    padding-left: 3px * root.scale;
+                                    padding-right: 3px * root.scale;
+                                    Text {
+                                        text: h.is_online ? "在线" : "离线";
+                                        font-size: 6.5px * root.scale;
+                                        font-weight: 700;
+                                        color: h.is_online ? #34d399 : #ef4444;
+                                        vertical-alignment: center;
+                                    }
+                                }
                             }
                         }
 
+                        // Host CPU & RAM dual small bars
                         HorizontalLayout {
-                            alignment: space-between;
+                            spacing: 4px * root.scale;
 
-                            Text {
-                                text: "🧠 " + h.mem_used_gb + "/" + h.mem_total_gb + "G";
-                                font-size: 7.5px;
-                                color: #94a3b8;
-                                vertical-alignment: center;
+                            // CPU Stat
+                            HorizontalLayout {
+                                spacing: 2px * root.scale;
+                                Text {
+                                    text: "CPU";
+                                    font-size: 7px * root.scale;
+                                    color: #64748b;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle {
+                                    width: 40px * root.scale;
+                                    height: 3px * root.scale;
+                                    border-radius: 1.5px * root.scale;
+                                    background: rgba(255, 255, 255, 0.08);
+                                    y: (parent.height - self.height) / 2;
+                                    Rectangle {
+                                        width: parent.width * (h.cpu_pct / 100.0);
+                                        height: parent.height;
+                                        border-radius: 1.5px * root.scale;
+                                        background: h.cpu_pct >= 30.0 ? #ef4444 : (h.cpu_pct >= 10.0 ? #f59e0b : #10b981);
+                                        x: 0;
+                                    }
+                                }
+                                Text {
+                                    text: h.cpu_pct + "%";
+                                    font-size: 7px * root.scale;
+                                    color: h.cpu_pct >= 30.0 ? #ef4444 : (h.cpu_pct >= 10.0 ? #f59e0b : #94a3b8);
+                                    vertical-alignment: center;
+                                }
                             }
 
+                            // RAM Stat
+                            HorizontalLayout {
+                                spacing: 2px * root.scale;
+                                Text {
+                                    text: "内存";
+                                    font-size: 7px * root.scale;
+                                    color: #64748b;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle {
+                                    width: 40px * root.scale;
+                                    height: 3px * root.scale;
+                                    border-radius: 1.5px * root.scale;
+                                    background: rgba(255, 255, 255, 0.08);
+                                    y: (parent.height - self.height) / 2;
+                                    Rectangle {
+                                        width: parent.width * (h.mem_pct / 100.0);
+                                        height: parent.height;
+                                        border-radius: 1.5px * root.scale;
+                                        background: h.mem_pct > 80.0 ? #ef4444 : (h.mem_pct > 50.0 ? #f59e0b : #10b981);
+                                        x: 0;
+                                    }
+                                }
+                                Text {
+                                    text: h.mem_used_gb + "/" + h.mem_total_gb + "G";
+                                    font-size: 7px * root.scale;
+                                    color: #94a3b8;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                        // Disk Stat
+                        if h.disk_str != "": HorizontalLayout {
+                            spacing: 2px * root.scale;
                             Text {
-                                text: "💾 剩 " + h.disk_free_gb + "G";
-                                font-size: 7.5px;
-                                color: #64748b;
+                                text: h.disk_str;
+                                font-size: 7px * root.scale;
+                                color: #cbd5e1;
                                 vertical-alignment: center;
                             }
                         }
@@ -324,29 +411,35 @@ export component ServerView inherits Rectangle {
             }
         }
 
-        // History View: Timeline Gantt Chart
+        // History View: 24h Gantt Timeline
         if root.active_tab == 1: VerticalLayout {
-            spacing: 4px;
+            spacing: 4px * root.scale;
 
             HorizontalLayout {
                 alignment: space-between;
 
                 Rectangle {
-                    background: rgba(255, 255, 255, 0.05);
-                    border-radius: 3px;
-                    height: 16px;
+                    background: rgba(255, 255, 255, 0.08);
+                    border-radius: 3px * root.scale;
+                    border-width: 1px;
+                    border-color: rgba(255, 255, 255, 0.15);
+                    height: 16px * root.scale;
 
                     HorizontalLayout {
-                        padding-left: 4px;
-                        padding-right: 4px;
+                        padding-left: 6px * root.scale;
+                        padding-right: 6px * root.scale;
                         alignment: center;
 
                         Text {
-                            text: "范围: 1 天";
-                            font-size: 7.5px;
+                            text: "范围: " + root.gantt_range_days + " 天";
+                            font-size: 7.5px * root.scale;
+                            font-weight: 600;
                             color: #cbd5e1;
                             vertical-alignment: center;
                         }
+                    }
+                    TouchArea {
+                        clicked => { root.cycle_range(); }
                     }
                 }
 
@@ -354,17 +447,25 @@ export component ServerView inherits Rectangle {
                     background: rgba(2, 132, 199, 0.2);
                     border-width: 1px;
                     border-color: rgba(2, 132, 199, 0.4);
-                    border-radius: 3px;
-                    height: 16px;
+                    border-radius: 3px * root.scale;
+                    height: 16px * root.scale;
 
                     HorizontalLayout {
-                        padding-left: 4px;
-                        padding-right: 4px;
+                        padding-left: 4px * root.scale;
+                        padding-right: 4px * root.scale;
+                        spacing: 2px * root.scale;
                         alignment: center;
 
+                        Image {
+                            source: @image-url("../../assets/refresh.svg");
+                            width: 8px * root.scale;
+                            height: 8px * root.scale;
+                            vertical-alignment: center;
+                        }
+
                         Text {
-                            text: "↻ 载入";
-                            font-size: 7.5px;
+                            text: "载入";
+                            font-size: 7.5px * root.scale;
                             font-weight: 700;
                             color: #38bdf8;
                             vertical-alignment: center;
@@ -376,18 +477,18 @@ export component ServerView inherits Rectangle {
                 }
             }
 
-            // Compact Gantt labels (35px width) and timeline
+            // Compact Gantt labels and timeline
             VerticalLayout {
-                spacing: 2px;
-                for t in ["L40S [0]", "L40S [1]", "L40S [2]", "A100 [0]", "A100 [1]"]: HorizontalLayout {
-                    spacing: 2px;
-                    height: 18px;
+                spacing: 2px * root.scale;
+                for row in root.gantt_rows: HorizontalLayout {
+                    spacing: 2px * root.scale;
+                    height: 18px * root.scale;
 
                     Rectangle {
-                        width: 35px;
+                        width: 38px * root.scale;
                         Text {
-                            text: t;
-                            font-size: 7.5px;
+                            text: row.task;
+                            font-size: 7.5px * root.scale;
                             font-weight: 600;
                             color: #94a3b8;
                             vertical-alignment: center;
@@ -397,15 +498,24 @@ export component ServerView inherits Rectangle {
 
                     Rectangle {
                         background: rgba(15, 23, 42, 0.6);
-                        border-radius: 2px;
+                        border-radius: 2px * root.scale;
 
-                        Rectangle {
-                            width: parent.width * 0.4;
-                            height: 10px;
-                            border-radius: 2px;
-                            background: #3b82f6;
-                            x: parent.width * 0.1;
+                        if row.has_activity: Rectangle {
+                            width: max(10px * root.scale, parent.width * row.width_pct);
+                            height: 12px * root.scale;
+                            border-radius: 2px * root.scale;
+                            background: row.user_color;
+                            x: parent.width * row.start_pct;
                             y: (parent.height - self.height) / 2;
+
+                            Text {
+                                text: row.user;
+                                font-size: 6.5px * root.scale;
+                                font-weight: 700;
+                                color: #ffffff;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
                         }
                     }
                 }

@@ -47,8 +47,6 @@ class CodexQuotaView(QWidget):
         self.plan_badge = QLabel("PLUS", self)
         self.plan_badge.setProperty("class", "BadgePlan")
         
-        self.status_light = CodexStatusLight(self, size=logo_sz)
-        
         btn_sz = max(14, int(round(18 * self.scale)))
         self.refresh_btn = QPushButton("🔄", self)
         self.refresh_btn.setProperty("class", "IconButton")
@@ -59,7 +57,6 @@ class CodexQuotaView(QWidget):
         self.header_layout.addWidget(self.logo_lbl)
         self.header_layout.addWidget(self.title_lbl)
         self.header_layout.addWidget(self.plan_badge)
-        self.header_layout.addWidget(self.status_light)
         self.header_layout.addStretch()
         self.header_layout.addWidget(self.refresh_btn)
         
@@ -174,7 +171,6 @@ class CodexQuotaView(QWidget):
         self.scale = max(0.5, float(scale))
         logo_sz = max(9, int(round(13 * self.scale)))
         self.logo_lbl.setPixmap(get_openai_pixmap(logo_sz))
-        self.status_light.set_size(logo_sz)
         btn_sz = max(14, int(round(18 * self.scale)))
         self.refresh_btn.setFixedSize(btn_sz, btn_sz)
         self.sparkline.set_scale(self.scale)
@@ -189,8 +185,8 @@ class CodexQuotaView(QWidget):
             self.update_data(self._last_data)
 
     def set_codex_running_state(self, running: bool):
-        """Update status light state."""
-        self.status_light.set_running_state(running)
+        """No-op kept for interface compatibility."""
+        pass
 
     def update_data(self, data: Dict[str, Any]):
         """Update quota numbers with exact minute timestamps and uniform scaled font."""

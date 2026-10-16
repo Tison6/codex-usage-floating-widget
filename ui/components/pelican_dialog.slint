@@ -1,0 +1,191 @@
+import { Theme } from "../style.slint";
+import { ScrollView } from "std-widgets.slint";
+
+export struct PelicanDialogCardItem {
+    id: string,
+    published_at_str: string,
+    url: string,
+    has_image: bool,
+    img: image,
+}
+
+export component PelicanDialog inherits Rectangle {
+    in property <float> scale: 1.0;
+    in property <string> provider_code: "A018-Plus/K12";
+    in property <string> status_text: "共 0 张实测图";
+    in property <[PelicanDialogCardItem]> items: [];
+
+    callback close();
+    callback open_image_url(string);
+
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.75);
+
+    // Backdrop click to close
+    TouchArea {
+        clicked => { root.close(); }
+    }
+
+    // Modal Card
+    Rectangle {
+        width: min(parent.width - 20px, 720px * root.scale);
+        height: min(parent.height - 20px, 340px * root.scale);
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: rgba(15, 23, 42, 0.98);
+        border-radius: 10px * root.scale;
+        border-width: 1px;
+        border-color: rgba(255, 255, 255, 0.15);
+        clip: true;
+
+        VerticalLayout {
+            padding: 10px * root.scale;
+            spacing: 8px * root.scale;
+
+            // Header Bar
+            HorizontalLayout {
+                alignment: space-between;
+                height: 22px * root.scale;
+
+                HorizontalLayout {
+                    spacing: 8px * root.scale;
+                    alignment: start;
+
+                    Text {
+                        text: root.provider_code + " 鹈鹕实测图";
+                        font-size: 11px * root.scale;
+                        font-weight: 800;
+                        color: #f1f5f9;
+                        vertical-alignment: center;
+                    }
+
+                    Text {
+                        text: root.status_text;
+                        font-size: 9px * root.scale;
+                        color: #94a3b8;
+                        vertical-alignment: center;
+                    }
+                }
+
+                // Close Button
+                Rectangle {
+                    width: 20px * root.scale;
+                    height: 20px * root.scale;
+                    border-radius: 10px * root.scale;
+                    background: ta_close.has-hover ? rgba(239, 68, 68, 0.25) : rgba(255, 255, 255, 0.08);
+
+                    Text {
+                        text: "✕";
+                        font-size: 9.5px * root.scale;
+                        font-weight: 800;
+                        color: ta_close.has-hover ? #ef4444 : #94a3b8;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    ta_close := TouchArea {
+                        clicked => { root.close(); }
+                    }
+                }
+            }
+
+            // Divider
+            Rectangle {
+                height: 1px;
+                background: rgba(255, 255, 255, 0.08);
+            }
+
+            // Image Gallery Scroll Area
+            ScrollView {
+                height: parent.height - 48px * root.scale;
+
+                VerticalLayout {
+                    spacing: 6px * root.scale;
+                    alignment: start;
+
+                    if root.items.length == 0: Rectangle {
+                        height: 160px * root.scale;
+                        Text {
+                            text: "⏳ 正在加载实测图记录，请稍候...";
+                            font-size: 11px * root.scale;
+                            color: #94a3b8;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    // Render grid as rows of 3 items
+                    for item in root.items: Rectangle {
+                        height: 120px * root.scale;
+                        background: rgba(255, 255, 255, 0.03);
+                        border-radius: 6px * root.scale;
+                        border-width: 1px;
+                        border-color: ta_card.has-hover ? #38bdf8 : rgba(255, 255, 255, 0.08);
+                        clip: true;
+
+                        VerticalLayout {
+                            padding: 4px * root.scale;
+                            spacing: 3px * root.scale;
+
+                            // Image Area
+                            Rectangle {
+                                height: 92px * root.scale;
+                                background: rgba(0, 0, 0, 0.3);
+                                border-radius: 4px * root.scale;
+                                clip: true;
+
+                                if item.has-image: Image {
+                                    source: item.img;
+                                    width: 100%;
+                                    height: 100%;
+                                    image-fit: contain;
+                                }
+
+                                if !item.has-image: Text {
+                                    text: "🖼️ 图片加载中...";
+                                    font-size: 9px * root.scale;
+                                    color: #64748b;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            // Timestamp Footer
+                            Rectangle {
+                                height: 16px * root.scale;
+                                background: rgba(15, 23, 42, 0.85);
+                                border-radius: 3px * root.scale;
+
+                                HorizontalLayout {
+                                    padding-left: 4px * root.scale;
+                                    padding-right: 4px * root.scale;
+                                    alignment: space-between;
+
+                                    Text {
+                                        text: "🕒 " + item.published-at-str;
+                                        font-size: 8px * root.scale;
+                                        font-weight: 600;
+                                        color: #cbd5e1;
+                                        vertical-alignment: center;
+                                    }
+
+                                    Text {
+                                        text: "🔗 点击打开大图";
+                                        font-size: 7.5px * root.scale;
+                                        color: #38bdf8;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+
+                        ta_card := TouchArea {
+                            clicked => { root.open_image_url(item.url); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

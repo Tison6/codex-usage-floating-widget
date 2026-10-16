@@ -1,93 +1,112 @@
 import { Theme } from "../style.slint";
 
 export component MiniCapsule inherits Rectangle {
+    in property <float> scale: 1.0;
     in property <bool> codex_running: false;
     in property <string> bt_icon: "🎙️";
     in property <string> bt_battery: "100";
     in property <[string]> gpu_vals: ["0", "0", "0", "61", "0"];
-    in property <[color]> gpu_val_colors: [#00e676, #00e676, #00e676, #ef4444, #00e676];
+    in property <[color]> gpu_val_colors: [#10b981, #10b981, #10b981, #ef4444, #10b981];
     in property <[string]> gpu_srv_cpu_vals: ["3", "4", "1"];
-    in property <[color]> gpu_srv_cpu_colors: [#00e676, #00e676, #00e676];
+    in property <[color]> gpu_srv_cpu_colors: [#10b981, #10b981, #10b981];
     in property <string> codex_5h_val: "100";
+    in property <color> codex_5h_color: #10b981;
     in property <string> codex_wk_val: "37";
+    in property <color> codex_wk_color: #10b981;
     in property <[string]> srv_cpu_vals: ["93", "92", "49"];
     in property <[color]> srv_cpu_val_colors: [#ef4444, #ef4444, #ef4444];
 
     callback clicked();
+    callback right_clicked();
     callback drag_window();
 
-    background: #0f141c;
-    border-radius: 17px;
-    border-width: 1px;
-    border-color: rgba(255, 255, 255, 0.12);
+    background: rgba(16, 20, 30, 0.92);
+    border-radius: 11px * root.scale;
+    border-width: 2px * root.scale;
+    border-color: root.codex_running ? #f59e0b : #10b981;
 
-    TouchArea {
-        clicked => { root.clicked(); }
-        moved => { root.drag_window(); }
+    ta := TouchArea {
+        property <length> press_x: 0px;
+        property <length> press_y: 0px;
+        property <bool> is_down: false;
+        property <bool> has_dragged: false;
+        property <length> cur_dx: self.mouse-x - self.press_x;
+        property <length> cur_dy: self.mouse-y - self.press_y;
+        property <float> cur_dist_sq: (self.cur_dx / 1px) * (self.cur_dx / 1px) + (self.cur_dy / 1px) * (self.cur_dy / 1px);
+
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                if (event.button == PointerEventButton.left) {
+                    self.press_x = self.mouse-x;
+                    self.press_y = self.mouse-y;
+                    self.is_down = true;
+                    self.has_dragged = false;
+                } else if (event.button == PointerEventButton.right) {
+                    root.right_clicked();
+                }
+            } else if (event.kind == PointerEventKind.up) {
+                if (event.button == PointerEventButton.left) {
+                    if (self.is_down && !self.has_dragged) {
+                        root.clicked();
+                    }
+                    self.is_down = false;
+                    self.has_dragged = false;
+                }
+            } else if (event.kind == PointerEventKind.cancel) {
+                self.is_down = false;
+                self.has_dragged = false;
+            }
+        }
+        moved => {
+            if (self.is_down && !self.has_dragged) {
+                if (self.cur_dist_sq > 36) {
+                    self.has_dragged = true;
+                    root.drag_window();
+                }
+            }
+        }
     }
 
     VerticalLayout {
-        padding-left: 9px;
-        padding-right: 9px;
-        padding-top: 3px;
-        padding-bottom: 3px;
-        spacing: 2px;
+        padding-left: 5px * root.scale;
+        padding-right: 5px * root.scale;
+        padding-top: 2px * root.scale;
+        padding-bottom: 2px * root.scale;
+        spacing: 1px * root.scale;
         alignment: center;
 
-        // Row 1: 🎙️ 100 | [NVIDIA] 0 · 0 · 0 · 61 · 0 | 3 · 4 · 1
+        // Row 1: [NVIDIA] 0 · 0 · 0 · 61 · 1 | 45 · 46 · 48
         HorizontalLayout {
-            spacing: 5px;
+            spacing: 2px * root.scale;
             alignment: start;
-
-            // BT Device
-            HorizontalLayout {
-                spacing: 3px;
-                Text {
-                    text: root.bt_icon;
-                    font-size: 8.5px;
-                    vertical-alignment: center;
-                }
-                Text {
-                    text: root.bt_battery;
-                    font-size: 8.5px;
-                    font-weight: 800;
-                    color: #00e676;
-                    vertical-alignment: center;
-                }
-            }
-
-            // Separator |
-            Text {
-                text: "|";
-                font-size: 7.5px;
-                color: rgba(255, 255, 255, 0.2);
-                vertical-alignment: center;
-            }
 
             // NVIDIA Logo + 5 GPU Cards
             HorizontalLayout {
-                spacing: 3px;
+                spacing: 2px * root.scale;
                 Image {
                     source: @image-url("../../assets/nvidia.svg");
-                    width: 10px;
-                    height: 10px;
+                    width: 13px * root.scale;
+                    height: 13px * root.scale;
                     vertical-alignment: center;
                 }
 
                 HorizontalLayout {
-                    spacing: 2px;
+                    spacing: 2px * root.scale;
                     for val[idx] in root.gpu_vals: HorizontalLayout {
-                        spacing: 2px;
+                        spacing: 2px * root.scale;
                         if idx > 0: Text {
                             text: "·";
-                            font-size: 7.5px;
-                            color: rgba(255, 255, 255, 0.3);
+                            font-family: "Segoe UI";
+                            font-size: 9px * root.scale;
+                            font-weight: 400;
+                            color: #6b7280;
                             vertical-alignment: center;
                         }
                         Text {
                             text: val;
-                            font-size: 8.5px;
-                            font-weight: 800;
+                            font-family: "Segoe UI";
+                            font-size: 10px * root.scale;
+                            font-weight: 700;
                             color: root.gpu_val_colors[idx];
                             vertical-alignment: center;
                         }
@@ -98,26 +117,31 @@ export component MiniCapsule inherits Rectangle {
             // Separator |
             Text {
                 text: "|";
-                font-size: 7.5px;
-                color: rgba(255, 255, 255, 0.2);
+                font-family: "Segoe UI";
+                font-size: 9px * root.scale;
+                font-weight: 400;
+                color: #4b5563;
                 vertical-alignment: center;
             }
 
             // 3 GPU Server CPUs
             HorizontalLayout {
-                spacing: 2px;
+                spacing: 2px * root.scale;
                 for val[idx] in root.gpu_srv_cpu_vals: HorizontalLayout {
-                    spacing: 2px;
+                    spacing: 2px * root.scale;
                     if idx > 0: Text {
                         text: "·";
-                        font-size: 7.5px;
-                        color: rgba(255, 255, 255, 0.3);
+                        font-family: "Segoe UI";
+                        font-size: 9px * root.scale;
+                        font-weight: 400;
+                        color: #6b7280;
                         vertical-alignment: center;
                     }
                     Text {
                         text: val;
-                        font-size: 8.5px;
-                        font-weight: 800;
+                        font-family: "Segoe UI";
+                        font-size: 10px * root.scale;
+                        font-weight: 700;
                         color: root.gpu_srv_cpu_colors[idx];
                         vertical-alignment: center;
                     }
@@ -125,97 +149,114 @@ export component MiniCapsule inherits Rectangle {
             }
         }
 
-        // Row 2: [OpenAI] 100 · 37 (pulse) | [CPU] 93 · 92 · 49
+        // Row 2: [OpenAI] 28 · 89 | 🖱️ 100 | [CPU] 96 · 96 · 46
         HorizontalLayout {
-            spacing: 5px;
+            spacing: 2px * root.scale;
             alignment: start;
 
-            // OpenAI Logo + 5H & Week Quotas + Pulse
+            // OpenAI Logo + 5H & Week Quotas (No dot status light)
             HorizontalLayout {
-                spacing: 3px;
+                spacing: 2px * root.scale;
                 Image {
                     source: @image-url("../../assets/openai.svg");
-                    width: 10px;
-                    height: 10px;
+                    width: 13px * root.scale;
+                    height: 13px * root.scale;
                     vertical-alignment: center;
                 }
 
                 Text {
                     text: root.codex_5h_val;
-                    font-size: 8.5px;
-                    font-weight: 800;
-                    color: #00e676;
+                    font-family: "Segoe UI";
+                    font-size: 10px * root.scale;
+                    font-weight: 700;
+                    color: root.codex_5h_color;
                     vertical-alignment: center;
                 }
 
                 Text {
                     text: "·";
-                    font-size: 7.5px;
-                    color: rgba(255, 255, 255, 0.3);
+                    font-family: "Segoe UI";
+                    font-size: 9px * root.scale;
+                    font-weight: 400;
+                    color: #6b7280;
                     vertical-alignment: center;
                 }
 
                 Text {
                     text: root.codex_wk_val;
-                    font-size: 8.5px;
-                    font-weight: 800;
-                    color: #f59e0b;
+                    font-family: "Segoe UI";
+                    font-size: 10px * root.scale;
+                    font-weight: 700;
+                    color: root.codex_wk_color;
                     vertical-alignment: center;
-                }
-
-                // Status Ring
-                Rectangle {
-                    width: 8px;
-                    height: 8px;
-                    border-radius: 4px;
-                    border-width: 1.5px;
-                    border-color: root.codex_running ? #10b981 : #f59e0b;
-                    background: transparent;
-                    y: (parent.height - self.height) / 2;
-
-                    Rectangle {
-                        width: 3px;
-                        height: 3px;
-                        border-radius: 1.5px;
-                        background: root.codex_running ? #10b981 : #f59e0b;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                    }
                 }
             }
 
             // Separator |
             Text {
                 text: "|";
-                font-size: 7.5px;
-                color: rgba(255, 255, 255, 0.2);
+                font-family: "Segoe UI";
+                font-size: 9px * root.scale;
+                font-weight: 400;
+                color: #4b5563;
+                vertical-alignment: center;
+            }
+
+            // BT Device in Row 2 between Codex and CPU
+            HorizontalLayout {
+                spacing: 2px * root.scale;
+                Text {
+                    text: root.bt_icon;
+                    font-size: 9.5px * root.scale;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.bt_battery;
+                    font-family: "Segoe UI";
+                    font-size: 10px * root.scale;
+                    font-weight: 700;
+                    color: #10b981;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Separator |
+            Text {
+                text: "|";
+                font-family: "Segoe UI";
+                font-size: 9px * root.scale;
+                font-weight: 400;
+                color: #4b5563;
                 vertical-alignment: center;
             }
 
             // CPU Logo + 3 Host CPUs
             HorizontalLayout {
-                spacing: 3px;
+                spacing: 2px * root.scale;
                 Image {
                     source: @image-url("../../assets/cpu.svg");
-                    width: 10px;
-                    height: 10px;
+                    width: 13px * root.scale;
+                    height: 13px * root.scale;
                     vertical-alignment: center;
                 }
 
                 HorizontalLayout {
-                    spacing: 2px;
+                    spacing: 2px * root.scale;
                     for val[idx] in root.srv_cpu_vals: HorizontalLayout {
-                        spacing: 2px;
+                        spacing: 2px * root.scale;
                         if idx > 0: Text {
                             text: "·";
-                            font-size: 7.5px;
-                            color: rgba(255, 255, 255, 0.3);
+                            font-family: "Segoe UI";
+                            font-size: 9px * root.scale;
+                            font-weight: 400;
+                            color: #6b7280;
                             vertical-alignment: center;
                         }
                         Text {
                             text: val;
-                            font-size: 8.5px;
-                            font-weight: 800;
+                            font-family: "Segoe UI";
+                            font-size: 10px * root.scale;
+                            font-weight: 700;
                             color: root.srv_cpu_val_colors[idx];
                             vertical-alignment: center;
                         }

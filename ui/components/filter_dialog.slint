@@ -14,6 +14,7 @@ export struct DialogProviderItem {
 }
 
 export component AIHubFilterDialog inherits Rectangle {
+    in property <float> scale: 1.0;
     in property <bool> is_auto_mode: true;
     in property <int> selected_count: 4;
     in property <int> excluded_count: 0;
@@ -25,66 +26,84 @@ export component AIHubFilterDialog inherits Rectangle {
     callback toggle_mode(bool);
     callback toggle_provider_selected(int, bool);
     callback toggle_provider_excluded(int, bool);
+    callback drag_window();
 
     background: rgba(15, 23, 42, 0.98);
     border-radius: 8px;
     border-width: 1px;
     border-color: rgba(255, 255, 255, 0.12);
 
+    // Consume clicks inside dialog so backdrop TouchArea does not trigger
+    TouchArea {}
+
     VerticalLayout {
-        padding: 10px;
-        spacing: 8px;
+        padding: 10px * root.scale;
+        spacing: 8px * root.scale;
 
         // Title Bar
-        HorizontalLayout {
-            alignment: space-between;
-
-            Text {
-                text: "⚙ 勾选 AIHub 监控供应商 (实时参数筛选)";
-                font-size: 11px;
-                font-weight: 700;
-                color: #f8fafc;
-                vertical-alignment: center;
+        Rectangle {
+            height: 22px * root.scale;
+            TouchArea {
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                        root.drag_window();
+                    }
+                }
             }
 
-            Rectangle {
-                width: 18px;
-                height: 18px;
-                border-radius: 9px;
-                background: rgba(255, 255, 255, 0.05);
+            HorizontalLayout {
+                alignment: space-between;
 
-                Text {
-                    text: "✕";
-                    font-size: 9px;
-                    color: #94a3b8;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                HorizontalLayout {
+                    spacing: 4px * root.scale;
+                    Text {
+                        text: "⚙ 勾选 AIHub 监控供应商 (实时参数筛选)";
+                        font-size: 11.5px * root.scale;
+                        font-weight: 700;
+                        color: #f8fafc;
+                        vertical-alignment: center;
+                    }
                 }
-                TouchArea {
-                    clicked => { root.close_dialog(); }
+
+                Rectangle {
+                    width: 18px * root.scale;
+                    height: 18px * root.scale;
+                    border-radius: 9px * root.scale;
+                    background: rgba(255, 255, 255, 0.05);
+
+                    Text {
+                        text: "✕";
+                        font-size: 9.5px * root.scale;
+                        color: #94a3b8;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => { root.close_dialog(); }
+                    }
                 }
             }
         }
 
         // Mode Selector
         HorizontalLayout {
-            spacing: 8px;
+            spacing: 8px * root.scale;
 
             Rectangle {
                 background: root.is_auto_mode ? rgba(16, 185, 129, 0.25) : rgba(255, 255, 255, 0.05);
                 border-width: 1px;
                 border-color: root.is_auto_mode ? #10b981 : rgba(255, 255, 255, 0.1);
-                border-radius: 4px;
-                height: 22px;
+                border-radius: 4px * root.scale;
+                height: 24px * root.scale;
 
                 HorizontalLayout {
-                    padding-left: 8px;
-                    padding-right: 8px;
+                    padding-left: 8px * root.scale;
+                    padding-right: 8px * root.scale;
                     alignment: center;
 
                     Text {
                         text: "🤖 自动模式 (按默认阈值每分钟动态更新)";
-                        font-size: 8.5px;
+                        font-size: 10px * root.scale;
                         font-weight: 600;
                         color: root.is_auto_mode ? #34d399 : #94a3b8;
                         vertical-alignment: center;
@@ -99,17 +118,17 @@ export component AIHubFilterDialog inherits Rectangle {
                 background: !root.is_auto_mode ? rgba(59, 130, 246, 0.25) : rgba(255, 255, 255, 0.05);
                 border-width: 1px;
                 border-color: !root.is_auto_mode ? #3b82f6 : rgba(255, 255, 255, 0.1);
-                border-radius: 4px;
-                height: 22px;
+                border-radius: 4px * root.scale;
+                height: 24px * root.scale;
 
                 HorizontalLayout {
-                    padding-left: 8px;
-                    padding-right: 8px;
+                    padding-left: 8px * root.scale;
+                    padding-right: 8px * root.scale;
                     alignment: center;
 
                     Text {
                         text: "✋ 手动模式 (按勾选项监控)";
-                        font-size: 8.5px;
+                        font-size: 10px * root.scale;
                         font-weight: 600;
                         color: !root.is_auto_mode ? #60a5fa : #94a3b8;
                         vertical-alignment: center;
@@ -123,89 +142,124 @@ export component AIHubFilterDialog inherits Rectangle {
 
         // Table Header
         HorizontalLayout {
-            spacing: 4px;
-            Text { text: "检测 / 供应商代码"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: left; }
-            Rectangle { width: 36px; Text { text: "倍率"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: center; } }
-            Rectangle { width: 42px; Text { text: "真实倍率"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: center; } }
-            Rectangle { width: 38px; Text { text: "缓存率"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: center; } }
-            Rectangle { width: 36px; Text { text: "TTFT"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: center; } }
-            Rectangle { width: 44px; Text { text: "成功率"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: center; } }
-            Rectangle { width: 32px; Text { text: "实测图"; font-size: 8px; font-weight: 700; color: #64748b; horizontal-alignment: center; } }
-            Rectangle { width: 36px; Text { text: "剔除"; font-size: 8px; font-weight: 700; color: #ef4444; horizontal-alignment: center; } }
+            spacing: 4px * root.scale;
+            height: 20px * root.scale;
+
+            Rectangle { width: 22px * root.scale; Text { text: "选"; font-size: 9px * root.scale; font-weight: 700; color: #10b981; horizontal-alignment: center; vertical-alignment: center; } }
+            Rectangle { width: 26px * root.scale; Text { text: "剔除"; font-size: 9px * root.scale; font-weight: 700; color: #ef4444; horizontal-alignment: center; vertical-alignment: center; } }
+            Text { text: "检测 / 供应商代码"; font-size: 9.5px * root.scale; font-weight: 700; color: #64748b; horizontal-alignment: left; vertical-alignment: center; }
+
+            Rectangle { width: 44px * root.scale; Text { text: "倍率"; font-size: 9.5px * root.scale; font-weight: 700; color: #64748b; horizontal-alignment: center; vertical-alignment: center; } }
+            Rectangle { width: 50px * root.scale; Text { text: "真实倍率"; font-size: 9.5px * root.scale; font-weight: 700; color: #64748b; horizontal-alignment: center; vertical-alignment: center; } }
+            Rectangle { width: 46px * root.scale; Text { text: "缓存率"; font-size: 9.5px * root.scale; font-weight: 700; color: #64748b; horizontal-alignment: center; vertical-alignment: center; } }
+            Rectangle { width: 44px * root.scale; Text { text: "TTFT"; font-size: 9.5px * root.scale; font-weight: 700; color: #64748b; horizontal-alignment: center; vertical-alignment: center; } }
+            Rectangle { width: 50px * root.scale; Text { text: "成功率"; font-size: 9.5px * root.scale; font-weight: 700; color: #64748b; horizontal-alignment: center; vertical-alignment: center; } }
+            Rectangle { width: 40px * root.scale; Text { text: "实测图"; font-size: 9.5px * root.scale; font-weight: 700; color: #64748b; horizontal-alignment: center; vertical-alignment: center; } }
         }
 
         // Table Provider List
         Flickable {
-            content-height: 280px;
+            content-height: root.providers.length * (27px * root.scale);
 
             VerticalLayout {
-                spacing: 3px;
+                spacing: 3px * root.scale;
 
                 for p[idx] in root.providers: Rectangle {
                     background: p.is_excluded ? rgba(239, 68, 68, 0.05) : (p.is_selected ? rgba(16, 185, 129, 0.06) : rgba(255, 255, 255, 0.02));
-                    border-radius: 4px;
-                    height: 24px;
+                    border-radius: 4px * root.scale;
+                    height: 25px * root.scale;
 
                     HorizontalLayout {
-                        padding: 3px;
-                        spacing: 4px;
+                        padding: 3px * root.scale;
+                        spacing: 4px * root.scale;
+
+                        // Column 1: Select Checkbox (选)
+                        Rectangle {
+                            width: 22px * root.scale;
+                            Rectangle {
+                                width: 14px * root.scale;
+                                height: 14px * root.scale;
+                                border-radius: 3px * root.scale;
+                                border-width: 1px;
+                                border-color: p.is_selected ? #10b981 : rgba(255, 255, 255, 0.2);
+                                background: p.is_selected ? #10b981 : transparent;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+
+                                if p.is_selected: Text {
+                                    text: "✓";
+                                    font-size: 9px * root.scale;
+                                    color: #ffffff;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            TouchArea {
+                                clicked => {
+                                    if !p.is_excluded {
+                                        root.toggle_provider_selected(idx, !p.is_selected);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Column 2: Exclude Checkbox (剔除)
+                        Rectangle {
+                            width: 26px * root.scale;
+                            Rectangle {
+                                width: 14px * root.scale;
+                                height: 14px * root.scale;
+                                border-radius: 3px * root.scale;
+                                border-width: 1px;
+                                border-color: p.is_excluded ? #ef4444 : rgba(239, 68, 68, 0.4);
+                                background: p.is_excluded ? #ef4444 : transparent;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+
+                                if p.is_excluded: Text {
+                                    text: "✕";
+                                    font-size: 9px * root.scale;
+                                    color: #ffffff;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            TouchArea {
+                                clicked => {
+                                    root.toggle_provider_excluded(idx, !p.is_excluded);
+                                }
+                            }
+                        }
 
                         // Detection Dot
                         Rectangle {
-                            width: 14px;
+                            width: 12px * root.scale;
                             Rectangle {
-                                width: 7px;
-                                height: 7px;
-                                border-radius: 3.5px;
+                                width: 7px * root.scale;
+                                height: 7px * root.scale;
+                                border-radius: 3.5px * root.scale;
                                 background: p.detection_status == "passed" ? #10b981 : (p.detection_status == "suspected" ? #f59e0b : #64748b);
                                 x: (parent.width - self.width) / 2;
                                 y: (parent.height - self.height) / 2;
                             }
                         }
 
-                        // Selected Checkbox & Code
-                        HorizontalLayout {
-                            spacing: 4px;
-                            Rectangle {
-                                width: 13px;
-                                height: 13px;
-                                border-radius: 3px;
-                                border-width: 1px;
-                                border-color: p.is_selected ? #10b981 : rgba(255, 255, 255, 0.2);
-                                background: p.is_selected ? #10b981 : transparent;
-                                y: (parent.height - self.height) / 2;
-
-                                if p.is_selected: Text {
-                                    text: "✓";
-                                    font-size: 8px;
-                                    color: #ffffff;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-                                TouchArea {
-                                    clicked => {
-                                        if !p.is_excluded {
-                                            root.toggle_provider_selected(idx, !p.is_selected);
-                                        }
-                                    }
-                                }
-                            }
-
-                            Text {
-                                text: p.code;
-                                font-size: 8.5px;
-                                font-weight: 600;
-                                color: p.is_excluded ? #64748b : #e2e8f0;
-                                vertical-alignment: center;
-                            }
+                        // Provider Code
+                        Text {
+                            text: p.code;
+                            font-size: 10px * root.scale;
+                            font-weight: 600;
+                            color: p.is_excluded ? #64748b : #e2e8f0;
+                            vertical-alignment: center;
+                            horizontal-alignment: left;
                         }
 
                         // Nominal Multiplier
                         Rectangle {
-                            width: 36px;
+                            width: 44px * root.scale;
                             Text {
                                 text: p.multiplier_str;
-                                font-size: 8px;
+                                font-size: 9.5px * root.scale;
                                 color: #60a5fa;
                                 vertical-alignment: center;
                                 horizontal-alignment: center;
@@ -214,10 +268,10 @@ export component AIHubFilterDialog inherits Rectangle {
 
                         // Effective Multiplier
                         Rectangle {
-                            width: 42px;
+                            width: 50px * root.scale;
                             Text {
                                 text: p.effective_multiplier_str;
-                                font-size: 8px;
+                                font-size: 9.5px * root.scale;
                                 font-weight: 700;
                                 color: #34d399;
                                 vertical-alignment: center;
@@ -227,10 +281,10 @@ export component AIHubFilterDialog inherits Rectangle {
 
                         // Cache Hit Rate
                         Rectangle {
-                            width: 38px;
+                            width: 46px * root.scale;
                             Text {
                                 text: p.cache_hit_rate;
-                                font-size: 8px;
+                                font-size: 9.5px * root.scale;
                                 color: #94a3b8;
                                 vertical-alignment: center;
                                 horizontal-alignment: center;
@@ -239,10 +293,10 @@ export component AIHubFilterDialog inherits Rectangle {
 
                         // TTFT
                         Rectangle {
-                            width: 36px;
+                            width: 44px * root.scale;
                             Text {
                                 text: p.ttft_str;
-                                font-size: 8px;
+                                font-size: 9.5px * root.scale;
                                 color: #94a3b8;
                                 vertical-alignment: center;
                                 horizontal-alignment: center;
@@ -251,10 +305,10 @@ export component AIHubFilterDialog inherits Rectangle {
 
                         // Success Rate
                         Rectangle {
-                            width: 44px;
+                            width: 50px * root.scale;
                             Text {
                                 text: p.success_rate_str;
-                                font-size: 8px;
+                                font-size: 9.5px * root.scale;
                                 font-weight: 700;
                                 color: #10b981;
                                 vertical-alignment: center;
@@ -264,41 +318,13 @@ export component AIHubFilterDialog inherits Rectangle {
 
                         // Image icon
                         Rectangle {
-                            width: 32px;
+                            width: 40px * root.scale;
                             Text {
                                 text: p.has_image ? "📷" : "-";
-                                font-size: 8px;
+                                font-size: 9.5px * root.scale;
                                 color: p.has_image ? #10b981 : #475569;
                                 vertical-alignment: center;
                                 horizontal-alignment: center;
-                            }
-                        }
-
-                        // Red Exclusion Checkbox (剔除)
-                        Rectangle {
-                            width: 36px;
-                            Rectangle {
-                                width: 13px;
-                                height: 13px;
-                                border-radius: 3px;
-                                border-width: 1px;
-                                border-color: p.is_excluded ? #ef4444 : rgba(239, 68, 68, 0.4);
-                                background: p.is_excluded ? #ef4444 : transparent;
-                                x: (parent.width - self.width) / 2;
-                                y: (parent.height - self.height) / 2;
-
-                                if p.is_excluded: Text {
-                                    text: "✕";
-                                    font-size: 8px;
-                                    color: #ffffff;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-                                TouchArea {
-                                    clicked => {
-                                        root.toggle_provider_excluded(idx, !p.is_excluded);
-                                    }
-                                }
                             }
                         }
                     }
@@ -312,24 +338,235 @@ export component AIHubFilterDialog inherits Rectangle {
 
             Text {
                 text: "已勾选: " + root.selected_count + "  |  🚫 已剔除: " + root.excluded_count + "  |  总计: " + root.total_count + " 个供应商";
-                font-size: 8px;
+                font-size: 9.5px * root.scale;
                 color: #94a3b8;
                 vertical-alignment: center;
             }
 
             Rectangle {
                 background: #10b981;
-                border-radius: 4px;
-                height: 22px;
+                border-radius: 4px * root.scale;
+                height: 24px * root.scale;
 
                 HorizontalLayout {
-                    padding-left: 10px;
-                    padding-right: 10px;
+                    padding-left: 10px * root.scale;
+                    padding-right: 10px * root.scale;
                     alignment: center;
 
                     Text {
                         text: "保存并应用";
-                        font-size: 9px;
+                        font-size: 10px * root.scale;
+                        font-weight: 700;
+                        color: #ffffff;
+                        vertical-alignment: center;
+                    }
+                }
+                TouchArea {
+                    clicked => { root.save_and_apply(); }
+                }
+            }
+        }
+    }
+}
+
+export struct SquareDialogGroupItem {
+    name: string,
+    model: string,
+    multiplier: string,
+    is_selected: bool,
+}
+
+export component SquareFilterDialog inherits Rectangle {
+    in property <float> scale: 1.0;
+    in property <int> selected_count: 3;
+    in property <int> total_count: 12;
+    in-out property <[SquareDialogGroupItem]> groups: [];
+
+    callback close_dialog();
+    callback save_and_apply();
+    callback toggle_group_selected(int, bool);
+    callback drag_window();
+
+    background: rgba(15, 23, 42, 0.98);
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.12);
+
+    // Consume clicks inside dialog so backdrop TouchArea does not trigger
+    TouchArea {}
+
+    VerticalLayout {
+        padding: 10px * root.scale;
+        spacing: 8px * root.scale;
+
+        // Title Bar
+        Rectangle {
+            height: 22px * root.scale;
+            TouchArea {
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                        root.drag_window();
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                alignment: space-between;
+
+                HorizontalLayout {
+                    spacing: 4px * root.scale;
+                    Text {
+                        text: "⚙ 勾选 Square 监控项 (实时生效)";
+                        font-size: 11.5px * root.scale;
+                        font-weight: 700;
+                        color: #f8fafc;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle {
+                    width: 18px * root.scale;
+                    height: 18px * root.scale;
+                    border-radius: 9px * root.scale;
+                    background: rgba(255, 255, 255, 0.05);
+
+                    Text {
+                        text: "✕";
+                        font-size: 9.5px * root.scale;
+                        color: #94a3b8;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => { root.close_dialog(); }
+                    }
+                }
+            }
+        }
+
+        // Subtitle
+        Text {
+            text: "勾选需要重点监控的 Square 分组与模型，面板将按勾选实时轮询刷新";
+            font-size: 9.5px * root.scale;
+            color: #64748b;
+        }
+
+        // Scrollable Group List
+        Flickable {
+            content-height: root.groups.length * (28px * root.scale);
+
+            VerticalLayout {
+                spacing: 2px * root.scale;
+                for item[idx] in root.groups: Rectangle {
+                    height: 26px * root.scale;
+                    border-radius: 4px * root.scale;
+                    background: item.is_selected ? rgba(59, 130, 246, 0.15) : (ta_sq_row.has-hover ? rgba(255, 255, 255, 0.05) : rgba(255, 255, 255, 0.02));
+                    border-width: 1px;
+                    border-color: item.is_selected ? rgba(59, 130, 246, 0.4) : transparent;
+
+                    ta_sq_row := TouchArea {
+                        clicked => { root.toggle_group_selected(idx, !item.is_selected); }
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 8px * root.scale;
+                        padding-right: 8px * root.scale;
+                        spacing: 8px * root.scale;
+                        alignment: space-between;
+
+                        HorizontalLayout {
+                            spacing: 8px * root.scale;
+                            alignment: start;
+
+                            // Checkbox
+                            Rectangle {
+                                width: 14px * root.scale;
+                                height: 14px * root.scale;
+                                border-radius: 3px * root.scale;
+                                border-width: 1.2px;
+                                border-color: item.is_selected ? #3b82f6 : #64748b;
+                                background: item.is_selected ? #3b82f6 : transparent;
+                                y: (parent.height - self.height) / 2;
+
+                                if item.is_selected: Text {
+                                    text: "✓";
+                                    font-size: 9px * root.scale;
+                                    font-weight: 800;
+                                    color: #ffffff;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Text {
+                                text: item.name;
+                                font-size: 10px * root.scale;
+                                font-weight: 700;
+                                color: item.is_selected ? #ffffff : #cbd5e1;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px * root.scale;
+                            alignment: end;
+
+                            Text {
+                                text: item.model;
+                                font-size: 9.5px * root.scale;
+                                color: #94a3b8;
+                                vertical-alignment: center;
+                            }
+
+                            Rectangle {
+                                background: rgba(59, 130, 246, 0.2);
+                                border-radius: 3px * root.scale;
+                                height: 16px * root.scale;
+                                y: (parent.height - self.height) / 2;
+
+                                HorizontalLayout {
+                                    padding-left: 5px * root.scale;
+                                    padding-right: 5px * root.scale;
+                                    alignment: center;
+                                    Text {
+                                        text: item.multiplier;
+                                        font-size: 9px * root.scale;
+                                        font-weight: 700;
+                                        color: #60a5fa;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Footer
+        HorizontalLayout {
+            alignment: space-between;
+
+            Text {
+                text: "已勾选: " + root.selected_count + " / " + root.total_count + " 个监控分组";
+                font-size: 9.5px * root.scale;
+                color: #94a3b8;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                background: #3b82f6;
+                border-radius: 4px * root.scale;
+                height: 24px * root.scale;
+
+                HorizontalLayout {
+                    padding-left: 10px * root.scale;
+                    padding-right: 10px * root.scale;
+                    alignment: center;
+
+                    Text {
+                        text: "保存并应用";
+                        font-size: 10px * root.scale;
                         font-weight: 700;
                         color: #ffffff;
                         vertical-alignment: center;

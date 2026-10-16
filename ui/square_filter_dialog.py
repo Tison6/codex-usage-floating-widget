@@ -768,20 +768,31 @@ class AIHubFilterDialog(QDialog):
         # 3. Table Column Header
         h_row = QHBoxLayout()
         h_row.setContentsMargins(8, 2, 8, 2)
+        h_row.setSpacing(6)
+
+        h_sel = QLabel("监听")
+        h_sel.setFixedWidth(24)
+        h_sel.setStyleSheet("font-size: 9px; font-weight: 700; color: #10B981;")
+        h_sel.setToolTip("勾选监听")
+        h_row.addWidget(h_sel)
+
+        h_exc = QLabel("剔除")
+        h_exc.setFixedWidth(26)
+        h_exc.setStyleSheet("font-size: 9px; font-weight: 700; color: #EF4444;")
+        h_exc.setToolTip("勾选剔除后，无论在自动模式还是手动模式下，该供应商均被排除不会被监控")
+        h_row.addWidget(h_exc)
+
         h_prov = QLabel("检测 / 供应商代码")
         h_prov.setStyleSheet("font-size: 9px; font-weight: 700; color: #64748B;")
         h_prov.setToolTip("AIHub 模型真实性检测:\n🟢 绿色: 模型检测通过\n🟠 橙色: 模型疑似非原生/掺水/存在异常\n⚪ 灰色: 待定/样本不足/未检测")
         h_row.addWidget(h_prov)
         h_row.addStretch()
 
-        for title, w in [("倍率", 40), ("真实倍率", 46), ("缓存率", 44), ("TTFT", 40), ("成功率", 52), ("实测图", 36), ("剔除", 36)]:
+        for title, w in [("倍率", 40), ("真实倍率", 46), ("缓存率", 44), ("TTFT", 40), ("成功率", 52), ("实测图", 36)]:
             lbl = QLabel(title)
             lbl.setFixedWidth(w)
             lbl.setAlignment(Qt.AlignCenter)
             lbl.setStyleSheet("font-size: 9px; font-weight: 700; color: #64748B;")
-            if title == "剔除":
-                lbl.setStyleSheet("font-size: 9px; font-weight: 700; color: #EF4444;")
-                lbl.setToolTip("勾选剔除后，无论在自动模式还是手动模式下，该供应商均被排除不会被监控")
             h_row.addWidget(lbl)
         layout.addLayout(h_row)
 
@@ -820,19 +831,72 @@ class AIHubFilterDialog(QDialog):
             r_lay.setContentsMargins(6, 4, 6, 4)
             r_lay.setSpacing(6)
 
+            is_exc = code in self.excluded_providers
+
+            # Column 1: Select Checkbox (监听)
+            cb = QCheckBox()
+            cb.setFixedWidth(22)
+            cb.setChecked(code in cur_selected and not is_exc)
+            cb.setEnabled(not is_exc)
+            cb.setStyleSheet(CHECKBOX_STYLE)
+            cb.setCursor(Qt.PointingHandCursor)
+            cb.setToolTip(f"监听 {code}")
+            cb.stateChanged.connect(self.update_count_label)
+            self.provider_checkboxes[code] = cb
+            r_lay.addWidget(cb)
+
+            # Column 2: Exclude Checkbox (剔除)
+            cb_exc = QCheckBox()
+            cb_exc.setFixedWidth(24)
+            cb_exc.setChecked(is_exc)
+            cb_exc.setCursor(Qt.PointingHandCursor)
+            cb_exc.setToolTip(f"剔除 {code}：勾选后在自动和手动模式下均排除")
+            cb_exc.setStyleSheet("""
+                QCheckBox {
+                    padding-left: 2px;
+                }
+                QCheckBox::indicator {
+                    width: 13px;
+                    height: 13px;
+                    border-radius: 3px;
+                    border: 1px solid rgba(239, 68, 68, 0.45);
+                    background: rgba(255, 255, 255, 0.04);
+                }
+                QCheckBox::indicator:hover {
+                    border-color: #EF4444;
+                    background: rgba(239, 68, 68, 0.18);
+                }
+                QCheckBox::indicator:checked {
+                    background-color: #EF4444;
+                    border-color: #EF4444;
+                }
+            """)
+            def _make_exc_handler(c_code=code, m_cb=cb):
+                def _handler(state):
+                    if state == Qt.Checked:
+                        m_cb.setChecked(False)
+                        m_cb.setEnabled(False)
+                    else:
+                        m_cb.setEnabled(True)
+                    self.update_count_label()
+                return _handler
+
+            cb_exc.stateChanged.connect(_make_exc_handler())
+            self.provider_exclude_checkboxes[code] = cb_exc
+            r_lay.addWidget(cb_exc)
+
+            # Detection Dot
             det_status = p.get("detection_status", "other")
             det_tip = p.get("detection_tip", "")
             dot = DetectionDot(det_status, tooltip=det_tip, size=9, parent=row)
             r_lay.addWidget(dot)
 
-            is_exc = code in self.excluded_providers
-            cb = QCheckBox(code)
-            cb.setChecked(code in cur_selected and not is_exc)
-            cb.setEnabled(not is_exc)
-            cb.setStyleSheet(CHECKBOX_STYLE)
-            cb.stateChanged.connect(self.update_count_label)
-            self.provider_checkboxes[code] = cb
-            r_lay.addWidget(cb)
+            # Provider Code Label
+            code_lbl = QLabel(code)
+            code_lbl.setStyleSheet("font-size: 10px; font-weight: 600; color: #E2E8F0;" if not is_exc else "font-size: 10px; font-weight: 600; color: #64748B;")
+            code_lbl.setCursor(Qt.PointingHandCursor)
+            code_lbl.mousePressEvent = lambda e, m_cb=cb, exc=is_exc: m_cb.setChecked(not m_cb.isChecked()) if not exc else None
+            r_lay.addWidget(code_lbl)
             r_lay.addStretch()
 
             # Multipliers: Standard/Nominal and Real/Effective
@@ -910,52 +974,25 @@ class AIHubFilterDialog(QDialog):
             r_lay.addWidget(sr_lbl)
 
             # Has image indicator
-            img_lbl = QLabel("📷" if p.get("has_image") else "-")
+            has_img = bool(p.get("has_image"))
+            img_lbl = QLabel("📷" if has_img else "-")
             img_lbl.setFixedWidth(36)
             img_lbl.setAlignment(Qt.AlignCenter)
-            img_lbl.setStyleSheet("font-size: 10px; color: #10B981;" if p.get("has_image") else "font-size: 9px; color: #475569;")
+            img_lbl.setStyleSheet("font-size: 10px; color: #10B981;" if has_img else "font-size: 9px; color: #475569;")
+            if has_img:
+                img_lbl.setCursor(Qt.PointingHandCursor)
+                img_lbl.setToolTip("点击查看实测图 (鹈鹕测图记录)")
+                def _make_pelican_handler(prov=p):
+                    def _open_pelican(e):
+                        try:
+                            from ui.pelican_viewer import PelicanViewerDialog
+                            dlg = PelicanViewerDialog(prov, self.aihub_client, prov.get("code", ""), self)
+                            dlg.exec_()
+                        except Exception as err:
+                            print(f"Error opening Pelican viewer: {err}")
+                    return _open_pelican
+                img_lbl.mousePressEvent = _make_pelican_handler(p)
             r_lay.addWidget(img_lbl)
-
-            # Exclude checkbox (剔除)
-            cb_exc = QCheckBox()
-            cb_exc.setFixedWidth(36)
-            cb_exc.setChecked(is_exc)
-            cb_exc.setCursor(Qt.PointingHandCursor)
-            cb_exc.setToolTip(f"剔除 {code}：勾选后在自动和手动模式下均排除")
-            cb_exc.setStyleSheet("""
-                QCheckBox {
-                    padding-left: 10px;
-                }
-                QCheckBox::indicator {
-                    width: 13px;
-                    height: 13px;
-                    border-radius: 3px;
-                    border: 1px solid rgba(239, 68, 68, 0.45);
-                    background: rgba(255, 255, 255, 0.04);
-                }
-                QCheckBox::indicator:hover {
-                    border-color: #EF4444;
-                    background: rgba(239, 68, 68, 0.18);
-                }
-                QCheckBox::indicator:checked {
-                    background-color: #EF4444;
-                    border-color: #EF4444;
-                }
-            """)
-            def _make_exc_handler(c_code=code, m_cb=cb):
-                def _handler(state):
-                    if state == Qt.Checked:
-                        m_cb.setChecked(False)
-                        m_cb.setEnabled(False)
-                    else:
-                        m_cb.setEnabled(True)
-                    self.update_count_label()
-                return _handler
-
-            cb_exc.stateChanged.connect(_make_exc_handler())
-            self.provider_exclude_checkboxes[code] = cb_exc
-            r_lay.addWidget(cb_exc)
-
             c_layout.addWidget(row)
 
         c_layout.addStretch()

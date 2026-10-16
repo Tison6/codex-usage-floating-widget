@@ -170,14 +170,8 @@ class FloatingWidget(QWidget):
     def init_ui(self):
         """Build widget layout for both Expanded and Mini modes."""
         self.root_layout = QVBoxLayout(self)
-        self.root_layout.setContentsMargins(6, 6, 6, 6)
-        
-        # Drop shadow effect
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(16)
-        shadow.setColor(QColor(0, 0, 0, 150))
-        shadow.setOffset(0, 3)
-        self.setGraphicsEffect(shadow)
+        self.root_layout.setContentsMargins(0, 0, 0, 0)
+        self.root_layout.setSpacing(0)
 
         # -------------------------------------------------------------
         # 1. Expanded Mode Container
@@ -311,8 +305,6 @@ class FloatingWidget(QWidget):
 
         self.mini_bt_lbl = QLabel("📶 --", self.mini_container)
 
-        self.mini_sep1 = QLabel("|", self.mini_container)
-
         self.mini_nvidia_icon = QLabel(self.mini_container)
         self.mini_nvidia_icon.setToolTip("GPU 显存占用 (7号 L40S x3 · 8号 A100 x2)")
 
@@ -328,8 +320,6 @@ class FloatingWidget(QWidget):
             self.mini_gpu_3, self.mini_gpu_4
         ]
 
-        self.row1_layout.addWidget(self.mini_bt_lbl)
-        self.row1_layout.addWidget(self.mini_sep1)
         self.row1_layout.addWidget(self.mini_nvidia_icon)
 
         self.mini_gpu_dots = []
@@ -367,7 +357,7 @@ class FloatingWidget(QWidget):
         self.row1_layout.addStretch()
         self.mini_vbox.addLayout(self.row1_layout)
 
-        # === Row 2 (Bottom): 2 OpenAI Quotas + Spinner + 3 CPUs ===
+        # === Row 2 (Bottom): OpenAI Quotas + Battery + CPUs ===
         self.row2_layout = QHBoxLayout()
         self.row2_layout.setContentsMargins(0, 0, 0, 0)
         self.row2_layout.setSpacing(max(1, int(round(2 * self.widget_scale))))
@@ -378,8 +368,8 @@ class FloatingWidget(QWidget):
         self.mini_cdx_5h = QLabel("--", self.mini_container)
         self.mini_cdx_dot = QLabel("·", self.mini_container)
         self.mini_cdx_wk = QLabel("--", self.mini_container)
-        self.mini_status_light = CodexStatusLight(self.mini_container, size=max(8, int(round(13 * self.widget_scale))))
 
+        self.mini_sep1 = QLabel("|", self.mini_container)
         self.mini_sep2 = QLabel("|", self.mini_container)
 
         self.mini_cpu_icon = QLabel(self.mini_container)
@@ -399,7 +389,8 @@ class FloatingWidget(QWidget):
         self.row2_layout.addWidget(self.mini_cdx_5h)
         self.row2_layout.addWidget(self.mini_cdx_dot)
         self.row2_layout.addWidget(self.mini_cdx_wk)
-        self.row2_layout.addWidget(self.mini_status_light)
+        self.row2_layout.addWidget(self.mini_sep1)
+        self.row2_layout.addWidget(self.mini_bt_lbl)
         self.row2_layout.addWidget(self.mini_sep2)
         self.row2_layout.addWidget(self.mini_cpu_icon)
 
@@ -415,14 +406,14 @@ class FloatingWidget(QWidget):
         self.row2_layout.addStretch()
         self.mini_vbox.addLayout(self.row2_layout)
 
-        # Ensure clicks anywhere on labels or status light trigger container expand
+        # Ensure clicks anywhere on labels trigger container expand
         all_mini_widgets = [
-            self.mini_bt_lbl, self.mini_sep1, self.mini_nvidia_icon,
+            self.mini_nvidia_icon,
             *self.mini_gpu_labels, *self.mini_gpu_dots,
             self.mini_sep_gpu_cpu,
             *self.mini_gpu_cpu_labels.values(), *self.mini_gpu_cpu_dots,
             self.mini_openai_icon, self.mini_cdx_5h, self.mini_cdx_dot, self.mini_cdx_wk,
-            self.mini_status_light, self.mini_sep2, self.mini_cpu_icon,
+            self.mini_sep1, self.mini_bt_lbl, self.mini_sep2, self.mini_cpu_icon,
             *self.mini_srv_labels.values(), *self.mini_srv_dots
         ]
         for w in all_mini_widgets:
@@ -482,9 +473,8 @@ class FloatingWidget(QWidget):
         for dot in self.mini_srv_dots:
             dot.setStyleSheet(dot_style)
 
-        # 4. Status Light Size
-        st_sz = max(8, int(round(13 * self.widget_scale)))
-        self.mini_status_light.set_size(st_sz)
+        # 4. Re-apply border color state
+        self._set_status_light_running(getattr(self, "_codex_running", False))
 
         # 5. Re-render labels with new scaled font sizes
         self._render_mini_bluetooth()
@@ -602,12 +592,12 @@ class FloatingWidget(QWidget):
         base_w = int(round(775 * self.widget_scale))
         base_h = int(round(365 * self.widget_scale))
         if self.is_mini:
-            self.root_layout.setContentsMargins(2, 2, 2, 2)
+            self.root_layout.setContentsMargins(0, 0, 0, 0)
             self.expanded_container.hide()
             self.mini_container.show()
-            self.setFixedSize(int(round(208 * self.widget_scale)), int(round(37 * self.widget_scale)))
+            self.setFixedSize(int(round(168 * self.widget_scale)), int(round(35 * self.widget_scale)))
         else:
-            self.root_layout.setContentsMargins(6, 6, 6, 6)
+            self.root_layout.setContentsMargins(0, 0, 0, 0)
             self.mini_container.hide()
             self.expanded_container.show()
             self.setFixedSize(base_w, base_h)
@@ -708,9 +698,16 @@ class FloatingWidget(QWidget):
         self._set_status_light_running(is_running)
 
     def _set_status_light_running(self, running: bool):
-        """Update both mini and expanded status lights."""
-        self.mini_status_light.set_running_state(running)
-        self.codex_view.set_codex_running_state(running)
+        """Update window outer border color: green (#10B981) when idle, orange (#F59E0B) when working."""
+        self._codex_running = running
+        border_col = "rgba(245, 158, 11, 0.95)" if running else "rgba(16, 185, 129, 0.95)"
+        px_mini = max(7, int(round(11 * self.widget_scale + 1e-5)))
+        px_main = max(8, int(round(12 * self.widget_scale + 1e-5)))
+        border_w = max(2, int(round(2.0 * self.widget_scale)))
+        if hasattr(self, "mini_container"):
+            self.mini_container.setStyleSheet(f"QWidget#MiniWidget {{ background-color: rgba(16, 20, 30, 0.94); border: {border_w}px solid {border_col}; border-radius: {px_mini}px; }}")
+        if hasattr(self, "expanded_container"):
+            self.expanded_container.setStyleSheet(f"QWidget#MainWidget {{ background-color: rgba(16, 20, 30, 0.96); border: {border_w}px solid {border_col}; border-radius: {px_main}px; }}")
 
     def refresh_all_data(self, force: bool = True):
         """Trigger async scan for Bluetooth, Codex, and Relay Stations."""

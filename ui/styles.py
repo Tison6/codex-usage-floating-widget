@@ -15,13 +15,13 @@ def get_main_stylesheet(scale: float = 1.0) -> str:
 /* Global Widget background */
 QWidget#MainWidget {{
     background-color: rgba(16, 20, 30, 0.94);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 2px solid rgba(16, 185, 129, 0.95);
     border-radius: {px(12, 8)}px;
 }}
 
 QWidget#MiniWidget {{
     background-color: rgba(16, 20, 30, 0.92);
-    border: 1px solid rgba(59, 130, 246, 0.35);
+    border: 2px solid rgba(16, 185, 129, 0.95);
     border-radius: {px(11, 7)}px;
 }}
 

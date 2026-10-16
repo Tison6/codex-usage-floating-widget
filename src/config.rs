@@ -127,20 +127,38 @@ pub struct ConfigManager {
 
 impl ConfigManager {
     pub fn new<P: AsRef<Path>>(path: P) -> Self {
-        let p = path.as_ref().to_path_buf();
-        let loaded = Self::load_from_path(&p);
+        let p = path.as_ref();
+        let resolved = if p.exists() {
+            p.to_path_buf()
+        } else if let Ok(exe) = std::env::current_exe() {
+            let candidate1 = exe.parent().map(|d| d.join(p));
+            let candidate2 = exe.parent().and_then(|d| d.parent()).and_then(|d| d.parent()).map(|d| d.join(p));
+            if let Some(c1) = candidate1.filter(|c| c.exists()) {
+                c1
+            } else if let Some(c2) = candidate2.filter(|c| c.exists()) {
+                c2
+            } else {
+                p.to_path_buf()
+            }
+        } else {
+            p.to_path_buf()
+        };
+
+        let loaded = Self::load_from_path(&resolved);
         Self {
-            file_path: p,
+            file_path: resolved,
             config: Arc::new(Mutex::new(loaded)),
         }
     }
 
     fn load_from_path(path: &Path) -> AppConfig {
         if path.exists() {
-            if let Ok(content) = fs::read_to_string(path) {
-                if let Ok(cfg) = serde_json::from_str::<AppConfig>(&content) {
-                    return cfg;
-                }
+            match fs::read_to_string(path) {
+                Ok(content) => match serde_json::from_str::<AppConfig>(&content) {
+                    Ok(cfg) => return cfg,
+                    Err(e) => eprintln!("[ERROR] Failed to parse config {:?}: {}", path, e),
+                },
+                Err(e) => eprintln!("[ERROR] Failed to read config {:?}: {}", path, e),
             }
         }
         AppConfig::default()
@@ -159,5 +177,19 @@ impl ConfigManager {
         if let Ok(serialized) = serde_json::to_string_pretty(&*cfg) {
             let _ = fs::write(&self.file_path, serialized);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_config() {
+        let mgr = ConfigManager::new("config.json");
+        let cfg = mgr.get();
+        println!("Loaded config servers: {}", cfg.servers.len());
+        println!("Loaded is_mini_mode: {}", cfg.is_mini_mode);
+        assert!(!cfg.servers.is_empty(), "Should load servers from config.json");
     }
 }
