@@ -180,6 +180,10 @@ class ProviderNameLabel(QWidget):
         self.code = code
         self.detail = detail
         self.scale = max(0.5, float(scale))
+        self._init_fonts()
+        self.setCursor(Qt.PointingHandCursor)
+
+    def _init_fonts(self):
         code_px = max(6, int(round(7.0 * self.scale)))
         det_px = max(5, int(round(5.8 * self.scale)))
         self.code_font = QFont("Segoe UI")
@@ -187,45 +191,53 @@ class ProviderNameLabel(QWidget):
         self.code_font.setBold(True)
         self.det_font = QFont("Segoe UI")
         self.det_font.setPixelSize(det_px)
-        self.setCursor(Qt.PointingHandCursor)
 
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setClipRect(self.rect())
-
-        fm_code = QFontMetrics(self.code_font)
-        is_off = "[下架]" in self.code
-        name_color = QColor("#94A3B8") if is_off else QColor("#CBD5E1")
-        if self.detail:
-            # 2-line layout: Line 1 = Code name, Line 2 = Grey subtext
-            painter.setFont(self.code_font)
-            painter.setPen(name_color)
-            elided_code = fm_code.elidedText(self.code, Qt.ElideRight, avail_w)
-            y_code = fm_code.ascent() + 2
-            painter.drawText(0, y_code, elided_code)
-
-            painter.setFont(self.det_font)
-            painter.setPen(QColor("#EF4444") if is_off else QColor("#64748B"))
-            fm_det = QFontMetrics(self.det_font)
-            disp_det = "[官方大厅已下架]" if is_off else self.detail
-            elided_det = fm_det.elidedText(disp_det, Qt.ElideRight, avail_w)
-            y_det = self.height() - fm_det.descent() - 2
-            painter.drawText(0, y_det, elided_det)
-        else:
-            # Single line layout: vertically centered
-            painter.setFont(self.code_font)
-            painter.setPen(name_color)
-            elided_code = fm_code.elidedText(self.code, Qt.ElideRight, avail_w)
-            y_base = int((self.height() + fm_code.ascent() - fm_code.descent()) / 2)
-            painter.drawText(0, y_base, elided_code)
-        painter.end()
+    def set_scale(self, scale: float):
+        self.scale = max(0.5, float(scale))
+        self._init_fonts()
+        self.update()
 
     def set_data(self, code: str, detail: str = ""):
         if self.code != code or self.detail != detail:
             self.code = code
             self.detail = detail
             self.update()
+
+    def paintEvent(self, event):
+        try:
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setClipRect(self.rect())
+
+            avail_w = max(10, self.width() - 2)
+            fm_code = QFontMetrics(self.code_font)
+            is_off = "[下架]" in self.code
+            name_color = QColor("#94A3B8") if is_off else QColor("#CBD5E1")
+            if self.detail:
+                # 2-line layout: Line 1 = Code name, Line 2 = Grey subtext
+                painter.setFont(self.code_font)
+                painter.setPen(name_color)
+                elided_code = fm_code.elidedText(self.code, Qt.ElideRight, avail_w)
+                y_code = fm_code.ascent() + 2
+                painter.drawText(0, y_code, elided_code)
+
+                painter.setFont(self.det_font)
+                painter.setPen(QColor("#EF4444") if is_off else QColor("#64748B"))
+                fm_det = QFontMetrics(self.det_font)
+                disp_det = "[官方大厅已下架]" if is_off else self.detail
+                elided_det = fm_det.elidedText(disp_det, Qt.ElideRight, avail_w)
+                y_det = self.height() - fm_det.descent() - 2
+                painter.drawText(0, y_det, elided_det)
+            else:
+                # Single line layout: vertically centered
+                painter.setFont(self.code_font)
+                painter.setPen(name_color)
+                elided_code = fm_code.elidedText(self.code, Qt.ElideRight, avail_w)
+                y_base = int((self.height() + fm_code.ascent() - fm_code.descent()) / 2)
+                painter.drawText(0, y_base, elided_code)
+            painter.end()
+        except Exception:
+            pass
 
 
 class SuccessRateBarWidget(QWidget):
@@ -546,17 +558,40 @@ class RelayStationView(QWidget):
             for w in (entry.get("g_box"), entry.get("mult"), entry.get("out_price"), entry.get("tps"), entry.get("ttft"), entry.get("lat"), entry.get("bar")):
                 if w:
                     w.hide()
+                    w.setParent(None)
                     w.deleteLater()
         self._sq_rows.clear()
+        if hasattr(self, "sq_grid") and self.sq_grid:
+            for i in reversed(range(self.sq_grid.count())):
+                item = self.sq_grid.itemAt(i)
+                if item:
+                    row, col, rspan, cspan = self.sq_grid.getItemPosition(i)
+                    if row > 0:
+                        w = item.widget()
+                        self.sq_grid.removeItem(item)
+                        if w:
+                            w.hide()
+                            w.setParent(None)
+                            w.deleteLater()
 
     def _clear_aihub_rows(self):
         for entry in self._aihub_rows:
             for w in (entry.get("dot"), entry.get("name"), entry.get("nom"), entry.get("thumb"), entry.get("eff"), entry.get("hit"), entry.get("sr"), entry.get("ref")):
                 if w:
                     w.hide()
+                    w.setParent(None)
                     w.deleteLater()
         self._aihub_rows.clear()
         self._active_thumbnails.clear()
+        for grid in (getattr(self, "aihub_grid_left", None), getattr(self, "aihub_grid_right", None)):
+            if grid is not None:
+                while grid.count():
+                    item = grid.takeAt(0)
+                    w = item.widget()
+                    if w:
+                        w.hide()
+                        w.setParent(None)
+                        w.deleteLater()
 
     def _on_thumbnail_loaded(self, url: str, scaled: QImage):
         for thumb in list(self._active_thumbnails):
@@ -628,6 +663,7 @@ class RelayStationView(QWidget):
                     w = item.widget()
                     grid.removeItem(item)
                     w.hide()
+                    w.setParent(None)
                     w.deleteLater()
         self._init_square_headers()
         self._init_aihub_headers()
@@ -796,11 +832,11 @@ class RelayStationView(QWidget):
         self.sq_scroll.setWidgetResizable(True)
         self.sq_scroll.setFixedHeight(max(150, int(round(240 * self.scale))))
         self.sq_scroll.setStyleSheet(SCROLL_STYLE)
-        self.sq_scroll.viewport().setStyleSheet("background: transparent; border: none;")
+        self.sq_scroll.viewport().setStyleSheet("background-color: #171C25; border: none;")
         self.sq_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         self.sq_scroll_content = QWidget()
-        self.sq_scroll_content.setStyleSheet("background: transparent;")
+        self.sq_scroll_content.setStyleSheet("background-color: #171C25;")
         self.sq_grid = QGridLayout(self.sq_scroll_content)
         self.sq_grid.setContentsMargins(1, 1, 2, 1)
         self.sq_grid.setHorizontalSpacing(3)
@@ -907,7 +943,7 @@ class RelayStationView(QWidget):
         self.aihub_header_left = QWidget()
         self.aihub_header_left.setFixedHeight(hdr_row_h)
         self.aihub_header_left.setFixedWidth(left_w)
-        self.aihub_header_left.setStyleSheet("background: transparent;")
+        self.aihub_header_left.setStyleSheet("background-color: #171C25;")
         self.aihub_header_grid_left = QGridLayout(self.aihub_header_left)
         self.aihub_header_grid_left.setContentsMargins(1, 0, 2, 0)
         self.aihub_header_grid_left.setHorizontalSpacing(1)
@@ -930,12 +966,12 @@ class RelayStationView(QWidget):
         self.aihub_scroll_right.setFixedHeight(table_h - hdr_row_h)
         self.aihub_scroll_right.setWidgetResizable(True)
         self.aihub_scroll_right.setStyleSheet(SCROLL_STYLE)
-        self.aihub_scroll_right.viewport().setStyleSheet("background: transparent; border: none;")
+        self.aihub_scroll_right.viewport().setStyleSheet("background-color: #171C25; border: none;")
         self.aihub_scroll_right.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         self.aihub_scroll_right.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
         self.aihub_scroll_content_right = QWidget()
-        self.aihub_scroll_content_right.setStyleSheet("background: transparent;")
+        self.aihub_scroll_content_right.setStyleSheet("background-color: #171C25;")
         self.aihub_scroll_content_right.setMinimumWidth(right_w)
         self.aihub_grid_right = QGridLayout(self.aihub_scroll_content_right)
         self.aihub_grid_right.setContentsMargins(1, 0, 2, 0)
@@ -950,12 +986,12 @@ class RelayStationView(QWidget):
         self.aihub_header_scroll_right.setFixedHeight(hdr_row_h)
         self.aihub_header_scroll_right.setWidgetResizable(True)
         self.aihub_header_scroll_right.setStyleSheet(SCROLL_STYLE)
-        self.aihub_header_scroll_right.viewport().setStyleSheet("background: transparent; border: none;")
+        self.aihub_header_scroll_right.viewport().setStyleSheet("background-color: #171C25; border: none;")
         self.aihub_header_scroll_right.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.aihub_header_scroll_right.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         self.aihub_header_content_right = QWidget()
-        self.aihub_header_content_right.setStyleSheet("background: transparent;")
+        self.aihub_header_content_right.setStyleSheet("background-color: #171C25;")
         self.aihub_header_content_right.setMinimumWidth(right_w)
         self.aihub_header_grid_right = QGridLayout(self.aihub_header_content_right)
         self.aihub_header_grid_right.setContentsMargins(1, 0, 2, 0)
@@ -974,13 +1010,13 @@ class RelayStationView(QWidget):
         self.aihub_scroll_left.setFixedHeight(table_h - hdr_row_h - 9)
         self.aihub_scroll_left.setWidgetResizable(True)
         self.aihub_scroll_left.setStyleSheet(SCROLL_STYLE)
-        self.aihub_scroll_left.viewport().setStyleSheet("background: transparent; border: none;")
+        self.aihub_scroll_left.viewport().setStyleSheet("background-color: #171C25; border: none;")
         self.aihub_scroll_left.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.aihub_scroll_left.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
         self.aihub_scroll_content_left = QWidget()
         self.aihub_scroll_content_left.setFixedWidth(left_w)
-        self.aihub_scroll_content_left.setStyleSheet("background: transparent;")
+        self.aihub_scroll_content_left.setStyleSheet("background-color: #171C25;")
         self.aihub_grid_left = QGridLayout(self.aihub_scroll_content_left)
         self.aihub_grid_left.setContentsMargins(1, 0, 2, 0)
         self.aihub_grid_left.setHorizontalSpacing(1)
