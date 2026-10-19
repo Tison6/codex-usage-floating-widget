@@ -11,6 +11,7 @@ export struct DialogProviderItem {
     has_image: bool,
     is_selected: bool,
     is_excluded: bool,
+    public_detail: string,
 }
 
 export component AIHubFilterDialog inherits Rectangle {
@@ -244,14 +245,26 @@ export component AIHubFilterDialog inherits Rectangle {
                             }
                         }
 
-                        // Provider Code
-                        Text {
-                            text: p.code;
-                            font-size: 10px * root.scale;
-                            font-weight: 600;
-                            color: p.is_excluded ? #64748b : #e2e8f0;
-                            vertical-alignment: center;
-                            horizontal-alignment: left;
+                        // Provider Code & Gray Detail
+                        HorizontalLayout {
+                            spacing: 4px * root.scale;
+                            alignment: start;
+
+                            Text {
+                                text: p.code;
+                                font-size: 10px * root.scale;
+                                font-weight: 600;
+                                color: p.is_excluded ? #64748b : #e2e8f0;
+                                vertical-alignment: center;
+                            }
+
+                            if p.public_detail != "": Text {
+                                text: p.public_detail;
+                                font-size: 8.5px * root.scale;
+                                color: #64748b;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
                         }
 
                         // Nominal Multiplier

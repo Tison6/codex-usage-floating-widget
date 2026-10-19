@@ -95,13 +95,30 @@ class TrayManager:
         self.tray.setContextMenu(menu)
 
     def on_tray_activated(self, reason):
-        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
+        if reason == QSystemTrayIcon.DoubleClick:
+            self.show_and_activate_widget()
+        elif reason == QSystemTrayIcon.Trigger:
             self.toggle_widget_visibility()
 
-    def toggle_widget_visibility(self):
-        if self.widget.isVisible():
-            self.widget.hide()
+    def show_and_activate_widget(self):
+        """Always un-minimize, show and bring widget to top."""
+        if hasattr(self.widget, "_user_hidden"):
+            self.widget._user_hidden = False
+        if self.widget.isMinimized():
+            self.widget.setWindowState(self.widget.windowState() & ~Qt.WindowMinimized | Qt.WindowActive)
+            self.widget.showNormal()
+        self.widget.show()
+        if hasattr(self.widget, "ensure_topmost"):
+            self.widget.ensure_topmost()
         else:
-            self.widget.show()
             self.widget.raise_()
             self.widget.activateWindow()
+
+    def toggle_widget_visibility(self):
+        # If the widget is minimized or hidden -> it should SHOW, not hide!
+        if self.widget.isMinimized() or not self.widget.isVisible():
+            self.show_and_activate_widget()
+        else:
+            if hasattr(self.widget, "_user_hidden"):
+                self.widget._user_hidden = True
+            self.widget.hide()

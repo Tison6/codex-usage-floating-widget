@@ -843,6 +843,7 @@ class AIHubFilterDialog(QDialog):
         c_layout.setSpacing(4)
 
         all_providers = (self.aihub_client.cached_data or {}).get("all_providers", [])
+        all_providers = sorted(all_providers, key=lambda x: x["code"].lower())
         cur_selected = set(self.aihub_client.get_selected_providers() or [])
 
         for p in all_providers:
@@ -924,9 +925,14 @@ class AIHubFilterDialog(QDialog):
             dot = DetectionDot(det_status, tooltip=det_tip, size=9, parent=row)
             r_lay.addWidget(dot)
 
-            # Provider Code Label
-            code_lbl = QLabel(code)
-            code_lbl.setStyleSheet("font-size: 10px; font-weight: 600; color: #E2E8F0;" if not is_exc else "font-size: 10px; font-weight: 600; color: #64748B;")
+            # Provider Code Label + Gray Description Note
+            detail = (p.get("public_detail") or "").strip()
+            is_on = bool(p.get("available", True)) and bool(p.get("visible_in_hall", True))
+            off_tag = "" if is_on else " <span style='font-size: 8px; color: #EF4444; font-weight: 700;'>[已下架]</span>"
+            if detail:
+                code_lbl = QLabel(f"<span style='font-size: 10px; font-weight: 600; color: {'#64748B' if is_exc else '#E2E8F0'};'>{code}</span>{off_tag} <span style='font-size: 8.5px; color: #64748B;'>{detail}</span>")
+            else:
+                code_lbl = QLabel(f"<span style='font-size: 10px; font-weight: 600; color: {'#64748B' if is_exc else '#E2E8F0'};'>{code}</span>{off_tag}")
             code_lbl.setCursor(Qt.PointingHandCursor)
             code_lbl.mousePressEvent = lambda e, m_cb=cb, exc=is_exc: m_cb.setChecked(not m_cb.isChecked()) if not exc else None
             r_lay.addWidget(code_lbl)
@@ -934,7 +940,7 @@ class AIHubFilterDialog(QDialog):
 
             # Multipliers: Standard/Nominal and Real/Effective
             nom_mult = p.get("multiplier_str", "--")
-            eff_mult = p.get("effective_multiplier_str") or nom_mult
+            eff_mult = p.get("effective_multiplier_str") or "--"
 
             nom_lbl = QLabel(nom_mult)
             nom_lbl.setFixedWidth(40)
@@ -979,30 +985,37 @@ class AIHubFilterDialog(QDialog):
             r_lay.addWidget(ttft_lbl)
 
             # Success rate with warning color if bad
-            sr_val = float(p.get("success_rate", 100.0))
+            has_sr = bool(p.get("has_success_rate"))
+            sr_raw = p.get("success_rate")
             sr_text = p.get("success_rate_str", "--")
             sr_lbl = QLabel()
             sr_lbl.setFixedWidth(52)
             sr_lbl.setAlignment(Qt.AlignCenter)
 
-            if sr_val < 50.0:
-                sr_lbl.setText(f"⚠️ {sr_text}")
-                sr_lbl.setStyleSheet("""
-                    background: rgba(239, 68, 68, 0.2);
-                    border: 1px solid rgba(239, 68, 68, 0.4);
-                    color: #EF4444;
-                    border-radius: 3px;
-                    padding: 1px 2px;
-                    font-size: 8px;
-                    font-weight: 700;
-                """)
-                sr_lbl.setToolTip(f"该供应商成功率仅 {sr_val:.1f}%，极不稳定，建议取消勾选！")
-            elif sr_val < 90.0:
-                sr_lbl.setText(sr_text)
-                sr_lbl.setStyleSheet("font-size: 9px; font-weight: 600; color: #F59E0B;")
+            if not has_sr or sr_raw is None or sr_text == "--":
+                sr_lbl.setText("--")
+                sr_lbl.setStyleSheet("font-size: 9px; color: #64748B;")
+                sr_lbl.setToolTip("暂无实测成功率统计")
             else:
-                sr_lbl.setText(sr_text)
-                sr_lbl.setStyleSheet("font-size: 9px; font-weight: 600; color: #10B981;")
+                sr_val = float(sr_raw)
+                if sr_val < 50.0:
+                    sr_lbl.setText(f"⚠️ {sr_text}")
+                    sr_lbl.setStyleSheet("""
+                        background: rgba(239, 68, 68, 0.2);
+                        border: 1px solid rgba(239, 68, 68, 0.4);
+                        color: #EF4444;
+                        border-radius: 3px;
+                        padding: 1px 2px;
+                        font-size: 8px;
+                        font-weight: 700;
+                    """)
+                    sr_lbl.setToolTip(f"该供应商成功率仅 {sr_val:.1f}%，极不稳定，建议取消勾选！")
+                elif sr_val < 90.0:
+                    sr_lbl.setText(sr_text)
+                    sr_lbl.setStyleSheet("font-size: 9px; font-weight: 600; color: #F59E0B;")
+                else:
+                    sr_lbl.setText(sr_text)
+                    sr_lbl.setStyleSheet("font-size: 9px; font-weight: 600; color: #10B981;")
 
             r_lay.addWidget(sr_lbl)
 
@@ -1117,20 +1130,25 @@ class AIHubFilterDialog(QDialog):
                 cb.setChecked(False)
                 continue
 
-            sr = float(p.get("success_rate", 100.0))
-            if min_sr is not None and sr < min_sr:
-                cb.setChecked(False)
-                continue
+            has_sr = bool(p.get("has_success_rate"))
+            sr_raw = p.get("success_rate")
+            if min_sr is not None:
+                if not has_sr or sr_raw is None or float(sr_raw) < min_sr:
+                    cb.setChecked(False)
+                    continue
 
+            has_cache = bool(p.get("has_cache_rate"))
             cache_val = p.get("cache_hit_val", 0.0)
-            if min_cache is not None and cache_val < min_cache:
-                cb.setChecked(False)
-                continue
+            if min_cache is not None:
+                if not has_cache or cache_val < min_cache:
+                    cb.setChecked(False)
+                    continue
 
-            eff_mult = float(p.get("effective_multiplier", p.get("rate_multiplier", 1.0)))
-            if max_eff is not None and eff_mult > max_eff:
-                cb.setChecked(False)
-                continue
+            eff_raw = p.get("effective_multiplier")
+            if max_eff is not None:
+                if eff_raw is None or float(eff_raw) > max_eff:
+                    cb.setChecked(False)
+                    continue
 
             nom_mult = float(p.get("rate_multiplier", 1.0))
             if max_nom is not None and nom_mult > max_nom:

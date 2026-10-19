@@ -27,6 +27,7 @@ export struct AIHubRowModel {
     has_image: bool,
     image_url: string,
     group_id: int,
+    public_detail: string,
     has_thumb: bool,
     thumb_image: image,
 }
@@ -297,14 +298,26 @@ export component RelayView inherits Rectangle {
                     }
                 }
 
-                // Provider Name
-                Text {
-                    text: p.code;
-                    font-size: 8.5px * root.scale;
-                    font-weight: 600;
-                    color: #cbd5e1;
-                    vertical-alignment: center;
-                    overflow: elide;
+                // Provider Name & Gray Detail
+                HorizontalLayout {
+                    spacing: 4px * root.scale;
+                    alignment: start;
+
+                    Text {
+                        text: p.code;
+                        font-size: 8.5px * root.scale;
+                        font-weight: 600;
+                        color: #cbd5e1;
+                        vertical-alignment: center;
+                    }
+
+                    if p.public_detail != "": Text {
+                        text: p.public_detail;
+                        font-size: 7.5px * root.scale;
+                        color: #64748b;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
                 }
 
                 // Nominal Multiplier

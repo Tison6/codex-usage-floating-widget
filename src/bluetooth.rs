@@ -144,16 +144,29 @@ unsafe fn get_devnode_property_string(devinst: u32, key: &DEVPROPKEY) -> Option<
 
 fn extract_device_mac(inst_id: &str) -> Option<String> {
     let upper = inst_id.to_uppercase();
+    // 1. Match DEV_<12-hex>
     if let Some(pos) = upper.find("DEV_") {
         let sub = &upper[pos + 4..];
         if sub.len() >= 12 && sub[..12].chars().all(|c| c.is_ascii_hexdigit()) {
             return Some(sub[..12].to_string());
         }
     }
-    if let Some(pos) = upper.find('&') {
-        let sub = &upper[pos + 1..];
+    // 2. Match BLUETOOTHDEVICE_<12-hex>
+    if let Some(pos) = upper.find("BLUETOOTHDEVICE_") {
+        let sub = &upper[pos + 16..];
         if sub.len() >= 12 && sub[..12].chars().all(|c| c.is_ascii_hexdigit()) {
             return Some(sub[..12].to_string());
+        }
+    }
+    // 3. Match &<12-hex>_ or &<12-hex>$ across any instance ID segment
+    for part in upper.split('&') {
+        let candidate = if let Some(us) = part.find('_') {
+            &part[..us]
+        } else {
+            part
+        };
+        if candidate.len() == 12 && candidate.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Some(candidate.to_string());
         }
     }
     None
@@ -186,7 +199,7 @@ fn guess_device_icon(name: &str, inst_id: &str) -> &'static str {
     } else if ["mouse", "mx master", "anywhere", "g502", "g304", "trackball", "touchpad", "magic mouse"]
         .iter().any(|k| lower.contains(k)) {
         "🖱️"
-    } else if ["mic", "microphone", "dji mic", "wireless mic", "rode"]
+    } else if ["mic", "microphone", "dji", "rode", "麦克风", "话筒", "shure", "lark", "hollyland", "wireless mic"]
         .iter().any(|k| lower.contains(k)) {
         "🎙️"
     } else if ["buds", "earbuds", "freebuds", "airpods", "wh-1000", "wf-1000", "headphone", "headset", "earphone", "qc35", "qc45", "linkbuds"]

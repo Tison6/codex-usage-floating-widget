@@ -785,9 +785,9 @@ class GPUServerView(QWidget):
         # Pre-create Host Cards for 3 GPU servers + 3 CPU servers
         self.host_cards: Dict[str, ServerHostCard] = {}
         host_definitions = [
+            ("4", "GPU 4号 · 2080Ti", "gpu"),
             ("7", "GPU 7号 · L40S", "gpu"),
             ("8", "GPU 8号 · A100", "gpu"),
-            ("4", "GPU 4号 · 2080Ti", "gpu"),
             ("quad", "CPU server-quad", "cpu"),
             ("e5", "CPU server-e5", "cpu"),
             ("8375c", "CPU server-8375c", "cpu"),

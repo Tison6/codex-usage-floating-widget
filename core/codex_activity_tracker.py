@@ -62,12 +62,20 @@ class CodexActivityTracker:
 
         # 2. Today's sessions directory (handles new sessions not yet committed to DB or CLI runs)
         if os.path.exists(self.sessions_dir):
-            today_files = glob.glob(f"{self.sessions_dir}/*/*/*/*.jsonl")
-            if today_files:
-                today_files.sort(key=os.path.getmtime, reverse=True)
-                for f in today_files[:3]:
-                    if f not in candidates:
-                        candidates.append(f)
+            try:
+                today_files = glob.glob(f"{self.sessions_dir}/*/*/*/*.jsonl")
+                if today_files:
+                    def safe_mtime(p):
+                        try:
+                            return os.path.getmtime(p)
+                        except Exception:
+                            return 0.0
+                    today_files.sort(key=safe_mtime, reverse=True)
+                    for f in today_files[:3]:
+                        if f not in candidates and os.path.exists(f):
+                            candidates.append(f)
+            except Exception:
+                pass
 
         self._cached_candidates = candidates
         return candidates

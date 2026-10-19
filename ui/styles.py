@@ -18,11 +18,17 @@ QWidget#MainWidget {{
     border: 2px solid rgba(16, 185, 129, 0.95);
     border-radius: {px(12, 8)}px;
 }}
+QWidget#MainWidget[codex_running="true"] {{
+    border-color: rgba(245, 158, 11, 0.95);
+}}
 
 QWidget#MiniWidget {{
     background-color: rgba(16, 20, 30, 0.92);
     border: 2px solid rgba(16, 185, 129, 0.95);
     border-radius: {px(11, 7)}px;
+}}
+QWidget#MiniWidget[codex_running="true"] {{
+    border-color: rgba(245, 158, 11, 0.95);
 }}
 
 /* Card Sections */

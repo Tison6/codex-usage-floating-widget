@@ -5,7 +5,7 @@ import { RelayView, SquareRowModel, AIHubRowModel } from "components/relay_view.
 import { ServerView, GPUCardItem, HostCardItem, GanttRowModel } from "components/server_view.slint";
 import { AIHubFilterDialog, DialogProviderItem, SquareFilterDialog, SquareDialogGroupItem, SquareDialogModelItem } from "components/filter_dialog.slint";
 import { SettingsDialog } from "components/settings_dialog.slint";
-import { PelicanDialog, PelicanDialogCardItem } from "components/pelican_dialog.slint";
+import { PelicanDialog, PelicanDialogCardItem, PelicanDialogPairItem } from "components/pelican_dialog.slint";
 
 export component MainWindow inherits Window {
     title: "状态小组件";
@@ -90,7 +90,7 @@ export component MainWindow inherits Window {
     in-out property <bool> pelican_dialog_open: false;
     in property <string> pelican_provider_code: "";
     in property <string> pelican_status_text: "";
-    in property <[PelicanDialogCardItem]> pelican_cards: [];
+    in property <[PelicanDialogPairItem]> pelican_pairs: [];
 
     // Callbacks
     callback drag_window();
@@ -464,7 +464,7 @@ export component MainWindow inherits Window {
             scale: root.ui_scale;
             provider_code: root.pelican_provider_code;
             status_text: root.pelican_status_text;
-            items: root.pelican_cards;
+            pairs: root.pelican_pairs;
             close => { root.close_pelican_viewer(); }
             open_image_url(url) => { root.open_external_url(url); }
         }

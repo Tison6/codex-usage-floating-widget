@@ -7,7 +7,10 @@ click-to-expand, auto-collapse on focus loss, and health-based color transitions
 
 from typing import List, Dict, Any, Optional
 import os
+import sys
 import time
+import ctypes
+from ctypes import wintypes
 import psutil
 
 from PyQt5.QtWidgets import (
@@ -119,6 +122,7 @@ class FloatingWidget(QWidget):
         self._drag_pos = QPoint()
         self._press_global_pos = QPoint()
         self._is_dragging = False
+        self._user_hidden = False
         self._current_devices: List[Dict[str, Any]] = []
         self._current_codex_data: Dict[str, Any] = {}
         
@@ -334,19 +338,19 @@ class FloatingWidget(QWidget):
         self.mini_sep_gpu_cpu = QLabel("|", self.mini_container)
         self.row1_layout.addWidget(self.mini_sep_gpu_cpu)
 
-        # 3 GPU-Server CPU labels (7号, 8号, 4号) interleaved with '·' (no extra logo)
+        # 3 GPU-Server CPU labels (4号, 7号, 8号) interleaved with '·' (no extra logo)
+        self.mini_gpu_cpu_4 = QLabel("--", self.mini_container)
         self.mini_gpu_cpu_7 = QLabel("--", self.mini_container)
         self.mini_gpu_cpu_8 = QLabel("--", self.mini_container)
-        self.mini_gpu_cpu_4 = QLabel("--", self.mini_container)
 
         self.mini_gpu_cpu_labels = {
+            "4": self.mini_gpu_cpu_4,
             "7": self.mini_gpu_cpu_7,
             "8": self.mini_gpu_cpu_8,
-            "4": self.mini_gpu_cpu_4,
         }
 
         self.mini_gpu_cpu_dots = []
-        gpu_srv_keys = ["7", "8", "4"]
+        gpu_srv_keys = ["4", "7", "8"]
         for i, sid in enumerate(gpu_srv_keys):
             if i > 0:
                 dot = QLabel("·", self.mini_container)
@@ -484,6 +488,10 @@ class FloatingWidget(QWidget):
 
     def _recenter_around(self, center_point):
         """Reposition window so that its center matches center_point while staying within screen bounds."""
+        if not center_point or center_point.x() < -1000 or center_point.y() < -1000:
+            screen = QApplication.primaryScreen().availableGeometry()
+            center_point = QPoint(screen.right() - 150, screen.top() + 100)
+
         w = self.width()
         h = self.height()
         
@@ -521,8 +529,6 @@ class FloatingWidget(QWidget):
             self._expand_timestamp = time.time()
             self.cfg.set("is_mini_mode", False)
             self.update_mode_visibility()
-            self.layout().activate()
-            self.adjustSize()
             self._recenter_around(old_center)
             self.raise_()
             self.activateWindow()
@@ -535,8 +541,6 @@ class FloatingWidget(QWidget):
             self.is_mini = True
             self.cfg.set("is_mini_mode", True)
             self.update_mode_visibility()
-            self.layout().activate()
-            self.adjustSize()
             
             center_to_use = old_center
             if not getattr(self, "_expanded_dragged", False) and hasattr(self, "_last_mini_center"):
@@ -579,13 +583,73 @@ class FloatingWidget(QWidget):
             self.collapse_to_mini()
 
     def changeEvent(self, event):
-        """Auto-collapse to mini capsule when losing window focus (clicking elsewhere)."""
-        if event.type() in (QEvent.ActivationChange, QEvent.WindowDeactivate):
+        """Auto-collapse to mini capsule when losing window focus; reject minimization unless user-hidden."""
+        if event.type() == QEvent.WindowStateChange:
+            if self.isMinimized() and not getattr(self, "_user_hidden", False):
+                self.setWindowState(self.windowState() & ~Qt.WindowMinimized | Qt.WindowActive)
+                self.showNormal()
+                self.raise_()
+        elif event.type() in (QEvent.ActivationChange, QEvent.WindowDeactivate):
             if not self.isActiveWindow() and not self.is_mini:
                 # Do not collapse if user is interacting with an open dialog or menu
                 if not self._has_active_modal_or_dialog():
                     self.collapse_to_mini()
         super().changeEvent(event)
+
+    def nativeEvent(self, eventType, message):
+        """Intercept Windows messages to prevent Win+D from moving or minimizing the floating widget."""
+        if sys.platform == "win32" and eventType == "windows_generic_MSG":
+            try:
+                msg = wintypes.MSG.from_address(int(message))
+                # WM_SYSCOMMAND (0x0112): Block SC_MINIMIZE (0xF020)
+                if msg.message == 0x0112 and (msg.wParam & 0xFFF0) == 0xF020:
+                    if not getattr(self, "_user_hidden", False):
+                        return True, 0
+                # WM_WINDOWPOSCHANGING (0x0046): Block moving to -32000 (Win+D minimize)
+                elif msg.message == 0x0046 and msg.lParam:
+                    class _WINDOWPOS(ctypes.Structure):
+                        _fields_ = [
+                            ('hwnd', wintypes.HWND),
+                            ('hwndInsertAfter', wintypes.HWND),
+                            ('x', ctypes.c_int),
+                            ('y', ctypes.c_int),
+                            ('cx', ctypes.c_int),
+                            ('cy', ctypes.c_int),
+                            ('flags', wintypes.UINT)
+                        ]
+                    pos = _WINDOWPOS.from_address(msg.lParam)
+                    if (pos.x <= -30000 or pos.y <= -30000) and not getattr(self, "_user_hidden", False):
+                        pos.flags |= (0x0001 | 0x0002)  # SWP_NOSIZE | SWP_NOMOVE
+                        return True, 0
+            except Exception:
+                pass
+        return super().nativeEvent(eventType, message)
+
+    def hideEvent(self, event):
+        """Catch accidental system hiding (e.g. Win+D or screen power cycle) and resurrect."""
+        if not getattr(self, "_user_hidden", False):
+            QTimer.singleShot(150, self.ensure_topmost)
+        super().hideEvent(event)
+
+    def ensure_topmost(self):
+        """Ensure window remains visible and topmost unless user explicitly hid it."""
+        if getattr(self, "_user_hidden", False):
+            return
+        if self.isMinimized():
+            self.setWindowState(self.windowState() & ~Qt.WindowMinimized | Qt.WindowActive)
+            self.showNormal()
+        if not self.isVisible():
+            self.show()
+        if sys.platform == "win32":
+            try:
+                hwnd = int(self.winId())
+                if hwnd:
+                    ctypes.windll.user32.SetWindowPos(
+                        hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010  # SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE
+                    )
+            except Exception:
+                pass
+        self.raise_()
 
     def update_mode_visibility(self):
         """Instant toggle between mini and expanded views with zero lag."""
@@ -651,7 +715,7 @@ class FloatingWidget(QWidget):
         pos = self.cfg.get("window_pos")
         screen = QApplication.primaryScreen().availableGeometry()
         expected_w = int(round(775 * self.widget_scale)) if not self.is_mini else int(round(178 * self.widget_scale))
-        if pos and len(pos) == 2:
+        if pos and len(pos) == 2 and pos[0] > -1000 and pos[1] > -1000:
             x = max(screen.left() + 10, min(pos[0], screen.right() - expected_w))
             y = max(screen.top() + 10, min(pos[1], screen.bottom() - 150))
             self.move(x, y)
@@ -689,6 +753,11 @@ class FloatingWidget(QWidget):
         self.focus_check_timer.timeout.connect(self._check_auto_collapse_safety)
         self.focus_check_timer.start(350)
 
+        # 6. Anti-disappearing and topmost watchdog timer (every 2.5s)
+        self.watchdog_timer = QTimer(self)
+        self.watchdog_timer.timeout.connect(self.ensure_topmost)
+        self.watchdog_timer.start(2500)
+
     # -------------------------------------------------------------
     # Fast Activity & Data Methods
     # -------------------------------------------------------------
@@ -699,15 +768,20 @@ class FloatingWidget(QWidget):
 
     def _set_status_light_running(self, running: bool):
         """Update window outer border color: green (#10B981) when idle, orange (#F59E0B) when working."""
+        if getattr(self, "_codex_running", None) == running:
+            return
         self._codex_running = running
-        border_col = "rgba(245, 158, 11, 0.95)" if running else "rgba(16, 185, 129, 0.95)"
-        px_mini = max(7, int(round(11 * self.widget_scale + 1e-5)))
-        px_main = max(8, int(round(12 * self.widget_scale + 1e-5)))
-        border_w = max(2, int(round(2.0 * self.widget_scale)))
+        run_val = "true" if running else "false"
         if hasattr(self, "mini_container"):
-            self.mini_container.setStyleSheet(f"QWidget#MiniWidget {{ background-color: rgba(16, 20, 30, 0.94); border: {border_w}px solid {border_col}; border-radius: {px_mini}px; }}")
+            self.mini_container.setProperty("codex_running", run_val)
+            self.mini_container.style().unpolish(self.mini_container)
+            self.mini_container.style().polish(self.mini_container)
+            self.mini_container.update()
         if hasattr(self, "expanded_container"):
-            self.expanded_container.setStyleSheet(f"QWidget#MainWidget {{ background-color: rgba(16, 20, 30, 0.96); border: {border_w}px solid {border_col}; border-radius: {px_main}px; }}")
+            self.expanded_container.setProperty("codex_running", run_val)
+            self.expanded_container.style().unpolish(self.expanded_container)
+            self.expanded_container.style().polish(self.expanded_container)
+            self.expanded_container.update()
 
     def refresh_all_data(self, force: bool = True):
         """Trigger async scan for Bluetooth, Codex, and Relay Stations."""
@@ -730,20 +804,16 @@ class FloatingWidget(QWidget):
         self._current_devices = devices
         self.battery_view.update_devices(devices)
         self._render_mini_bluetooth()
-        if not self.is_mini:
-            self.adjustSize()
 
     def _render_mini_bluetooth(self):
         """Render Bluetooth device battery in mini capsule."""
         devices = getattr(self, "_current_devices", [])
         fs = self.get_mini_font_size(10)
         if devices:
-            # Priority 1: Vibe Coding with DJI Mic Mini / DJI Mic (always pinned to front)
-            dji_dev = next((d for d in devices if "dji" in d.get("name", "").lower()), None)
-            if not dji_dev:
-                dji_dev = next((d for d in devices if "mic" in d.get("name", "").lower()), None)
-            if dji_dev:
-                target_dev = dji_dev
+            # Priority 1: Microphone (DJI, Mic, Rode, Shure, 麦克风, or 🎙️ icon)
+            mic_dev = next((d for d in devices if any(k in d.get("name", "").lower() for k in ["dji", "mic", "rode", "麦克风", "话筒", "shure", "lark", "hollyland"]) or d.get("icon") == "🎙️"), None)
+            if mic_dev:
+                target_dev = mic_dev
             else:
                 # Priority 2: Fallback to the connected device with the lowest battery
                 target_dev = min(devices, key=lambda x: x.get("battery", 100))
@@ -931,11 +1001,11 @@ class FloatingWidget(QWidget):
         data = getattr(self, "_current_server_cpu", {})
         fs = self.get_mini_font_size(10)
 
-        # 1. GPU Server CPUs in Row 1: 7号, 8号, 4号
+        # 1. GPU Server CPUs in Row 1: 4号, 7号, 8号
         if hasattr(self, "mini_gpu_cpu_labels"):
             gpu_tip_parts = []
-            gpu_srv_names = {"7": "7号 (L40S)", "8": "8号 (A100)", "4": "4号 (2080Ti)"}
-            for sid in ["7", "8", "4"]:
+            gpu_srv_names = {"4": "4号 (2080Ti)", "7": "7号 (L40S)", "8": "8号 (A100)"}
+            for sid in ["4", "7", "8"]:
                 val = data.get(sid, -1.0)
                 lbl = self.mini_gpu_cpu_labels.get(sid)
                 if not lbl:
@@ -952,7 +1022,7 @@ class FloatingWidget(QWidget):
                     lbl.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: {color};")
                     gpu_tip_parts.append(f"{name}: {val:.1f}%")
 
-            gpu_cpu_tt = "GPU服务器 CPU利用率 (7号 / 8号 / 4号)\n" + " | ".join(gpu_tip_parts)
+            gpu_cpu_tt = "GPU服务器 CPU利用率 (4号 / 7号 / 8号)\n" + " | ".join(gpu_tip_parts)
             if hasattr(self, "mini_sep_gpu_cpu"):
                 self.mini_sep_gpu_cpu.setToolTip(gpu_cpu_tt)
             for lbl in self.mini_gpu_cpu_labels.values():
@@ -1052,10 +1122,11 @@ class FloatingWidget(QWidget):
                 if self.cfg.get("auto_snap", True):
                     self.snap_to_screen_edge()
                 pos = self.pos()
-                self.cfg.set("window_pos", [pos.x(), pos.y()])
-                if self.is_mini:
-                    self._last_mini_pos = pos
-                    self._last_mini_center = self.frameGeometry().center()
+                if pos.x() > -1000 and pos.y() > -1000:
+                    self.cfg.set("window_pos", [pos.x(), pos.y()])
+                    if self.is_mini:
+                        self._last_mini_pos = pos
+                        self._last_mini_center = self.frameGeometry().center()
             event.accept()
 
     def snap_to_screen_edge(self):

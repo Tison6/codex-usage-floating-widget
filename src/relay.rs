@@ -24,6 +24,107 @@ pub struct SquareData {
     pub monitored_rows: Vec<SquareMonitoredRow>,
 }
 
+#[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
+pub struct ModelPricingInfo {
+    pub model_name: String,
+    pub model_ratio: f64,
+    pub completion_ratio: f64,
+    pub model_price: f64,
+    pub billing_mode: String,
+    pub billing_expr: String,
+    pub enable_groups: Vec<String>,
+}
+
+pub fn extract_c_coefficient(expr: &str) -> Option<f64> {
+    let target = if let Some(idx) = expr.find("tier(") {
+        let sub = &expr[idx..];
+        if let Some(close_paren) = sub.find(')') {
+            &sub[..close_paren]
+        } else {
+            expr
+        }
+    } else {
+        expr
+    };
+
+    let bytes = target.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    while i < len {
+        if bytes[i] == b'c' || bytes[i] == b'C' {
+            let prev_ok = i == 0 || (!bytes[i - 1].is_ascii_alphanumeric() && bytes[i - 1] != b'_');
+            if prev_ok {
+                let mut j = i + 1;
+                while j < len && (bytes[j] == b' ' || bytes[j] == b'\t') {
+                    j += 1;
+                }
+                if j < len && bytes[j] == b'*' {
+                    j += 1;
+                    while j < len && (bytes[j] == b' ' || bytes[j] == b'\t') {
+                        j += 1;
+                    }
+                    let num_start = j;
+                    while j < len
+                        && (bytes[j].is_ascii_digit()
+                            || bytes[j] == b'.'
+                            || bytes[j] == b'+'
+                            || bytes[j] == b'-'
+                            || bytes[j] == b'e'
+                            || bytes[j] == b'E')
+                    {
+                        j += 1;
+                    }
+                    if num_start < j {
+                        if let Ok(val) = target[num_start..j].parse::<f64>() {
+                            return Some(val);
+                        }
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+pub fn format_price_val(eff: f64) -> String {
+    let rounded = (eff * 10000.0).round() / 10000.0;
+    let s = format!("{:.4}", rounded);
+    let trimmed = s.trim_end_matches('0').trim_end_matches('.');
+    if trimmed.is_empty() {
+        "$0".to_string()
+    } else {
+        format!("${}", trimmed)
+    }
+}
+
+pub fn calculate_output_price(info: Option<&ModelPricingInfo>, group_multiplier: f64) -> String {
+    let mult = if group_multiplier > 0.0 { group_multiplier } else { 1.0 };
+    if let Some(m) = info {
+        // 1. Tiered expression
+        if m.billing_mode == "tiered_expr" && !m.billing_expr.is_empty() {
+            if let Some(base_val) = extract_c_coefficient(&m.billing_expr) {
+                let eff_val = (base_val * mult * 10000.0).round() / 10000.0;
+                return format_price_val(eff_val);
+            }
+        }
+        // 2. Per-request pricing
+        if m.model_price > 0.0 {
+            let eff_val = (m.model_price * mult * 10000.0).round() / 10000.0;
+            return format!("{}/次", format_price_val(eff_val));
+        }
+        // 3. Standard ratio pricing
+        if m.model_ratio > 0.0 {
+            let cr = if m.completion_ratio > 0.0 { m.completion_ratio } else { 1.0 };
+            let base_val = 2.0 * m.model_ratio * cr;
+            let eff_val = (base_val * mult * 10000.0).round() / 10000.0;
+            return format_price_val(eff_val);
+        }
+    }
+    "—".to_string()
+}
+
 pub fn default_model_for_group(group: &str) -> String {
     match group {
         "6-astra" => "GPT-6 Astra".to_string(),
@@ -257,7 +358,7 @@ impl SquareClient {
         }
 
         let mut model_enabled_groups: HashMap<String, Vec<String>> = HashMap::new();
-        let mut model_ratios: HashMap<String, f64> = HashMap::new();
+        let mut models_map: HashMap<String, ModelPricingInfo> = HashMap::new();
         if let Ok(resp) = pricing_resp {
             if resp.status().is_success() {
                 if let Ok(val) = resp.json::<serde_json::Value>().await {
@@ -274,8 +375,24 @@ impl SquareClient {
                                     })
                                     .unwrap_or_default();
                                 let m_ratio = m.get("model_ratio").and_then(|v| v.as_f64()).unwrap_or(1.0);
-                                model_enabled_groups.insert(m_name.to_string(), groups);
-                                model_ratios.insert(m_name.to_string(), m_ratio);
+                                let c_ratio = m.get("completion_ratio").and_then(|v| v.as_f64()).unwrap_or(1.0);
+                                let m_price = m.get("model_price").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                let b_mode = m.get("billing_mode").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+                                let b_expr = m.get("billing_expr").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+
+                                model_enabled_groups.insert(m_name.to_string(), groups.clone());
+                                models_map.insert(
+                                    m_name.to_string(),
+                                    ModelPricingInfo {
+                                        model_name: m_name.to_string(),
+                                        model_ratio: m_ratio,
+                                        completion_ratio: c_ratio,
+                                        model_price: m_price,
+                                        billing_mode: b_mode,
+                                        billing_expr: b_expr,
+                                        enable_groups: groups,
+                                    },
+                                );
                             }
                         }
                     }
@@ -388,30 +505,7 @@ impl SquareClient {
 
             for m_code in models_to_render {
                 let focus_m = get_model_display_name(&m_code);
-                let m_ratio = model_ratios.get(&m_code).copied().unwrap_or(1.0);
-                let out_price = match m_code.as_str() {
-                    "gpt-6-astra" if g_name == "6-astra" => "$6".to_string(),
-                    "gpt-6-astra" if g_name == "terra分组" => "$7.5".to_string(),
-                    "deepseek-v4.1-flash" => "$1.2".to_string(),
-                    "claude-opus-5-5" if g_name == "cc1" => "$3.5".to_string(),
-                    _ => {
-                        let eff = ratio * m_ratio * 20.0;
-                        if eff > 0.0 {
-                            format!("${:.1}", eff)
-                        } else {
-                            match g_name.as_str() {
-                                "6-astra" => "$6".to_string(),
-                                "terra分组" => "$7.5".to_string(),
-                                "混池优惠" => "$2.5".to_string(),
-                                "ds-v4.1可用" | "ds-v4.1" => "$1.2".to_string(),
-                                "cc1" => "$3.5".to_string(),
-                                "gpt-特惠分组" => "$12.5".to_string(),
-                                "pro专享" => "$12.5".to_string(),
-                                _ => format!("${:.1}", ratio * 20.0),
-                            }
-                        }
-                    }
-                };
+                let out_price = calculate_output_price(models_map.get(&m_code), ratio);
 
                 rows.push(SquareMonitoredRow {
                     group_name: g_name.clone(),
@@ -650,6 +744,7 @@ pub struct AIHubProviderItem {
     pub group_id: i64,
     pub multiplier_str: String,
     pub effective_multiplier_str: String,
+    pub effective_multiplier: f64,
     pub cache_hit_rate: String,
     pub ttft_str: String,
     pub tps_str: String,
@@ -662,6 +757,7 @@ pub struct AIHubProviderItem {
     pub ttft_ms: i64,
     pub success_rate: f32,
     pub is_excluded: bool,
+    pub public_detail: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -813,11 +909,19 @@ impl AIHubClient {
                     format!("https://aihub.dog{}", raw_img_url)
                 };
 
+                let public_detail = it
+                    .get("public_detail")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+
                 all_items.push(AIHubProviderItem {
                     code: code.to_string(),
                     group_id,
                     multiplier_str: format!("{:.2}x", mult),
                     effective_multiplier_str: format!("{:.2}x", eff_mult),
+                    effective_multiplier: eff_mult,
                     cache_hit_rate: cache_hit,
                     ttft_str,
                     tps_str,
@@ -830,45 +934,66 @@ impl AIHubClient {
                     ttft_ms,
                     success_rate: sr,
                     is_excluded: is_exc,
+                    public_detail,
                 });
             }
         }
 
-        let full_list = all_items.clone();
+        // Sort all providers by effective multiplier ascending (lowest first)
+        all_items.sort_by(|a, b| {
+            a.effective_multiplier
+                .partial_cmp(&b.effective_multiplier)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // For checkboxes selection dialog: sort all providers alphabetically by name
+        let mut full_list = all_items.clone();
+        full_list.sort_by(|a, b| a.code.to_lowercase().cmp(&b.code.to_lowercase()));
 
         // Filter according to auto_mode or manual selection, ALWAYS strictly excluding blacklisted codes
         let mut filtered: Vec<AIHubProviderItem> = if auto_mode {
             let mut list: Vec<AIHubProviderItem> = all_items
-                .into_iter()
+                .iter()
                 .filter(|p| !p.is_excluded && p.success_rate >= 80.0)
+                .cloned()
                 .collect();
-            if list.len() > 10 {
-                list.truncate(10);
-            }
+            list.sort_by(|a, b| {
+                a.effective_multiplier
+                    .partial_cmp(&b.effective_multiplier)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
             list
         } else {
-            all_items
-                .into_iter()
+            let mut list: Vec<AIHubProviderItem> = all_items
+                .iter()
                 .filter(|p| !p.is_excluded && selected_set.contains(p.code.as_str()))
-                .collect()
+                .cloned()
+                .collect();
+            list.sort_by(|a, b| {
+                a.effective_multiplier
+                    .partial_cmp(&b.effective_multiplier)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            list
         };
 
         if filtered.is_empty() && full_list.is_empty() {
             let mock_raw = vec![
-                ("A015-Plus", 0, "0.09x", "0.10x", "82.2%", "1.1s", "45.0 t/s", "99.8%", "passed", "通过", "🟢", true, 1100, 99.8),
-                ("A018-Plus/K12", 0, "0.13x", "0.09x", "92.0%", "1.2s", "48.2 t/s", "100.0%", "passed", "通过", "🟢", true, 1200, 100.0),
-                ("A031-Pro", 0, "0.14x", "0.16x", "81.0%", "0.9s", "52.0 t/s", "98.5%", "passed", "通过", "🟢", true, 900, 98.5),
-                ("A033-Plus/Pro", 0, "0.17x", "0.16x", "86.4%", "1.3s", "41.0 t/s", "99.0%", "passed", "通过", "🟢", false, 1300, 99.0),
-                ("A029-破甲", 0, "0.18x", "0.18x", "92.1%", "1.0s", "46.5 t/s", "100.0%", "passed", "通过", "🟢", false, 1000, 100.0),
-                ("A009-Pro", 0, "0.21x", "0.21x", "86.9%", "1.5s", "39.0 t/s", "97.5%", "passed", "通过", "🟢", true, 1500, 97.5),
+                ("A015-Plus", 0, "0.09x", "0.10x", 0.10, "82.2%", "1.1s", "45.0 t/s", "99.8%", "passed", "通过", "🟢", true, 1100, 99.8),
+                ("A018-Plus/K12", 0, "0.13x", "0.09x", 0.09, "92.0%", "1.2s", "48.2 t/s", "100.0%", "passed", "通过", "🟢", true, 1200, 100.0),
+                ("A031-Pro", 0, "0.14x", "0.16x", 0.16, "81.0%", "0.9s", "52.0 t/s", "98.5%", "passed", "通过", "🟢", true, 900, 98.5),
+                ("A033-Plus/Pro", 0, "0.17x", "0.16x", 0.16, "86.4%", "1.3s", "41.0 t/s", "99.0%", "passed", "通过", "🟢", false, 1300, 99.0),
+                ("A029-破甲", 0, "0.18x", "0.18x", 0.18, "92.1%", "1.0s", "46.5 t/s", "100.0%", "passed", "通过", "🟢", false, 1000, 100.0),
+                ("A009-Pro", 0, "0.21x", "0.21x", 0.21, "86.9%", "1.5s", "39.0 t/s", "97.5%", "passed", "通过", "🟢", true, 1500, 97.5),
             ];
-            for (code, gid, mult, eff_mult, hit, ttft, tps, sr_str, det, det_lbl, det_dot, img, ttft_ms, sr) in mock_raw {
+            for (code, gid, mult, eff_mult, eff_val, hit, ttft, tps, sr_str, det, det_lbl, det_dot, img, ttft_ms, sr) in mock_raw {
                 if !excluded_set.contains(code) && (auto_mode || selected_set.contains(code)) {
                     filtered.push(AIHubProviderItem {
                         code: code.to_string(),
                         group_id: gid,
                         multiplier_str: mult.to_string(),
                         effective_multiplier_str: eff_mult.to_string(),
+                        effective_multiplier: eff_val,
                         cache_hit_rate: hit.to_string(),
                         ttft_str: ttft.to_string(),
                         tps_str: tps.to_string(),
@@ -881,9 +1006,15 @@ impl AIHubClient {
                         ttft_ms,
                         success_rate: sr,
                         is_excluded: false,
+                        public_detail: String::new(),
                     });
                 }
             }
+            filtered.sort_by(|a, b| {
+                a.effective_multiplier
+                    .partial_cmp(&b.effective_multiplier)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
         }
 
         // Add 1-based ranking prefix to monitored items matching Python appearance
@@ -994,5 +1125,76 @@ impl AIHubClient {
             h,
         );
         Some(buffer)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_c_coefficient() {
+        let expr1 = "(len <= 272000 ? tier(\"base\", p * 2 + c * 10 + cr * 0.1 + cc * 2.5) : tier(\"tier_2\", p * 4 + c * 15 + cr * 0.2 + cc * 5))";
+        assert_eq!(extract_c_coefficient(expr1), Some(10.0));
+
+        let expr2 = "(len < 272000 ? tier(\"base\", p * 10 + c * 50 + cr * 1 + cc * 12.5) : tier(\"tier_2\", p * 20 + c * 75 + cr * 2 + cc * 25))";
+        assert_eq!(extract_c_coefficient(expr2), Some(50.0));
+
+        let expr3 = "tier(\"base\", p * 4 + c * 20 + cr * 0.2 + cc * 5 + cc1h * 8)";
+        assert_eq!(extract_c_coefficient(expr3), Some(20.0));
+    }
+
+    #[test]
+    fn test_format_price_val() {
+        assert_eq!(format_price_val(1.5), "$1.5");
+        assert_eq!(format_price_val(2.4), "$2.4");
+        assert_eq!(format_price_val(6.0), "$6");
+        assert_eq!(format_price_val(7.5), "$7.5");
+        assert_eq!(format_price_val(12.0), "$12");
+        assert_eq!(format_price_val(0.8), "$0.8");
+    }
+
+    #[test]
+    fn test_calculate_output_price() {
+        let sol = ModelPricingInfo {
+            model_name: "gpt-6.1-sol".to_string(),
+            model_ratio: 37.5,
+            completion_ratio: 2.0,
+            model_price: 0.0,
+            billing_mode: "tiered_expr".to_string(),
+            billing_expr: "(len <= 272000 ? tier(\"base\", p * 2 + c * 10 + cr * 0.1 + cc * 2.5) : tier(\"tier_2\", p * 4 + c * 15 + cr * 0.2 + cc * 5))".to_string(),
+            enable_groups: vec!["terra分组".to_string(), "gpt-已过鹈鹕测试不降智".to_string()],
+        };
+
+        // terra 0.15 ratio
+        assert_eq!(calculate_output_price(Some(&sol), 0.15), "$1.5");
+        // 已过鹈鹕 0.24 ratio
+        assert_eq!(calculate_output_price(Some(&sol), 0.24), "$2.4");
+
+        let astra = ModelPricingInfo {
+            model_name: "gpt-6-astra".to_string(),
+            model_ratio: 5.0,
+            completion_ratio: 5.0,
+            model_price: 0.0,
+            billing_mode: "tiered_expr".to_string(),
+            billing_expr: "(len < 272000 ? tier(\"base\", p * 10 + c * 50 + cr * 1 + cc * 12.5) : ...)".to_string(),
+            enable_groups: vec!["6-astra".to_string(), "terra分组".to_string(), "gpt-已过鹈鹕测试不降智".to_string()],
+        };
+
+        assert_eq!(calculate_output_price(Some(&astra), 0.12), "$6");
+        assert_eq!(calculate_output_price(Some(&astra), 0.15), "$7.5");
+        assert_eq!(calculate_output_price(Some(&astra), 0.24), "$12");
+
+        let ds = ModelPricingInfo {
+            model_name: "deepseek-v4.1-flash".to_string(),
+            model_ratio: 1.0,
+            completion_ratio: 4.0,
+            model_price: 0.0,
+            billing_mode: String::new(),
+            billing_expr: String::new(),
+            enable_groups: vec!["ds-v4.1可用".to_string()],
+        };
+
+        assert_eq!(calculate_output_price(Some(&ds), 0.10), "$0.8");
     }
 }

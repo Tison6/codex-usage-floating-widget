@@ -49,6 +49,15 @@ DEFAULT_CPU_SERVERS = [
 
 DEFAULT_GPU_SERVERS = [
     {
+        "id": "4",
+        "name": "4号 · 2080Ti",
+        "ip": "192.168.120.4",
+        "port": 22,
+        "user": "xutianxiao",
+        "key_path": r"C:/Users/xtx/.ssh/id_rsa_stu",
+        "type": "gpu"
+    },
+    {
         "id": "7",
         "name": "7号 · L40S",
         "ip": "192.168.120.7",
@@ -64,15 +73,6 @@ DEFAULT_GPU_SERVERS = [
         "port": 22,
         "user": "xutianxiao",
         "key_path": r"C:/Users/xtx/.ssh/id_rsa_xtx",
-        "type": "gpu"
-    },
-    {
-        "id": "4",
-        "name": "4号 · 2080Ti",
-        "ip": "192.168.120.4",
-        "port": 22,
-        "user": "xutianxiao",
-        "key_path": r"C:/Users/xtx/.ssh/id_rsa_stu",
         "type": "gpu"
     }
 ]
@@ -530,9 +530,9 @@ class MultiServerMonitor(QObject):
             "e5": -1.0,
             "8375c": -1.0,
             # GPU servers
+            "4": -1.0,
             "7": -1.0,
-            "8": -1.0,
-            "4": -1.0
+            "8": -1.0
         }
         self.latest_host_stats: Dict[str, Dict[str, Any]] = {}
 

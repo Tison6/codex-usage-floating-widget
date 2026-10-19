@@ -45,17 +45,17 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 use windows::core::w;
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT};
 use windows::Win32::System::Threading::GetCurrentProcessId;
-use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, DestroyMenu, EnumWindows, FindWindowW, GetClassNameW,
     GetCursorPos, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId,
-    SendMessageW, IsWindow, SetForegroundWindow, SetWindowPos, TrackPopupMenu, HTCAPTION, MF_CHECKED,
+    IsWindow, SetForegroundWindow, SetWindowPos, TrackPopupMenu, MF_CHECKED,
     MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-    TPM_RETURNCMD, TPM_RIGHTBUTTON, WM_NCLBUTTONDOWN, GetWindowLongW, SetWindowLongW, GWL_EXSTYLE, GWL_STYLE,
+    TPM_RETURNCMD, TPM_RIGHTBUTTON, GetWindowLongW, SetWindowLongW, GWL_EXSTYLE, GWL_STYLE,
     WS_EX_TOOLWINDOW, WS_EX_APPWINDOW, HWND_TOPMOST, HWND_NOTOPMOST, SWP_FRAMECHANGED,
 };
 use tray_icon::{
@@ -423,25 +423,86 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // --- UI Callbacks ---
 
-    // Window Dragging Callback
+    // Window Dragging Callback (Smooth Cursor Tracking & Edge Snapping, eliminating Windows ghost box)
     let config_mgr_drag = config_mgr.clone();
     ui.on_drag_window(move || {
         unsafe {
             if let Some(hwnd) = get_window_hwnd() {
-                let mut pt = POINT::default();
-                let _ = GetCursorPos(&mut pt);
-                let lparam = ((pt.y as u32) << 16) | ((pt.x as u32) & 0xFFFF);
-                let _ = ReleaseCapture();
-                let _ = SendMessageW(
-                    hwnd,
-                    WM_NCLBUTTONDOWN,
-                    WPARAM(HTCAPTION as usize),
-                    LPARAM(lparam as isize),
-                );
+                let mut start_cursor = POINT::default();
+                if GetCursorPos(&mut start_cursor).is_err() {
+                    return;
+                }
                 let mut rect = RECT::default();
-                if GetWindowRect(hwnd, &mut rect).is_ok() {
+                if GetWindowRect(hwnd, &mut rect).is_err() {
+                    return;
+                }
+                let offset_x = start_cursor.x - rect.left;
+                let offset_y = start_cursor.y - rect.top;
+                let win_w = rect.right - rect.left;
+                let win_h = rect.bottom - rect.top;
+
+                // Loop while left mouse button is held down
+                while (GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000) != 0 {
+                    let mut cur = POINT::default();
+                    if GetCursorPos(&mut cur).is_ok() {
+                        let target_x = cur.x - offset_x;
+                        let target_y = cur.y - offset_y;
+                        let _ = SetWindowPos(
+                            hwnd,
+                            None,
+                            target_x,
+                            target_y,
+                            0,
+                            0,
+                            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+                        );
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(6));
+                }
+
+                // Apply edge-snapping (25px threshold) and save final position
+                let mut final_rect = RECT::default();
+                if GetWindowRect(hwnd, &mut final_rect).is_ok() {
+                    let mut final_x = final_rect.left;
+                    let mut final_y = final_rect.top;
+                    let snap_threshold = 25;
+
+                    let mut mi = MONITORINFO {
+                        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                        ..Default::default()
+                    };
+                    let hmon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+                    let (screen_left, screen_top, screen_right, screen_bottom) =
+                        if GetMonitorInfoW(hmon, &mut mi).as_bool() {
+                            (mi.rcWork.left, mi.rcWork.top, mi.rcWork.right, mi.rcWork.bottom)
+                        } else {
+                            (0, 0, 1920, 1080)
+                        };
+
+                    if (final_x - screen_left).abs() < snap_threshold {
+                        final_x = screen_left + 6;
+                    } else if (final_x + win_w - screen_right).abs() < snap_threshold {
+                        final_x = screen_right - win_w - 6;
+                    }
+
+                    if (final_y - screen_top).abs() < snap_threshold {
+                        final_y = screen_top + 6;
+                    } else if (final_y + win_h - screen_bottom).abs() < snap_threshold {
+                        final_y = screen_bottom - win_h - 6;
+                    }
+
+                    let _ = SetWindowPos(
+                        hwnd,
+                        None,
+                        final_x,
+                        final_y,
+                        0,
+                        0,
+                        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+                    );
+
                     config_mgr_drag.update(|c| {
-                        c.window_pos = [rect.left, rect.top];
+                        c.window_pos = [final_x, final_y];
                     });
                 }
             }
@@ -1056,7 +1117,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ui) = ui_weak_pelican.upgrade() {
             ui.set_pelican_provider_code(code.clone());
             ui.set_pelican_status_text("⏳ 正在实时获取鹈鹕历史实测图...".into());
-            ui.set_pelican_cards(Rc::new(VecModel::default()).into());
+            ui.set_pelican_pairs(Rc::new(VecModel::default()).into());
             ui.set_pelican_dialog_open(true);
 
             let ui_weak_inner = ui.as_weak();
@@ -1080,17 +1141,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let _ = ui_weak_inner.upgrade_in_event_loop(move |ui| {
                     ui.set_pelican_status_text(count_str.into());
-                    let cards: Vec<PelicanDialogCardItem> = initial_info
-                        .into_iter()
-                        .map(|(id, pub_str, url)| PelicanDialogCardItem {
-                            id: id.into(),
-                            published_at_str: pub_str.into(),
-                            url: url.into(),
+                    let mut pairs: Vec<PelicanDialogPairItem> = Vec::new();
+                    let n = initial_info.len();
+                    let num_pairs = (n + 1) / 2;
+                    for p_idx in 0..num_pairs {
+                        let (left_id, left_pub, left_url) = &initial_info[p_idx * 2];
+                        let left_card = PelicanDialogCardItem {
+                            id: left_id.clone().into(),
+                            published_at_str: left_pub.clone().into(),
+                            url: left_url.clone().into(),
                             has_image: false,
                             img: slint::Image::default(),
-                        })
-                        .collect();
-                    ui.set_pelican_cards(Rc::new(VecModel::from(cards)).into());
+                        };
+                        let (has_right, right_card) = if p_idx * 2 + 1 < n {
+                            let (r_id, r_pub, r_url) = &initial_info[p_idx * 2 + 1];
+                            (
+                                true,
+                                PelicanDialogCardItem {
+                                    id: r_id.clone().into(),
+                                    published_at_str: r_pub.clone().into(),
+                                    url: r_url.clone().into(),
+                                    has_image: false,
+                                    img: slint::Image::default(),
+                                },
+                            )
+                        } else {
+                            (
+                                false,
+                                PelicanDialogCardItem {
+                                    id: "".into(),
+                                    published_at_str: "".into(),
+                                    url: "".into(),
+                                    has_image: false,
+                                    img: slint::Image::default(),
+                                },
+                            )
+                        };
+                        pairs.push(PelicanDialogPairItem {
+                            left: left_card,
+                            has_right,
+                            right: right_card,
+                        });
+                    }
+                    ui.set_pelican_pairs(Rc::new(VecModel::from(pairs)).into());
                 });
 
                 // Stream in images sequentially with thumbnail pre-scaling (480x300)
@@ -1103,18 +1196,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(buf) = c.fetch_image_as_pixel_buffer(&url_str, 480, 300).await {
                         let _ = ui_w.upgrade_in_event_loop(move |ui| {
                             if ui.get_pelican_dialog_open() {
-                                let model = ui.get_pelican_cards();
-                                if idx < model.row_count() {
-                                    model.set_row_data(
-                                        idx,
-                                        PelicanDialogCardItem {
+                                let model = ui.get_pelican_pairs();
+                                let pair_idx = idx / 2;
+                                let is_right = (idx % 2) == 1;
+                                if pair_idx < model.row_count() {
+                                    if let Some(mut pair) = model.row_data(pair_idx) {
+                                        let updated_card = PelicanDialogCardItem {
                                             id: item_id.into(),
                                             published_at_str: pub_str.into(),
                                             url: url_str.into(),
                                             has_image: true,
                                             img: slint::Image::from_rgba8(buf),
-                                        },
-                                    );
+                                        };
+                                        if !is_right {
+                                            pair.left = updated_card;
+                                        } else {
+                                            pair.right = updated_card;
+                                            pair.has_right = true;
+                                        }
+                                        model.set_row_data(pair_idx, pair);
+                                    }
                                 }
                             }
                         });
@@ -1246,9 +1347,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
             }
 
-            if let Some(first) = devs.first() {
-                top_icon = first.icon.clone();
-                top_batt = first.battery.to_string();
+            // Priority 1: Microphone (DJI, Mic, Rode, Shure, 麦克风, 话筒, or 🎙️ icon)
+            let mic_dev = devs.iter().find(|d| {
+                let lower = d.name.to_lowercase();
+                d.icon == "🎙️" || ["mic", "dji", "rode", "麦克风", "话筒", "shure", "lark", "hollyland"].iter().any(|k| lower.contains(k))
+            });
+            let target_dev = mic_dev.or_else(|| {
+                // Priority 2: Fallback to the connected device with the lowest battery
+                devs.iter().min_by_key(|d| d.battery)
+            });
+
+            if let Some(target) = target_dev {
+                top_icon = target.icon.clone();
+                top_batt = target.battery.to_string();
             }
 
             let _ = ui_weak_bt.upgrade_in_event_loop(move |ui| {
@@ -1451,6 +1562,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     has_image: p.has_image,
                     is_selected: is_sel,
                     is_excluded: is_exc,
+                    public_detail: p.public_detail.clone().into(),
                 });
             }
 
@@ -1488,6 +1600,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         has_image: p.has_image,
                         image_url: p.image_url.into(),
                         group_id: p.group_id as i32,
+                        public_detail: p.public_detail.clone().into(),
                         has_thumb,
                         thumb_image,
                     });
@@ -1670,16 +1783,21 @@ mod tests {
         let buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&raw, 480, 300);
         let img = slint::Image::from_rgba8(buf);
 
-        let cards = vec![
-            PelicanDialogCardItem {
-                id: "1".into(),
-                published_at_str: "2026-10-15 12:00:00".into(),
-                url: "https://example.com/1.png".into(),
-                has_image: true,
-                img,
+        let card = PelicanDialogCardItem {
+            id: "1".into(),
+            published_at_str: "2026-10-15 12:00:00".into(),
+            url: "https://example.com/1.png".into(),
+            has_image: true,
+            img,
+        };
+        let pairs = vec![
+            PelicanDialogPairItem {
+                left: card.clone(),
+                has_right: false,
+                right: card,
             },
         ];
-        ui.set_pelican_cards(std::rc::Rc::new(slint::VecModel::from(cards)).into());
+        ui.set_pelican_pairs(std::rc::Rc::new(slint::VecModel::from(pairs)).into());
         ui.set_pelican_dialog_open(true);
         ui.set_pelican_dialog_open(false);
 
@@ -1696,6 +1814,7 @@ mod tests {
                 has_image: false,
                 is_selected: true,
                 is_excluded: false,
+                public_detail: "test detail".into(),
             },
         ];
         ui.set_dlg_providers(std::rc::Rc::new(slint::VecModel::from(items)).into());

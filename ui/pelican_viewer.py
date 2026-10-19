@@ -338,6 +338,7 @@ class PelicanViewerDialog(QDialog):
         while self.grid.count():
             w = self.grid.takeAt(0).widget()
             if w:
+                w.hide()
                 w.deleteLater()
         self.cards_by_url.clear()
         self.cards_list.clear()

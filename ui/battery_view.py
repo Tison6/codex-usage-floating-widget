@@ -134,6 +134,7 @@ class BatteryView(QWidget):
             item = self.list_layout.takeAt(0)
             widget = item.widget()
             if widget:
+                widget.hide()
                 widget.deleteLater()
         
         if not devices:
@@ -144,6 +145,6 @@ class BatteryView(QWidget):
         self.empty_lbl.hide()
         self.count_lbl.setText(f"{len(devices)} 已连")
         
-        for dev in devices:
+        for dev in devices[:3]:
             item_widget = DeviceBatteryItem(dev, parent=self.list_container, scale=self.scale)
             self.list_layout.addWidget(item_widget)
