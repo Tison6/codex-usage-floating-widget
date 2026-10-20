@@ -251,67 +251,47 @@ class AIHubClient:
             hist_items = metrics_history.get(code, [])
             hist_span = (now - hist_items[0]["t"]) if hist_items else 0
 
-            # Multi-period success rates: 成功率(1h/1d/7d) e.g. 93%/88%/90%
+            # Multi-period success rates: 成功率(现/1h/1d/7d) 全部由本地采集样本独立计算滑动均值
+            sr_cur_str = f"{round(sr_percent)}%" if sr_percent is not None else "--"
             sr1h_samples = [h["sr"] for h in hist_items if h.get("sr") is not None and h["t"] >= now - 3600]
             sr1d_samples = [h["sr"] for h in hist_items if h.get("sr") is not None and h["t"] >= now - 86400]
             sr7d_samples = [h["sr"] for h in hist_items if h.get("sr") is not None and h["t"] >= now - 7 * 86400]
 
-            s1h = sr_obj.get("1h") if isinstance(sr_obj, dict) else None
-            s1d = (sr_obj.get("24h") if sr_obj.get("24h") is not None else sr_obj.get("1d")) if isinstance(sr_obj, dict) else None
-            s7d = sr_obj.get("7d") if isinstance(sr_obj, dict) else None
-
-            # 1h: Authoritative 1h success rate from AIHub API to match official website exactly
-            if s1h is not None:
-                s1h_val = float(s1h) * 100.0 if float(s1h) <= 1.0 else float(s1h)
-                s1h_str = f"{round(s1h_val)}%"
-            elif sr_percent is not None:
-                s1h_str = f"{round(sr_percent)}%"
-            elif sr1h_samples:
+            # 1h: Local past 1-hour rolling average
+            if sr1h_samples:
                 s1h_str = f"{round(sum(sr1h_samples) / len(sr1h_samples))}%"
+            elif sr_percent is not None:
+                s1h_str = sr_cur_str
             else:
                 s1h_str = "--"
 
-            # 1d (24h): Prefer genuine API 24h if distinct from 1h, otherwise calculate from local continuous history
-            if s1d is not None and s1h is not None and s1d != s1h:
-                s1d_val = float(s1d) * 100.0 if float(s1d) <= 1.0 else float(s1d)
-                s1d_str = f"{round(s1d_val)}%"
-            elif sr1d_samples and len(sr1d_samples) >= 5 and hist_span >= 7200:
+            # 1d (24h): Local past 24-hour rolling average
+            if sr1d_samples and len(sr1d_samples) >= 5 and hist_span >= 7200:
                 s1d_str = f"{round(sum(sr1d_samples) / len(sr1d_samples))}%"
             else:
                 s1d_str = s1h_str
 
-            # 7d: Prefer genuine API 7d if distinct from 1h, otherwise calculate from local continuous history (requires >= 3 days)
-            if s7d is not None and s1h is not None and s7d != s1h:
-                s7d_val = float(s7d) * 100.0 if float(s7d) <= 1.0 else float(s7d)
-                s7d_str = f"{round(s7d_val)}%"
-            elif sr7d_samples and len(sr7d_samples) >= 10 and hist_span >= 86400 * 3:
+            # 7d: Local past 7-day rolling average (requires >= 3 days accumulated)
+            if sr7d_samples and len(sr7d_samples) >= 10 and hist_span >= 86400 * 3:
                 s7d_str = f"{round(sum(sr7d_samples) / len(sr7d_samples))}%"
             else:
                 s7d_str = "--"
 
-            sr_multi_str = f"{s1h_str}/{s1d_str}/{s7d_str}"
+            sr_multi_str = f"{sr_cur_str}/{s1h_str}/{s1d_str}/{s7d_str}"
 
-            # Multi-period cache hit rates: 缓存率(当前/1h/1d/7d) e.g. 87%/85%/90%/--
+            # Multi-period cache hit rates: 缓存率(现/1h/1d/7d) 全部由本地采集样本独立计算滑动均值
             c_cur_str = f"{round(cache_hit_val)}%" if has_cache else "-"
             c1h_samples = [h["cache"] for h in hist_items if h.get("cache") is not None and h["t"] >= now - 3600]
             c1d_samples = [h["cache"] for h in hist_items if h.get("cache") is not None and h["t"] >= now - 86400]
             c7d_samples = [h["cache"] for h in hist_items if h.get("cache") is not None and h["t"] >= now - 7 * 86400]
 
-            # 1h cache hit rate: ALWAYS prefer official authoritative 1h cache rate from AIHub API (runtime_cache_1h)
-            rc_1h = it.get("runtime_cache_1h") or {}
-            c1h_raw = rc_1h.get("cache_hit_rate")
-            if c1h_raw is None:
-                c1h_raw = rc_1h.get("weighted_cache_hit_rate")
-            if c1h_raw is None and has_cache:
-                c1h_raw = cache_hit_val / 100.0
-
-            if c1h_raw is not None:
-                c1h_val = float(c1h_raw) * 100.0 if float(c1h_raw) <= 1.0 else float(c1h_raw)
-                c1h_str = f"{round(c1h_val)}%"
-            elif c1h_samples:
+            # 1h cache hit rate: Local past 1-hour rolling average
+            if c1h_samples:
                 c1h_str = f"{round(sum(c1h_samples) / len(c1h_samples))}%"
+            elif has_cache:
+                c1h_str = c_cur_str
             else:
-                c1h_str = c_cur_str if c_cur_str != "-" else "--"
+                c1h_str = "--"
 
             # 1d cache hit rate: Past 24h rolling average from local history if span >= 2 hours, else 1h
             if c1d_samples and len(c1d_samples) >= 5 and hist_span >= 7200:
@@ -338,24 +318,33 @@ class AIHubClient:
                 ref_cache_str = "--"
                 ref_cache_val = None
 
-            # Multi-period effective multipliers: 真实倍率(当前/1h/1d/7d) e.g. 0.07/0.07/0.07/--
+            # Multi-period effective multipliers: 真实倍率(现/1h/1d/7d) 全部由本地采集样本独立计算滑动均值
+            cur_eff_num = f"{eff_mult_val:.2f}" if eff_mult_val is not None else "--"
             eff1h_samples = [h["eff"] for h in hist_items if h.get("eff") is not None and h["t"] >= now - 3600]
             eff1d_samples = [h["eff"] for h in hist_items if h.get("eff") is not None and h["t"] >= now - 86400]
             eff7d_samples = [h["eff"] for h in hist_items if h.get("eff") is not None and h["t"] >= now - 7 * 86400]
 
-            if eff_mult_val is not None:
-                cur_eff_num = f"{eff_mult_val:.2f}"
+            # 1h: Local past 1-hour rolling average
+            if eff1h_samples:
+                eff1h_num = f"{(sum(eff1h_samples) / len(eff1h_samples)):.2f}"
+            elif eff_mult_val is not None:
                 eff1h_num = cur_eff_num
-                eff1d_num = f"{(sum(eff1d_samples) / len(eff1d_samples)):.2f}" if (eff1d_samples and len(eff1d_samples) >= 5 and hist_span >= 7200) else cur_eff_num
-                eff7d_num = f"{(sum(eff7d_samples) / len(eff7d_samples)):.2f}" if (eff7d_samples and len(eff7d_samples) >= 10 and hist_span >= 86400 * 3) else "--"
-                eff_multi_str = f"{cur_eff_num}/{eff1h_num}/{eff1d_num}/{eff7d_num}"
-            elif eff1h_samples:
-                eff1h_avg = sum(eff1h_samples) / len(eff1h_samples)
-                eff1d_num = f"{(sum(eff1d_samples) / len(eff1d_samples)):.2f}" if (eff1d_samples and hist_span >= 7200) else f"{eff1h_avg:.2f}"
-                eff7d_num = f"{(sum(eff7d_samples) / len(eff7d_samples)):.2f}" if (eff7d_samples and hist_span >= 86400 * 3) else "--"
-                eff_multi_str = f"--/{eff1h_avg:.2f}/{eff1d_num}/{eff7d_num}"
             else:
-                eff_multi_str = "--/--/--/--"
+                eff1h_num = "--"
+
+            # 1d: Local past 24-hour rolling average
+            if eff1d_samples and len(eff1d_samples) >= 5 and hist_span >= 7200:
+                eff1d_num = f"{(sum(eff1d_samples) / len(eff1d_samples)):.2f}"
+            else:
+                eff1d_num = eff1h_num
+
+            # 7d: Local past 7-day rolling average (requires >= 3 days)
+            if eff7d_samples and len(eff7d_samples) >= 10 and hist_span >= 86400 * 3:
+                eff7d_num = f"{(sum(eff7d_samples) / len(eff7d_samples)):.2f}"
+            else:
+                eff7d_num = "--"
+
+            eff_multi_str = f"{cur_eff_num}/{eff1h_num}/{eff1d_num}/{eff7d_num}"
 
             # Append current reading to metrics history (record any valid metric independently)
             if has_sr or has_cache or eff_mult_val is not None:
