@@ -271,8 +271,8 @@ class AIHubClient:
             else:
                 s1h_str = "--"
 
-            # 1d (24h): Authoritative 24h success rate from AIHub API (fallback to local history if absent)
-            if s1d is not None:
+            # 1d (24h): Prefer genuine API 24h if distinct from 1h, otherwise calculate from local continuous history
+            if s1d is not None and s1h is not None and s1d != s1h:
                 s1d_val = float(s1d) * 100.0 if float(s1d) <= 1.0 else float(s1d)
                 s1d_str = f"{round(s1d_val)}%"
             elif sr1d_samples and len(sr1d_samples) >= 5 and hist_span >= 7200:
@@ -280,8 +280,8 @@ class AIHubClient:
             else:
                 s1d_str = s1h_str
 
-            # 7d: Authoritative 7d success rate from AIHub API (fallback to local history if absent)
-            if s7d is not None:
+            # 7d: Prefer genuine API 7d if distinct from 1h, otherwise calculate from local continuous history (requires >= 3 days)
+            if s7d is not None and s1h is not None and s7d != s1h:
                 s7d_val = float(s7d) * 100.0 if float(s7d) <= 1.0 else float(s7d)
                 s7d_str = f"{round(s7d_val)}%"
             elif sr7d_samples and len(sr7d_samples) >= 10 and hist_span >= 86400 * 3:

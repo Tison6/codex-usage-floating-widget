@@ -1144,7 +1144,7 @@ class RelayStationView(QWidget):
             elif "缓存率" in title and "参考" not in title:
                 h_lbl.setToolTip("缓存命中率 (当前 / 1小时 / 1天 / 7天):\n• 当前/1h: 官方实测窗口权威数据\n• 1d/7d: 本地持续采集统计均值 (需分别累积2h/72h以上)\n• 100%: 绿色\n• <=85%: 红色\n• 85%~100%: 渐变")
             elif "成功率" in title or "通过率" in title:
-                h_lbl.setToolTip("接口成功率 (1小时 / 1天 / 7天):\n• 1h/1d/7d 均为官网API后端实测权威数据\n• 100%: 绿色\n• <=90%: 红色\n• 90%~100%: 渐变")
+                h_lbl.setToolTip("接口成功率 (1小时 / 1天 / 7天):\n• 1h: 官方实测窗口权威数据\n• 1d/7d: 本地持续采集统计均值 (需分别累积2h/72h以上)\n• 100%: 绿色\n• <=90%: 红色\n• 90%~100%: 渐变")
             elif "参考缓存率" in title:
                 h_lbl.setToolTip("官方参考缓存率基准:\n来自接口 runtime_cache_1h 的 reference_cache_hit_rate\n(全网模型统一参考缓存基准)")
             self.aihub_header_grid_right.addWidget(h_lbl, 0, col_idx)
@@ -1512,7 +1512,7 @@ class RelayStationView(QWidget):
             span_note = f"• 1d/7d来自本地持续采集统计(已累积 {span_h:.1f}h，7d需满72h)"
             eff_tip = f"真实倍率 (当前/1h/1d/7d):\n{eff_multi_str}\n• 官网折算: {eff_mult_str} ({price_str})\n{span_note}\n• <=0.10: 绿色\n• >=0.20: 红色\n• 0.10~0.20: 渐变"
             hit_tip = f"缓存命中率 (当前/1h/1d/7d):\n{cache_multi_str}\n• 1h 官网实测: {g.get('cache_hit_rate', '-')}\n{span_note}\n• 100%: 绿色\n• <=85%: 红色\n• 85%~100%: 渐变"
-            sr_tip = f"接口请求成功率 (1h/1d/7d):\n{sr_multi_str}\n• 1h/1d/7d 均为官网API后端实测权威数据\n• 100%: 绿色\n• <=90%: 红色\n• 90%~100%: 渐变"
+            sr_tip = f"接口请求成功率 (1h/1d/7d):\n{sr_multi_str}\n• 1h 来自官网实时API权威数据\n{span_note}\n• 100%: 绿色\n• <=90%: 红色\n• 90%~100%: 渐变"
 
             if row_idx < len(self._aihub_rows):
                 entry = self._aihub_rows[row_idx]
