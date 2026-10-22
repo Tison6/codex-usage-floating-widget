@@ -14,7 +14,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QCursor
 
 from core.square_client import DEFAULT_SELECTED_GROUPS, DEFAULT_SELECTED_MODELS, DEFAULT_GROUP_MODELS
-from core.aihub_client import DEFAULT_SELECTED_PROVIDERS
+from core.aihub_client import DEFAULT_SELECTED_PROVIDERS, is_ds_or_glm_provider
 from PyQt5.QtCore import QRectF
 from PyQt5.QtGui import QPainter
 
@@ -865,7 +865,7 @@ class AIHubFilterDialog(QDialog):
             r_lay.setContentsMargins(6, 4, 6, 4)
             r_lay.setSpacing(6)
 
-            is_exc = code in self.excluded_providers
+            is_exc = code in self.excluded_providers or (is_ds_or_glm_provider(code, p) and code not in cur_selected)
 
             # Column 1: Select Checkbox (监听)
             cb = QCheckBox()
@@ -1172,6 +1172,10 @@ class AIHubFilterDialog(QDialog):
             cb_e = self.provider_exclude_checkboxes.get(code)
             if cb_e and cb_e.isChecked():
                 cb.setChecked(False)
+            elif is_ds_or_glm_provider(code):
+                cb.setChecked(False)
+                if cb_e:
+                    cb_e.setChecked(True)
             else:
                 cb.setChecked(code in DEFAULT_SELECTED_PROVIDERS)
         self.update_count_label()

@@ -5,6 +5,7 @@ Supports user-defined provider selection with real-time parameter filtering.
 """
 
 import os
+import re
 import json
 import time
 from typing import Dict, Any, Optional, List
@@ -43,6 +44,20 @@ DEFAULT_FILTER_MIN_SR = 80.0
 DEFAULT_FILTER_MIN_CACHE = 80.0
 DEFAULT_FILTER_MAX_EFF = 0.25
 DEFAULT_FILTER_MAX_NOM = 0.25
+
+
+def is_ds_or_glm_provider(code: str, item: Optional[Dict[str, Any]] = None) -> bool:
+    """Check if a provider belongs to DeepSeek (DS) or GLM lines (default excluded)."""
+    if not code:
+        return False
+    u = code.upper()
+    if re.search(r'(^|[^A-Z0-9])(DS|GLM)($|[^A-Z0-9])', u):
+        return True
+    if item and isinstance(item, dict):
+        platform = str(item.get("platform") or "").lower()
+        if platform in ("deepseek", "glm", "chatglm"):
+            return True
+    return False
 
 
 class AIHubClient:
@@ -162,6 +177,12 @@ class AIHubClient:
                 pass
 
         excluded_codes = set(self.get_excluded_providers() or [])
+        selected_codes = set(self.get_selected_providers() or [])
+        # Default exclude any DS or GLM providers unless explicitly selected by user
+        for it in providers_raw:
+            c = it.get("code", "")
+            if is_ds_or_glm_provider(c, it) and c not in selected_codes:
+                excluded_codes.add(c)
         all_parsed_providers = []
         for it in providers_raw:
             code = it.get("code", "")
