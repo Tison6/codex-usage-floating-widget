@@ -15,9 +15,9 @@ import psutil
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFrame, QMenu, QAction, QApplication, QDesktopWidget, QGraphicsDropShadowEffect, QDialog
+    QFrame, QMenu, QAction, QApplication, QDesktopWidget, QGraphicsDropShadowEffect, QDialog, QToolTip
 )
-from PyQt5.QtCore import Qt, QPoint, QTimer, QThread, pyqtSignal, QEvent
+from PyQt5.QtCore import Qt, QPoint, QTimer, QThread, pyqtSignal, QEvent, QObject
 from PyQt5.QtGui import QColor, QCursor, QFont
 
 from core.config_manager import ConfigManager
@@ -105,6 +105,19 @@ class RelayFetchWorker(QThread):
             self.aihub_ready.emit({"success": False, "error": str(e)})
 
 
+class ToolTipZOrderFilter(QObject):
+    """Event filter ensuring Qt QToolTip windows always render in front of topmost frameless widgets."""
+    def __init__(self, main_win):
+        super().__init__(main_win)
+        self.main_win = main_win
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.ToolTip:
+            QTimer.singleShot(1, self.main_win.fix_tooltip_zorder)
+            QTimer.singleShot(35, self.main_win.fix_tooltip_zorder)
+        return False
+
+
 class FloatingWidget(QWidget):
     """Frameless translucent desktop floating widget with auto-collapse & instant interaction."""
     
@@ -118,6 +131,12 @@ class FloatingWidget(QWidget):
         self.is_mini = self.cfg.get("is_mini_mode", False)
         self.is_locked = self.cfg.get("lock_position", False)
         self.widget_scale = self.cfg.get("scale", 1.0)
+
+        # Tooltip Z-order event filter (prevents QToolTip from being drawn behind the topmost widget)
+        self._tooltip_filter = ToolTipZOrderFilter(self)
+        app_inst = QApplication.instance()
+        if app_inst:
+            app_inst.installEventFilter(self._tooltip_filter)
         
         self._drag_pos = QPoint()
         self._press_global_pos = QPoint()
@@ -631,9 +650,28 @@ class FloatingWidget(QWidget):
             QTimer.singleShot(150, self.ensure_topmost)
         super().hideEvent(event)
 
+    def fix_tooltip_zorder(self):
+        """Ensure any active QToolTip window is owned by this window and placed at the top of the topmost band."""
+        if sys.platform != "win32":
+            return
+        try:
+            u32 = ctypes.windll.user32
+            hwnd_main = int(self.winId())
+            for w in QApplication.topLevelWidgets():
+                if w != self and "QLabel" in w.__class__.__name__:
+                    hwnd_tip = int(w.winId())
+                    # Setting the main window as owner ensures Windows always paints the tooltip in front
+                    u32.SetWindowLongPtrW(hwnd_tip, -8, hwnd_main)  # GWLP_HWNDPARENT = -8
+                    u32.SetWindowPos(hwnd_tip, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)
+        except Exception:
+            pass
+
     def ensure_topmost(self):
         """Ensure window remains visible and topmost unless user explicitly hid it."""
         if getattr(self, "_user_hidden", False):
+            return
+        # If user is hovering and reading a tooltip, do not disrupt the tooltip's Z-order
+        if QToolTip.isVisible():
             return
         if self.isMinimized():
             self.setWindowState(self.windowState() & ~Qt.WindowMinimized | Qt.WindowActive)

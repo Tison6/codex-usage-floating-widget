@@ -520,6 +520,7 @@ class AIHubFilterDialog(QDialog):
         self.aihub_client = aihub_client
         self.provider_checkboxes: Dict[str, QCheckBox] = {}
         self.provider_exclude_checkboxes: Dict[str, QCheckBox] = {}
+        self.provider_row_frames: Dict[str, QFrame] = {}
         self.provider_data_map: Dict[str, Dict[str, Any]] = {}
         self.excluded_providers = set(self.aihub_client.get_excluded_providers() or [])
 
@@ -528,6 +529,16 @@ class AIHubFilterDialog(QDialog):
                 self.aihub_client.fetch_data()
             except Exception:
                 pass
+
+        # Determine currently monitored / displayed providers on the main widget page
+        m_list = []
+        if parent and hasattr(parent, "relay_view"):
+            m_list = getattr(parent.relay_view, "_aihub_data", {}).get("monitored_providers") or getattr(parent.relay_view, "_aihub_data", {}).get("top_groups", [])
+        if not m_list:
+            m_list = (self.aihub_client.cached_data or {}).get("monitored_providers") or (self.aihub_client.cached_data or {}).get("top_groups", [])
+        self.current_page_codes = [p["code"] for p in m_list if p.get("code")]
+        self.current_page_set = set(self.current_page_codes)
+        self.current_page_rank = {code: idx + 1 for idx, code in enumerate(self.current_page_codes)}
 
         self.init_window()
         self.init_ui()
@@ -658,6 +669,37 @@ class AIHubFilterDialog(QDialog):
         tip_lbl.setStyleSheet("font-size: 10px; color: #94A3B8;")
         act_row.addWidget(tip_lbl)
         act_row.addStretch()
+
+        curr_cnt = len(self.current_page_codes)
+        cb_text = f"只看当前页面分组 ({curr_cnt})" if curr_cnt > 0 else "只看当前页面分组"
+        self.cb_only_current = QCheckBox(cb_text)
+        self.cb_only_current.setCursor(Qt.PointingHandCursor)
+        self.cb_only_current.setToolTip("勾选后仅显示当前悬浮窗主界面上正在展示的分组/供应商，方便快速定位并勾选剔除")
+        self.cb_only_current.setStyleSheet("""
+            QCheckBox {
+                font-size: 10px;
+                font-weight: 700;
+                color: #38BDF8;
+                spacing: 4px;
+            }
+            QCheckBox::indicator {
+                width: 13px;
+                height: 13px;
+                border-radius: 3px;
+                border: 1px solid rgba(56, 189, 248, 0.5);
+                background: rgba(255, 255, 255, 0.04);
+            }
+            QCheckBox::indicator:hover {
+                border-color: #38BDF8;
+                background: rgba(56, 189, 248, 0.15);
+            }
+            QCheckBox::indicator:checked {
+                background-color: #0284C7;
+                border-color: #38BDF8;
+            }
+        """)
+        self.cb_only_current.stateChanged.connect(self._apply_row_visibility)
+        act_row.addWidget(self.cb_only_current)
 
         btn_good = QPushButton("⭐ 推荐预设")
         btn_good.setFixedHeight(20)
@@ -873,6 +915,7 @@ class AIHubFilterDialog(QDialog):
             self.provider_data_map[code] = p
 
             row = QFrame()
+            self.provider_row_frames[code] = row
             row.setStyleSheet("""
                 QFrame {
                     background: rgba(255, 255, 255, 0.03);
@@ -959,10 +1002,15 @@ class AIHubFilterDialog(QDialog):
             detail = (p.get("public_detail") or "").strip()
             is_on = bool(p.get("available", True)) and bool(p.get("visible_in_hall", True))
             off_tag = "" if is_on else " <span style='font-size: 8px; color: #EF4444; font-weight: 700;'>[已下架]</span>"
+            rank_badge = ""
+            if code in self.current_page_rank:
+                r_num = self.current_page_rank[code]
+                rank_badge = f"<span style='font-size: 8.5px; color: #38BDF8; font-weight: 700; background: rgba(56, 189, 248, 0.16); border-radius: 3px; padding: 0 3px; margin-right: 2px;'>[#{r_num}]</span> "
+
             if detail:
-                code_lbl = QLabel(f"<span style='font-size: 10px; font-weight: 600; color: {'#64748B' if is_exc else '#E2E8F0'};'>{code}</span>{off_tag} <span style='font-size: 8.5px; color: #64748B;'>{detail}</span>")
+                code_lbl = QLabel(f"{rank_badge}<span style='font-size: 10px; font-weight: 600; color: {'#64748B' if is_exc else '#E2E8F0'};'>{code}</span>{off_tag} <span style='font-size: 8.5px; color: #64748B;'>{detail}</span>")
             else:
-                code_lbl = QLabel(f"<span style='font-size: 10px; font-weight: 600; color: {'#64748B' if is_exc else '#E2E8F0'};'>{code}</span>{off_tag}")
+                code_lbl = QLabel(f"{rank_badge}<span style='font-size: 10px; font-weight: 600; color: {'#64748B' if is_exc else '#E2E8F0'};'>{code}</span>{off_tag}")
             code_lbl.setCursor(Qt.PointingHandCursor)
             code_lbl.mousePressEvent = lambda e, m_cb=cb, exc=is_exc: m_cb.setChecked(not m_cb.isChecked()) if not exc else None
             r_lay.addWidget(code_lbl)
@@ -1105,14 +1153,29 @@ class AIHubFilterDialog(QDialog):
 
         root.addWidget(container)
 
+    def _apply_row_visibility(self):
+        only_current = hasattr(self, "cb_only_current") and self.cb_only_current.isChecked()
+        for code, row in self.provider_row_frames.items():
+            if only_current and code not in self.current_page_set:
+                row.hide()
+            else:
+                row.show()
+        self.update_count_label()
+
     def update_count_label(self):
         checked = sum(1 for cb in self.provider_checkboxes.values() if cb.isChecked())
         excluded = sum(1 for cb_e in self.provider_exclude_checkboxes.values() if cb_e.isChecked())
         total = len(self.provider_checkboxes)
-        self.count_lbl.setText(f"已勾选: {checked}  |  🚫 已剔除: {excluded}  |  总计: {total} 个供应商")
+        shown = sum(1 for row in self.provider_row_frames.values() if not row.isHidden()) if hasattr(self, "provider_row_frames") else total
+        if shown < total:
+            self.count_lbl.setText(f"已勾选: {checked}  |  🚫 已剔除: {excluded}  |  当前显示: {shown}/{total} 个供应商")
+        else:
+            self.count_lbl.setText(f"已勾选: {checked}  |  🚫 已剔除: {excluded}  |  总计: {total} 个供应商")
 
     def toggle_all(self, checked: bool):
         for code, cb in self.provider_checkboxes.items():
+            if hasattr(self, "provider_row_frames") and self.provider_row_frames[code].isHidden():
+                continue
             cb_e = self.provider_exclude_checkboxes.get(code)
             if checked and cb_e and cb_e.isChecked():
                 cb.setChecked(False)
