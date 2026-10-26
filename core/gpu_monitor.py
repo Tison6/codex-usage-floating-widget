@@ -8,10 +8,19 @@ import os
 import sqlite3
 import datetime
 import json
+import time
 from typing import Dict, Any, List, Optional
+from concurrent.futures import ThreadPoolExecutor
+import paramiko
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
 DB_FILE = r"D:/gpu_history.db"
+
+DEFAULT_COLLECTOR_SERVERS = [
+    {"ip": "192.168.120.7", "port": 22, "user": "xutianxiao", "key_path": r"C:/Users/xtx/.ssh/id_rsa_xtx"},
+    {"ip": "192.168.120.8", "port": 22, "user": "xutianxiao", "key_path": r"C:/Users/xtx/.ssh/id_rsa_xtx"},
+    {"ip": "192.168.120.4", "port": 22, "user": "xutianxiao", "key_path": r"C:/Users/xtx/.ssh/id_rsa_stu"},
+]
 
 def _load_user_mapping() -> Dict[str, str]:
     """Load local user mapping from data/user_mapping.json if present (gitignored)."""
@@ -193,6 +202,23 @@ class GPULiveWorker(QThread):
                             "tooltip": desc
                         })
 
+            latest_time = ""
+            for r in rows:
+                t = r[9]
+                if t and str(t) > latest_time:
+                    latest_time = str(t)
+
+            if latest_time:
+                time_str = latest_time.split(" ")[-1] if " " in latest_time else latest_time
+                try:
+                    dt = datetime.datetime.strptime(latest_time, "%Y-%m-%d %H:%M:%S")
+                    if (datetime.datetime.now() - dt).total_seconds() > 60:
+                        time_str = f"{time_str} (过期)"
+                except Exception:
+                    pass
+            else:
+                time_str = "--:--:--"
+
             return {
                 "success": True,
                 "servers": servers,
@@ -200,7 +226,7 @@ class GPULiveWorker(QThread):
                 "five_cards": five_cards,
                 "five_cards_tt": "\n".join(tt_lines),
                 "db_size_mb": get_db_size_mb(self.db_path),
-                "last_update": datetime.datetime.now().strftime("%H:%M:%S")
+                "last_update": time_str
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
@@ -319,8 +345,196 @@ class GPUHistoryWorker(QThread):
             return []
 
 
+class GPUCollectorWorker(QThread):
+    """
+    Background worker periodically querying remote GPU servers via SSH,
+    parsing live GPU and process metrics, and writing directly to D:/gpu_history.db.
+    Ensures the floating widget has 100% live GPU metrics without relying on external scripts.
+    """
+    collected = pyqtSignal()
+
+    def __init__(self, db_path: str = DB_FILE, interval: int = 4, servers: Optional[List[Dict[str, Any]]] = None):
+        super().__init__()
+        self.db_path = db_path
+        self.interval = max(3, interval)
+        self.servers = servers or DEFAULT_COLLECTOR_SERVERS
+        self._running = True
+        self._last_history_time = 0.0
+
+    def stop(self):
+        self._running = False
+
+    def _fetch_server(self, server: Dict[str, Any]) -> List[Dict[str, Any]]:
+        ip = server["ip"]
+        port = server.get("port", 22)
+        user = server.get("user", "xutianxiao")
+        key_path = server.get("key_path")
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        data_points = []
+
+        try:
+            if not os.path.exists(key_path):
+                return []
+            k = paramiko.RSAKey.from_private_key_file(key_path)
+            c = paramiko.SSHClient()
+            c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            c.connect(ip, port=port, username=user, pkey=k, timeout=2.5, banner_timeout=2.5, auth_timeout=2.5)
+
+            # 1. Query GPU basic metrics
+            smi_cmd = "nvidia-smi --query-gpu=index,uuid,name,memory.used,memory.total,utilization.gpu,power.draw,power.limit --format=csv,noheader,nounits"
+            _, stdout, _ = c.exec_command(smi_cmd, timeout=3)
+            gpu_raw = stdout.read().decode("utf-8", errors="ignore").strip()
+
+            # 2. Query compute processes with process_name
+            proc_cmd = "nvidia-smi --query-compute-apps=pid,process_name,used_memory,gpu_uuid --format=csv,noheader,nounits"
+            _, stdout, _ = c.exec_command(proc_cmd, timeout=3)
+            proc_raw = stdout.read().decode("utf-8", errors="ignore").strip()
+
+            uuid_user_map = {}
+            if proc_raw:
+                for line in proc_raw.splitlines():
+                    if not line.strip():
+                        continue
+                    parts = [x.strip() for x in line.split(",")]
+                    if len(parts) >= 4:
+                        pid = parts[0]
+                        pname = parts[1]
+                        try:
+                            mem_used_proc = float(parts[2])
+                        except Exception:
+                            mem_used_proc = 0.0
+                        g_uuid = parts[3]
+
+                        if pname != "[Not Found]" and mem_used_proc > 1024:
+                            try:
+                                _, out_u, _ = c.exec_command(f"ps -p {pid} -o user=", timeout=1.5)
+                                u_str = out_u.read().decode("utf-8", errors="ignore").strip()
+                                if u_str:
+                                    uuid_user_map[g_uuid] = u_str
+                            except Exception:
+                                pass
+
+            c.close()
+
+            if gpu_raw:
+                for line in gpu_raw.splitlines():
+                    if not line.strip():
+                        continue
+                    parts = [x.strip() for x in line.split(",")]
+                    if len(parts) >= 8:
+                        try:
+                            g_idx = parts[0]
+                            g_uuid = parts[1]
+                            g_name = parts[2].replace("NVIDIA ", "").replace("GeForce ", "").replace("RTX ", "").strip()
+                            mem_used = int(float(parts[3]))
+                            mem_total = int(float(parts[4]))
+                            util = int(float(parts[5]))
+                            power_draw = str(int(float(parts[6])))
+                            power_limit = str(int(float(parts[7])))
+
+                            user_from_map = uuid_user_map.get(g_uuid)
+                            if user_from_map:
+                                top_user = user_from_map
+                            elif util > 15 or mem_used > 5120:
+                                top_user = "Busy"
+                            else:
+                                top_user = "Idle"
+
+                            data_points.append({
+                                "ip": ip,
+                                "gpu_index": g_idx,
+                                "gpu_name": g_name,
+                                "memory_used": mem_used,
+                                "memory_total": mem_total,
+                                "utilization": util,
+                                "power_draw": power_draw,
+                                "power_limit": power_limit,
+                                "top_user": top_user,
+                                "update_time": current_time
+                            })
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        return data_points
+
+    def run(self):
+        self._init_db()
+
+        while self._running:
+            start_ts = time.time()
+            all_data = []
+
+            try:
+                with ThreadPoolExecutor(max_workers=len(self.servers)) as executor:
+                    results = executor.map(self._fetch_server, self.servers)
+                    for res in results:
+                        all_data.extend(res)
+            except Exception:
+                for s in self.servers:
+                    all_data.extend(self._fetch_server(s))
+
+            if all_data and self._running:
+                try:
+                    conn = sqlite3.connect(self.db_path, timeout=5)
+                    c = conn.cursor()
+
+                    latest_tuples = [
+                        (d["ip"], d["gpu_index"], d["gpu_name"], d["memory_used"], d["memory_total"],
+                         d["utilization"], d["power_draw"], d["power_limit"], d["top_user"], d["update_time"])
+                        for d in all_data
+                    ]
+                    c.executemany("REPLACE INTO gpu_status_latest VALUES (?,?,?,?,?,?,?,?,?,?)", latest_tuples)
+
+                    now_ts = time.time()
+                    if now_ts - self._last_history_time >= 60:
+                        hist_tuples = [
+                            (d["update_time"], d["ip"], d["gpu_index"], d["gpu_name"],
+                             d["memory_used"], d["memory_total"], d["utilization"],
+                             d["power_draw"], d["power_limit"], d["top_user"])
+                            for d in all_data
+                        ]
+                        c.executemany("INSERT INTO gpu_history VALUES (?,?,?,?,?,?,?,?,?,?)", hist_tuples)
+                        self._last_history_time = now_ts
+
+                    conn.commit()
+                    conn.close()
+                    self.collected.emit()
+                except Exception:
+                    pass
+
+            elapsed = time.time() - start_ts
+            sleep_needed = max(0.5, self.interval - elapsed)
+            for _ in range(int(sleep_needed * 4)):
+                if not self._running:
+                    break
+                self.msleep(250)
+
+    def _init_db(self):
+        try:
+            if not os.path.exists(os.path.dirname(self.db_path)):
+                return
+            conn = sqlite3.connect(self.db_path, timeout=5)
+            c = conn.cursor()
+            c.execute('''CREATE TABLE IF NOT EXISTS gpu_status_latest
+                         (ip TEXT, gpu_index TEXT, gpu_name TEXT,
+                          memory_used INTEGER, memory_total INTEGER, 
+                          utilization INTEGER, power_draw TEXT, power_limit TEXT, top_user TEXT,
+                          update_time TEXT,
+                          PRIMARY KEY (ip, gpu_index))''')
+            c.execute('''CREATE TABLE IF NOT EXISTS gpu_history
+                         (timestamp TEXT, ip TEXT, gpu_index TEXT, gpu_name TEXT,
+                          memory_used INTEGER, memory_total INTEGER, 
+                          utilization INTEGER, power_draw TEXT, power_limit TEXT, top_user TEXT)''')
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+
 class GPUMonitor(QObject):
-    """Coordinates real-time GPU metrics and history queries."""
+    """Coordinates real-time GPU metrics, background collection, and history queries."""
     realtime_updated = pyqtSignal(dict)
     history_updated = pyqtSignal(list)
 
@@ -328,19 +542,28 @@ class GPUMonitor(QObject):
         super().__init__()
         self.db_path = db_path
         self.interval = interval
+        self.collector_worker: Optional[GPUCollectorWorker] = None
         self.live_worker: Optional[GPULiveWorker] = None
         self.history_worker: Optional[GPUHistoryWorker] = None
         self.latest_data: Dict[str, Any] = {}
 
     def start(self):
-        """Start real-time monitoring worker."""
+        """Start real-time monitoring and background collection worker."""
         self.stop()
+        self.collector_worker = GPUCollectorWorker(self.db_path, interval=4)
+        self.collector_worker.collected.connect(self._on_collector_done)
+        self.collector_worker.start()
+
         self.live_worker = GPULiveWorker(self.db_path, self.interval)
         self.live_worker.data_ready.connect(self._on_live_data)
         self.live_worker.start()
 
     def stop(self):
         """Stop worker threads."""
+        if self.collector_worker:
+            self.collector_worker.stop()
+            self.collector_worker.wait(1000)
+            self.collector_worker = None
         if self.live_worker:
             self.live_worker.stop()
             self.live_worker.wait(1000)
@@ -356,6 +579,12 @@ class GPUMonitor(QObject):
         self.history_worker = GPUHistoryWorker(days=days, db_path=self.db_path)
         self.history_worker.history_ready.connect(self._on_history_data)
         self.history_worker.start()
+
+    def _on_collector_done(self):
+        if self.live_worker:
+            data = self.live_worker._query_latest()
+            if data.get("success"):
+                self._on_live_data(data)
 
     def _on_live_data(self, data: Dict[str, Any]):
         self.latest_data = data
