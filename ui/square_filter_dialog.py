@@ -15,6 +15,7 @@ from PyQt5.QtGui import QColor, QFont, QCursor
 
 from core.square_client import DEFAULT_SELECTED_GROUPS, DEFAULT_SELECTED_MODELS, DEFAULT_GROUP_MODELS
 from core.aihub_client import DEFAULT_SELECTED_PROVIDERS, is_ds_or_glm_provider, is_default_excluded_provider
+from ui.relay_view import CandyBadge
 from PyQt5.QtCore import QRectF
 from PyQt5.QtGui import QPainter
 
@@ -773,6 +774,27 @@ class AIHubFilterDialog(QDialog):
         """)
         f_lay.addWidget(self.combo_detect)
 
+        # 6. 糖果题实测
+        f_lay.addWidget(QLabel("糖果:"))
+        self.combo_candy = QComboBox()
+        self.combo_candy.addItems(["全部", "仅正确 🟢 (21)", "仅错误 🔴"])
+        self.combo_candy.setStyleSheet("""
+            QComboBox {
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 4px;
+                color: #CBD5E1;
+                font-size: 9px;
+                padding: 1px 4px;
+            }
+            QComboBox QAbstractItemView {
+                background: #1E293B;
+                color: #F8FAFC;
+                selection-background-color: #3B82F6;
+            }
+        """)
+        f_lay.addWidget(self.combo_candy)
+
         f_lay.addStretch()
 
         btn_filter = QPushButton("确定筛选")
@@ -815,9 +837,9 @@ class AIHubFilterDialog(QDialog):
         h_exc.setToolTip("勾选剔除后，无论在自动模式还是手动模式下，该供应商均被排除不会被监控")
         h_row.addWidget(h_exc)
 
-        h_prov = QLabel("检测 / 供应商代码")
+        h_prov = QLabel("检测 / 糖果 / 供应商代码")
         h_prov.setStyleSheet("font-size: 9px; font-weight: 700; color: #64748B;")
-        h_prov.setToolTip("AIHub 模型真实性检测:\n🟢 绿色: 模型检测通过\n🟠 橙色: 模型疑似非原生/掺水/存在异常\n⚪ 灰色: 待定/样本不足/未检测")
+        h_prov.setToolTip("AIHub 模型真实性检测:\n🟢 绿色: 模型检测通过\n🟠 橙色: 模型疑似非原生/掺水/存在异常\n⚪ 灰色: 待定/样本不足/未检测\n\nAIHub 糖果题实测:\n🟢 21: 正确 (袋子三种口味糖果问题)\n🔴 29/其他: 错误\n⚪ --: 暂无")
         h_row.addWidget(h_prov)
         h_row.addStretch()
 
@@ -924,6 +946,14 @@ class AIHubFilterDialog(QDialog):
             det_tip = p.get("detection_tip", "")
             dot = DetectionDot(det_status, tooltip=det_tip, size=9, parent=row)
             r_lay.addWidget(dot)
+
+            # Candy Badge
+            candy_status = p.get("candy_status", "none")
+            candy_label = p.get("candy_label", "--")
+            candy_tip = p.get("candy_tip", "糖果题: ⚪ 暂无实测数据")
+            c_badge = CandyBadge(candy_status, candy_label, scale=1.0, parent=row)
+            c_badge.setToolTip(candy_tip)
+            r_lay.addWidget(c_badge)
 
             # Provider Code Label + Gray Description Note
             detail = (p.get("public_detail") or "").strip()
@@ -1106,6 +1136,7 @@ class AIHubFilterDialog(QDialog):
         max_eff = parse_val(self.edit_max_eff.text())
         max_nom = parse_val(self.edit_max_nom.text())
         det_mode = self.combo_detect.currentText()
+        candy_mode = self.combo_candy.currentText()
 
         for code, p in self.provider_data_map.items():
             cb = self.provider_checkboxes.get(code)
@@ -1127,6 +1158,15 @@ class AIHubFilterDialog(QDialog):
                 cb.setChecked(False)
                 continue
             elif "仅疑似" in det_mode and det_status != "suspected":
+                cb.setChecked(False)
+                continue
+
+            # Candy question filter
+            candy_status = p.get("candy_status", "none")
+            if "仅正确" in candy_mode and candy_status != "correct":
+                cb.setChecked(False)
+                continue
+            elif "仅错误" in candy_mode and candy_status != "wrong":
                 cb.setChecked(False)
                 continue
 

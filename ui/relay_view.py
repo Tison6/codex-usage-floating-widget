@@ -169,6 +169,73 @@ class DetectionDot(QWidget):
         painter.end()
 
 
+class CandyBadge(QLabel):
+    """
+    Renders AIHub candy question test result (糖果题):
+    - 21 (correct): emerald green pill (#10B981 / #34D399)
+    - other (wrong): rose red pill (#EF4444 / #F87171)
+    - none/empty: muted gray '--'
+    """
+
+    def __init__(self, status: str = "none", label: str = "--", scale: float = 1.0, parent=None):
+        super().__init__(parent)
+        self.scale = max(0.5, float(scale))
+        self.status = status
+        self.label = label
+        self.setAlignment(Qt.AlignCenter)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self._apply_style()
+
+    def set_data(self, status: str, label: str = "--", tooltip: str = ""):
+        self.status = status
+        self.label = label
+        if tooltip:
+            self.setToolTip(tooltip)
+        self._apply_style()
+
+    def _apply_style(self):
+        fs = max(6, int(round(7.5 * self.scale)))
+        w = max(16, int(round(18 * self.scale)))
+        h = max(11, int(round(13 * self.scale)))
+        self.setFixedSize(w, h)
+        self.setText(self.label)
+        if self.status == "correct":
+            self.setStyleSheet(f"""
+                QLabel {{
+                    background: rgba(16, 185, 129, 0.2);
+                    border: 1px solid rgba(16, 185, 129, 0.45);
+                    border-radius: 3px;
+                    color: #34D399;
+                    font-size: {fs}px;
+                    font-weight: 700;
+                    padding: 0px;
+                }}
+            """)
+        elif self.status == "wrong":
+            self.setStyleSheet(f"""
+                QLabel {{
+                    background: rgba(239, 68, 68, 0.2);
+                    border: 1px solid rgba(239, 68, 68, 0.45);
+                    border-radius: 3px;
+                    color: #F87171;
+                    font-size: {fs}px;
+                    font-weight: 700;
+                    padding: 0px;
+                }}
+            """)
+        else:
+            self.setStyleSheet(f"""
+                QLabel {{
+                    background: transparent;
+                    border: none;
+                    color: #64748B;
+                    font-size: {fs}px;
+                    font-weight: 600;
+                    padding: 0px;
+                }}
+            """)
+
+
 class ProviderNameLabel(QWidget):
     """
     Renders provider index + code (bold whitish) and optional public detail (grey subtext).
@@ -576,7 +643,7 @@ class RelayStationView(QWidget):
 
     def _clear_aihub_rows(self):
         for entry in self._aihub_rows:
-            for w in (entry.get("dot"), entry.get("name"), entry.get("nom"), entry.get("thumb"), entry.get("eff"), entry.get("hit"), entry.get("sr"), entry.get("ref")):
+            for w in (entry.get("dot"), entry.get("candy"), entry.get("name"), entry.get("nom"), entry.get("thumb"), entry.get("eff"), entry.get("hit"), entry.get("sr"), entry.get("ref")):
                 if w:
                     w.hide()
                     w.setParent(None)
@@ -610,7 +677,12 @@ class RelayStationView(QWidget):
         self._clear_aihub_rows()
         table_h = max(150, int(round(240 * self.scale)))
         hdr_row_h = max(18, int(round(20 * self.scale)))
-        left_w = max(14, int(round(15 * self.scale))) + max(54, int(round(62 * self.scale))) + max(2, int(round(2 * self.scale)))
+        left_w = (
+            max(14, int(round(15 * self.scale))) +
+            max(18, int(round(20 * self.scale))) +
+            max(54, int(round(62 * self.scale))) +
+            max(2, int(round(2 * self.scale)))
+        )
         right_w = (
             max(22, int(round(25 * self.scale))) +
             max(32, int(round(38 * self.scale))) +
@@ -909,7 +981,12 @@ class RelayStationView(QWidget):
 
         table_h = max(150, int(round(240 * self.scale)))
         hdr_row_h = max(18, int(round(20 * self.scale)))
-        left_w = max(14, int(round(15 * self.scale))) + max(54, int(round(62 * self.scale))) + max(2, int(round(2 * self.scale)))
+        left_w = (
+            max(14, int(round(15 * self.scale))) +
+            max(18, int(round(20 * self.scale))) +
+            max(54, int(round(62 * self.scale))) +
+            max(2, int(round(2 * self.scale)))
+        )
         right_w = (
             max(22, int(round(25 * self.scale))) +
             max(32, int(round(38 * self.scale))) +
@@ -1093,10 +1170,11 @@ class RelayStationView(QWidget):
     def _init_aihub_headers(self):
         """Build permanent fixed header rows for AIHub (locked at top, never scrolled out vertically)."""
         hdr_fs = max(6, int(round(7.5 * self.scale)))
-        left_h_titles = ["检测", "供应商"]
-        left_h_aligns = [Qt.AlignCenter, Qt.AlignLeft]
+        left_h_titles = ["检测", "糖果", "供应商"]
+        left_h_aligns = [Qt.AlignCenter, Qt.AlignCenter, Qt.AlignLeft]
         left_col_widths = [
             max(14, int(round(15 * self.scale))),
+            max(18, int(round(20 * self.scale))),
             max(54, int(round(62 * self.scale))),
         ]
 
@@ -1108,11 +1186,13 @@ class RelayStationView(QWidget):
                 h_lbl.setFixedWidth(col_w)
             if title == "检测":
                 h_lbl.setToolTip("模型真实性检测:\n🟢 检测通过 (官方验证通过)\n🟠 模型疑似 (验证无法定论)\n⚪ 其他 (证据不足/未配置)")
+            elif title == "糖果":
+                h_lbl.setToolTip("AIHub 糖果题实测:\n🟢 21: 正确 (袋子三种口味糖果问题)\n🔴 29/其他: 错误\n⚪ --: 暂无实测")
             elif title == "供应商":
                 h_lbl.setToolTip("供应商通道与名称 (固定列，左右滑动时始终固定在左侧)")
             self.aihub_header_grid_left.addWidget(h_lbl, 0, col_idx)
 
-        for c_i in range(2):
+        for c_i in range(3):
             self.aihub_header_grid_left.setColumnStretch(c_i, 0)
             self.aihub_grid_left.setColumnStretch(c_i, 0)
 
@@ -1412,7 +1492,8 @@ class RelayStationView(QWidget):
 
         left_col_widths = [
             max(14, int(round(15 * self.scale))),   # 0: 检测 (单圆点居中，极简紧凑)
-            max(54, int(round(62 * self.scale))),   # 1: 供应商 (代号+双行灰色小字，紧凑留出右侧空间)
+            max(18, int(round(20 * self.scale))),   # 1: 糖果 (21/29胶囊标签)
+            max(54, int(round(62 * self.scale))),   # 2: 供应商 (代号+双行灰色小字，紧凑留出右侧空间)
         ]
         right_col_widths = [
             max(22, int(round(25 * self.scale))),   # 0: 倍率
@@ -1433,12 +1514,13 @@ class RelayStationView(QWidget):
                 self.aihub_empty_left = QLabel()
                 self.aihub_empty_left.setFont(QFont("Segoe UI", row_title_fs))
                 self.aihub_empty_left.setText("<span style='color: #94A3B8; padding: 10px;'>暂无数据</span>")
-                self.aihub_grid_left.addWidget(self.aihub_empty_left, 0, 0, 1, 2, Qt.AlignCenter)
+                self.aihub_grid_left.addWidget(self.aihub_empty_left, 0, 0, 1, 3, Qt.AlignCenter)
             self.aihub_empty_lbl.show()
             self.aihub_empty_left.show()
             for extra in self._aihub_rows:
-                for w in (extra["dot"], extra["name"], extra["nom"], extra["thumb"], extra["eff"], extra["hit"], extra["sr"], extra["ref"]):
-                    w.hide()
+                for w in (extra["dot"], extra.get("candy"), extra["name"], extra["nom"], extra["thumb"], extra["eff"], extra["hit"], extra["sr"], extra["ref"]):
+                    if w:
+                        w.hide()
             return
 
         if self.aihub_empty_lbl:
@@ -1457,6 +1539,10 @@ class RelayStationView(QWidget):
 
             det_status = g.get("detection_status", "other")
             det_tip = g.get("detection_tip", "模型检测: ⚪ 未配置 / 暂无检测数据")
+            candy_status = g.get("candy_status", "none")
+            candy_label = g.get("candy_label", "--")
+            candy_tip = g.get("candy_tip", "糖果题: ⚪ 暂无实测数据")
+            candy_dot_emoji = g.get("candy_dot", "⚪")
             detail = (g.get("public_detail") or "").strip() or "公开供应商线路"
             is_on = bool(g.get("available", True)) and bool(g.get("visible_in_hall", True))
             code_text = f"{row_idx + 1}. {g['code']}" + ("" if is_on else " [下架]")
@@ -1474,6 +1560,7 @@ class RelayStationView(QWidget):
             tip_text = (
                 f"供应商: {g['code']}\n"
                 f"模型检测: {det_dot_emoji} {det_label}\n"
+                f"糖果题: {candy_dot_emoji} {candy_label}\n"
                 f"标准倍率: {nom_mult_str}\n"
                 f"真实折算倍率: {eff_mult_str}\n"
                 f"折算输入单价: {price_str}\n"
@@ -1517,6 +1604,8 @@ class RelayStationView(QWidget):
             if row_idx < len(self._aihub_rows):
                 entry = self._aihub_rows[row_idx]
                 entry["dot"].set_status(det_status, tooltip=det_tip)
+                if "candy" in entry:
+                    entry["candy"].set_data(candy_status, candy_label, tooltip=candy_tip)
                 entry["name"].set_data(code_text, detail=detail)
                 entry["dot"].setToolTip(tip_text)
                 entry["name"].setToolTip(tip_text)
@@ -1533,15 +1622,20 @@ class RelayStationView(QWidget):
                 entry["ref"].setText(f"<span style='color: {ref_color}; font-weight: 600;'>{ref_cache_str}</span>")
                 entry["ref"].setToolTip(f"官方参考缓存率基准:\n{ref_cache_str} ({g.get('code')})\n(来自官方 runtime_cache_1h 全网参考缓存基准)")
 
-                for w in (entry["dot"], entry["name"], entry["nom"], entry["thumb"], entry["eff"], entry["hit"], entry["sr"], entry["ref"]):
-                    w.show()
+                for w in (entry["dot"], entry.get("candy"), entry["name"], entry["nom"], entry["thumb"], entry["eff"], entry["hit"], entry["sr"], entry["ref"]):
+                    if w:
+                        w.show()
             else:
                 c_dot = DetectionDot(det_status, tooltip=det_tip, size=dot_size, parent=self.aihub_scroll_content_left)
                 c_dot.setFixedWidth(left_col_widths[0])
                 c_dot.setToolTip(tip_text)
 
+                c_candy = CandyBadge(candy_status, candy_label, scale=self.scale, parent=self.aihub_scroll_content_left)
+                c_candy.setFixedWidth(left_col_widths[1])
+                c_candy.setToolTip(candy_tip)
+
                 c_name = ProviderNameLabel(code_text, detail=detail, scale=self.scale, parent=self.aihub_scroll_content_left)
-                c_name.setFixedWidth(left_col_widths[1])
+                c_name.setFixedWidth(left_col_widths[2])
                 c_name.setFixedHeight(data_row_h)
                 c_name.setToolTip(tip_text)
 
@@ -1588,7 +1682,8 @@ class RelayStationView(QWidget):
                 c_ref.setFixedHeight(data_row_h)
 
                 self.aihub_grid_left.addWidget(c_dot, row_idx, 0, Qt.AlignCenter | Qt.AlignVCenter)
-                self.aihub_grid_left.addWidget(c_name, row_idx, 1, Qt.AlignLeft | Qt.AlignVCenter)
+                self.aihub_grid_left.addWidget(c_candy, row_idx, 1, Qt.AlignCenter | Qt.AlignVCenter)
+                self.aihub_grid_left.addWidget(c_name, row_idx, 2, Qt.AlignLeft | Qt.AlignVCenter)
                 self.aihub_grid_right.addWidget(c_nom, row_idx, 0, Qt.AlignCenter | Qt.AlignVCenter)
                 self.aihub_grid_right.addWidget(thumb, row_idx, 1, Qt.AlignCenter | Qt.AlignVCenter)
                 self.aihub_grid_right.addWidget(c_eff_multi, row_idx, 2, Qt.AlignCenter | Qt.AlignVCenter)
@@ -1597,12 +1692,13 @@ class RelayStationView(QWidget):
                 self.aihub_grid_right.addWidget(c_ref, row_idx, 5, Qt.AlignCenter | Qt.AlignVCenter)
 
                 self._aihub_rows.append({
-                    "dot": c_dot, "name": c_name, "nom": c_nom,
+                    "dot": c_dot, "candy": c_candy, "name": c_name, "nom": c_nom,
                     "thumb": thumb, "eff": c_eff_multi, "hit": c_hit_multi,
                     "sr": c_sr_multi, "ref": c_ref
                 })
 
         for extra in self._aihub_rows[len(monitored):]:
-            for w in (extra["dot"], extra["name"], extra["nom"], extra["thumb"], extra["eff"], extra["hit"], extra["sr"], extra["ref"]):
-                w.hide()
+            for w in (extra["dot"], extra.get("candy"), extra["name"], extra["nom"], extra["thumb"], extra["eff"], extra["hit"], extra["sr"], extra["ref"]):
+                if w:
+                    w.hide()
 

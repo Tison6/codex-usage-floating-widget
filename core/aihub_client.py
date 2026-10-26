@@ -407,6 +407,31 @@ class AIHubClient:
             md_reason = md.get("user_reason", "")
             md_time = format_iso_timestamp(md.get("detected_at"))
 
+            # Candy question test (糖果题: 21 为正确，其他为错误)
+            candy_text = (md.get("presentation") or {}).get("text") or (pres.get("text")) or {}
+            candy_ans = str(candy_text.get("answer") or "").strip()
+            candy_res = candy_text.get("result")
+
+            if candy_ans:
+                if candy_ans == "21" or candy_res is True:
+                    candy_status = "correct"
+                    candy_label = "21"
+                    candy_color = "#10B981"
+                    candy_dot = "🟢"
+                    candy_tip = f"糖果题: 🟢 正确 (回答: {candy_ans})\n题目: 三种口味糖果问题\n正确答案: 21"
+                else:
+                    candy_status = "wrong"
+                    candy_label = candy_ans
+                    candy_color = "#EF4444"
+                    candy_dot = "🔴"
+                    candy_tip = f"糖果题: 🔴 错误 (回答: {candy_ans})\n题目: 三种口味糖果问题\n正确答案: 21"
+            else:
+                candy_status = "none"
+                candy_label = "--"
+                candy_color = "#64748B"
+                candy_dot = "⚪"
+                candy_tip = "糖果题: ⚪ 暂无实测数据"
+
             if md_status == "passed":
                 det_status = "passed"
                 det_label = "通过"
@@ -486,6 +511,12 @@ class AIHubClient:
                 "detection_tip": det_tip,
                 "detection_model": md_model,
                 "detection_raw_status": md_status,
+                "candy_status": candy_status,
+                "candy_label": candy_label,
+                "candy_color": candy_color,
+                "candy_dot": candy_dot,
+                "candy_tip": candy_tip,
+                "candy_answer": candy_ans,
                 "public_detail": (it.get("public_detail") or "").strip(),
                 "is_excluded": code in excluded_codes,
                 "hist_span_hours": round(hist_span / 3600, 1),

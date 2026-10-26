@@ -758,6 +758,9 @@ pub struct AIHubProviderItem {
     pub success_rate: f32,
     pub is_excluded: bool,
     pub public_detail: String,
+    pub candy_status: String,
+    pub candy_label: String,
+    pub candy_dot: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -935,6 +938,34 @@ impl AIHubClient {
                     .trim()
                     .to_string();
 
+                let (candy_status, candy_label, candy_dot) = if let Some(text_obj) = it
+                    .get("model_detection")
+                    .and_then(|v| v.get("presentation"))
+                    .and_then(|v| v.get("text"))
+                    .or_else(|| {
+                        it.get("detection_media")
+                            .and_then(|v| v.get("presentation"))
+                            .and_then(|v| v.get("text"))
+                    }) {
+                    let ans = text_obj
+                        .get("answer")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.trim())
+                        .unwrap_or_default();
+                    let res = text_obj.get("result").and_then(|v| v.as_bool()).unwrap_or(false);
+                    if !ans.is_empty() {
+                        if ans == "21" || res {
+                            ("correct".to_string(), "21".to_string(), "🟢".to_string())
+                        } else {
+                            ("wrong".to_string(), ans.to_string(), "🔴".to_string())
+                        }
+                    } else {
+                        ("none".to_string(), "--".to_string(), "⚪".to_string())
+                    }
+                } else {
+                    ("none".to_string(), "--".to_string(), "⚪".to_string())
+                };
+
                 all_items.push(AIHubProviderItem {
                     code: code.to_string(),
                     group_id,
@@ -954,6 +985,9 @@ impl AIHubClient {
                     success_rate: sr,
                     is_excluded: is_exc,
                     public_detail,
+                    candy_status,
+                    candy_label,
+                    candy_dot,
                 });
             }
         }
