@@ -775,23 +775,23 @@ pub struct AIHubClient {
     client: reqwest::Client,
 }
 
-fn is_ds_or_glm_provider(code: &str) -> bool {
+pub fn is_default_excluded_provider(code: &str) -> bool {
     let u = code.to_uppercase();
-    if let Some(pos) = u.find("DS") {
-        let before_ok = pos == 0 || !u.as_bytes()[pos - 1].is_ascii_alphanumeric();
-        let after_ok = pos + 2 == u.len() || !u.as_bytes()[pos + 2].is_ascii_alphanumeric();
-        if before_ok && after_ok {
-            return true;
-        }
-    }
-    if let Some(pos) = u.find("GLM") {
-        let before_ok = pos == 0 || !u.as_bytes()[pos - 1].is_ascii_alphanumeric();
-        let after_ok = pos + 3 == u.len() || !u.as_bytes()[pos + 3].is_ascii_alphanumeric();
-        if before_ok && after_ok {
-            return true;
+    for token in &["DS", "GLM", "GROK"] {
+        if let Some(pos) = u.find(token) {
+            let tlen = token.len();
+            let before_ok = pos == 0 || !u.as_bytes()[pos - 1].is_ascii_alphanumeric();
+            let after_ok = pos + tlen == u.len() || !u.as_bytes()[pos + tlen].is_ascii_alphanumeric();
+            if before_ok && after_ok {
+                return true;
+            }
         }
     }
     false
+}
+
+pub fn is_ds_or_glm_provider(code: &str) -> bool {
+    is_default_excluded_provider(code)
 }
 
 impl AIHubClient {
@@ -873,7 +873,7 @@ impl AIHubClient {
                     .and_then(|v| v.as_f64())
                     .unwrap_or(mult);
 
-                let is_exc = excluded_set.contains(code) || (is_ds_or_glm_provider(code) && !selected_set.contains(code));
+                let is_exc = excluded_set.contains(code) || (is_default_excluded_provider(code) && !selected_set.contains(code));
 
                 // Detection status
                 let md = it.get("model_detection");

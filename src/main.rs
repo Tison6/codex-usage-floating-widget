@@ -721,7 +721,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(mut item) = model.row_data(i) {
                     let code = item.code.to_string();
                     item.is_selected = cfg.aihub_selected_providers.contains(&code);
-                    item.is_excluded = cfg.aihub_excluded_providers.contains(&code);
+                    item.is_excluded = cfg.aihub_excluded_providers.contains(&code) || (relay::is_default_excluded_provider(&code) && !item.is_selected);
                     if item.is_selected {
                         sel_cnt += 1;
                     }
@@ -1550,7 +1550,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             for p in &aihub_res.all_providers {
                 let is_sel = cfg.aihub_selected_providers.contains(&p.code);
-                let is_exc = cfg.aihub_excluded_providers.contains(&p.code);
+                let is_exc = cfg.aihub_excluded_providers.contains(&p.code) || (relay::is_default_excluded_provider(&p.code) && !is_sel);
                 dlg_items.push(DialogProviderItem {
                     code: p.code.clone().into(),
                     multiplier_str: p.multiplier_str.clone().into(),
