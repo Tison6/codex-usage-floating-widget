@@ -282,6 +282,7 @@ class FloatingWidget(QWidget):
         self.relay_view.pelican_clicked.connect(self.open_pelican_viewer)
         self.relay_view.filter_dialog_requested.connect(self.open_square_filter_dialog)
         self.relay_view.aihub_filter_requested.connect(self.open_aihub_filter_dialog)
+        self.relay_view.history_timeline_requested.connect(self.open_aihub_history_dialog)
         self.relay_view.aihub_mode_toggled.connect(self.on_aihub_mode_toggled)
         self.relay_view.refresh_requested.connect(lambda: self.fetch_relay_async(force=True))
         mid_layout.addWidget(self.relay_view)
@@ -961,6 +962,21 @@ class FloatingWidget(QWidget):
             from ui.square_filter_dialog import AIHubFilterDialog
             dlg = AIHubFilterDialog(self.aihub_client, parent=self)
             dlg.filters_changed.connect(lambda: self.fetch_relay_async(force=True))
+            try:
+                dlg.exec_()
+            finally:
+                dlg.deleteLater()
+                self.raise_()
+                self.activateWindow()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+
+    def open_aihub_history_dialog(self, code: str = "", dimension: str = "detection"):
+        """Open AIHub 24-hour probe and candy timeline visualization dialog."""
+        try:
+            from ui.history_timeline_dialog import AIHubHistoryDialog
+            dlg = AIHubHistoryDialog(self.aihub_client, initial_code=code, initial_dimension=dimension, parent=self)
             try:
                 dlg.exec_()
             finally:

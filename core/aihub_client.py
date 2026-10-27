@@ -9,7 +9,7 @@ import re
 import json
 import time
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
 
 
@@ -370,28 +370,6 @@ class AIHubClient:
 
             eff_multi_str = f"{cur_eff_num}/{eff1h_num}/{eff1d_num}/{eff7d_num}"
 
-            # Append current reading to metrics history (record any valid metric independently)
-            if has_sr or has_cache or eff_mult_val is not None:
-                if code not in metrics_history:
-                    metrics_history[code] = []
-                
-                cur_t = int(now)
-                rec = {"t": cur_t}
-                if eff_mult_val is not None:
-                    rec["eff"] = round(eff_mult_val, 4)
-                if has_cache:
-                    rec["cache"] = round(cache_hit_val, 1)
-                if has_sr and sr_percent is not None:
-                    rec["sr"] = round(sr_percent, 1)
-
-                if len(rec) > 1:
-                    # Update if sample is within 30 seconds to prevent spamming duplicates, else append
-                    if metrics_history[code] and abs(metrics_history[code][-1].get("t", 0) - cur_t) < 30:
-                        metrics_history[code][-1].update(rec)
-                    else:
-                        metrics_history[code].append(rec)
-                    metrics_history[code] = [h for h in metrics_history[code] if h["t"] >= now - 7 * 86400]
-
             # Detection media / image
             dm = it.get("detection_media") or {}
             pres = dm.get("presentation") or {}
@@ -418,13 +396,13 @@ class AIHubClient:
                     candy_label = "21"
                     candy_color = "#10B981"
                     candy_dot = "🟢"
-                    candy_tip = f"糖果题: 🟢 正确 (回答: {candy_ans})\n题目: 三种口味糖果问题\n正确答案: 21"
+                    candy_tip = f"糖果题: 🟢 通过 (回答: {candy_ans})\n题目: 三种口味糖果问题\n正确答案: 21"
                 else:
                     candy_status = "wrong"
                     candy_label = candy_ans
                     candy_color = "#EF4444"
                     candy_dot = "🔴"
-                    candy_tip = f"糖果题: 🔴 错误 (回答: {candy_ans})\n题目: 三种口味糖果问题\n正确答案: 21"
+                    candy_tip = f"糖果题: 🔴 不通过 (回答: {candy_ans})\n题目: 三种口味糖果问题\n正确答案: 21"
             else:
                 candy_status = "none"
                 candy_label = "--"
@@ -438,6 +416,75 @@ class AIHubClient:
                 det_color = "#10B981"
                 det_dot = "🟢"
                 det_tip = f"模型检测: 🟢 通过\n测试目标: {md_model or '默认'}\n说明: {md_reason or '官方验证通过'}"
+                if md_time:
+                    det_tip += f"\n检测时间: {md_time}"
+            elif md_status == "suspected":
+                det_status = "suspected"
+                det_label = "疑似"
+                det_color = "#F59E0B"
+                det_dot = "🟠"
+                det_tip = f"模型检测: 🟠 疑似 (存疑)\n测试目标: {md_model or '默认'}\n说明: {md_reason or '验证无法定论'}"
+                if md_time:
+                    det_tip += f"\n检测时间: {md_time}"
+            elif md_status == "insufficient_evidence":
+                det_status = "other"
+                det_label = "待定"
+                det_color = "#64748B"
+                det_dot = "⚪"
+                det_tip = f"模型检测: ⚪ 证据不足 (无法定论)\n测试目标: {md_model or '默认'}\n说明: {md_reason or '暂无定论'}"
+                if md_time:
+                    det_tip += f"\n检测时间: {md_time}"
+            elif md_status == "detection_failed":
+                det_status = "other"
+                det_label = "失败"
+                det_color = "#64748B"
+                det_dot = "⚪"
+                det_tip = f"模型检测: ⚪ 检测失败\n说明: {md_reason or '检测暂时不可用'}"
+            else:
+                det_status = "other"
+                det_label = "未检"
+                det_color = "#475569"
+                det_dot = "⚪"
+                det_tip = "模型检测: ⚪ 未配置 / 暂无检测数据"
+
+            # Append current reading to metrics history (record any valid metric independently)
+            if has_sr or has_cache or eff_mult_val is not None or det_status or candy_status:
+                if code not in metrics_history:
+                    metrics_history[code] = []
+                
+                cur_t = int(now)
+                rec = {"t": cur_t}
+                if eff_mult_val is not None:
+                    rec["eff"] = round(eff_mult_val, 4)
+                if has_cache:
+                    rec["cache"] = round(cache_hit_val, 1)
+                if has_sr and sr_percent is not None:
+                    rec["sr"] = round(sr_percent, 1)
+                if det_status and det_status != "other":
+                    rec["det"] = det_status
+                    rec["det_lbl"] = det_label
+                    if md_model:
+                        rec["det_m"] = md_model
+                    if md_reason:
+                        rec["det_r"] = md_reason
+                    if md_time:
+                        rec["det_t"] = md_time
+                elif det_status == "other":
+                    rec["det"] = "other"
+                    rec["det_lbl"] = det_label
+                if candy_status and candy_status != "none":
+                    rec["candy"] = candy_status
+                    rec["candy_ans"] = candy_ans
+                elif candy_status == "none":
+                    rec["candy"] = "none"
+
+                if len(rec) > 1:
+                    # Update if sample is within 30 seconds to prevent spamming duplicates, else append
+                    if metrics_history[code] and abs(metrics_history[code][-1].get("t", 0) - cur_t) < 30:
+                        metrics_history[code][-1].update(rec)
+                    else:
+                        metrics_history[code].append(rec)
+                    metrics_history[code] = [h for h in metrics_history[code] if h["t"] >= now - 7 * 86400]
                 if md_time:
                     det_tip += f"\n检测时间: {md_time}"
             elif md_status == "suspected":
@@ -695,3 +742,197 @@ class AIHubClient:
         except Exception as e:
             print("Error fetching provider history images:", e)
         return all_items
+
+    def get_metrics_history(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Return rolling metrics history from disk or memory."""
+        metrics_history_file = os.path.join(os.path.dirname(self.cache_dir), "aihub_history.json")
+        if os.path.exists(metrics_history_file):
+            try:
+                with open(metrics_history_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return getattr(self, "_metrics_history", {})
+
+    def get_provider_timeline_data(self, code: str, days: int = 7, granularity_mins: int = 30) -> Dict[str, Any]:
+        """
+        Organize historical probe, model detection, and candy question test records into
+        a 24-hour daily timeline grid:
+        - Exactly 1 row per day, latest date at the top (today -> yesterday -> ...).
+        - 24 hours horizontally subdivided into slots by `granularity_mins` (e.g. 30 min -> 48 slots/day).
+        - Each slot reports detection status ('passed', 'suspected', 'other', 'none', 'future')
+          and candy status ('correct', 'wrong', 'none', 'future').
+        """
+        now = time.time()
+        now_dt = datetime.fromtimestamp(now)
+        today_start_dt = now_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start_ts = today_start_dt.timestamp()
+
+        # Load metrics history
+        history_map = self.get_metrics_history()
+        history_list = history_map.get(code, [])
+
+        # Current live provider data
+        live_provider = None
+        if self.cached_data:
+            for p in self.cached_data.get("all_providers", []):
+                if p.get("code") == code:
+                    live_provider = p
+                    break
+
+        slots_per_day = max(1, int(round(1440 / granularity_mins)))
+        slot_duration = granularity_mins * 60
+
+        daily_rows = []
+        weekday_names = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+
+        # Backfill reference values: if historical samples lack det/candy, use live provider status
+        live_det = (live_provider or {}).get("detection_status", "other")
+        live_candy = (live_provider or {}).get("candy_status", "none")
+        live_candy_ans = (live_provider or {}).get("candy_answer", "")
+        live_det_m = (live_provider or {}).get("detection_model", "")
+        live_det_r = (live_provider or {}).get("public_detail", "")
+
+        for day_offset in range(days):
+            day_dt = today_start_dt - timedelta(days=day_offset)
+            day_start_ts = day_dt.timestamp()
+            date_str = day_dt.strftime("%Y-%m-%d")
+            display_date = day_dt.strftime("%m-%d")
+            w_cn = weekday_names[day_dt.weekday()]
+            if day_offset == 0:
+                display_label = f"{display_date} 今天"
+            elif day_offset == 1:
+                display_label = f"{display_date} 昨天"
+            else:
+                display_label = f"{display_date} {w_cn}"
+
+            slots = []
+            det_passed_slots = 0
+            det_tested_slots = 0
+            candy_correct_slots = 0
+            candy_tested_slots = 0
+
+            # Scan all slots for this day
+            for s in range(slots_per_day):
+                s_start_ts = day_start_ts + s * slot_duration
+                s_end_ts = s_start_ts + slot_duration
+                s_h = (s * granularity_mins) // 60
+                s_m = (s * granularity_mins) % 60
+                e_h = ((s + 1) * granularity_mins) // 60
+                e_m = ((s + 1) * granularity_mins) % 60
+                range_str = f"{s_h:02d}:{s_m:02d}~{e_h:02d}:{e_m:02d}"
+
+                if s_start_ts > now:
+                    slots.append({
+                        "slot_index": s,
+                        "time_range": range_str,
+                        "is_future": True,
+                        "det_status": "future",
+                        "candy_status": "future",
+                        "det_label": "未到时间",
+                        "candy_label": "未到时间",
+                        "details": None,
+                    })
+                    continue
+
+                # Find samples in this slot
+                slot_samples = [r for r in history_list if s_start_ts <= r.get("t", 0) < s_end_ts]
+                
+                # Check if sample exists
+                if slot_samples:
+                    sample = slot_samples[-1]
+                    s_det = sample.get("det") or live_det
+                    s_candy = sample.get("candy") or live_candy
+                    s_candy_ans = sample.get("candy_ans") or live_candy_ans
+                    s_model = sample.get("det_m") or live_det_m
+                    s_reason = sample.get("det_r") or live_det_r
+                    sample_t = sample.get("t", int(s_start_ts))
+                    sample_time_str = datetime.fromtimestamp(sample_t).strftime("%m-%d %H:%M:%S")
+                    eff_val = sample.get("eff")
+                    cache_val = sample.get("cache")
+                    sr_val = sample.get("sr")
+                else:
+                    # If within 45 minutes of a sample
+                    prev_samples = [r for r in history_list if r.get("t", 0) <= s_end_ts and s_start_ts - r.get("t", 0) < 2700]
+                    if prev_samples:
+                        sample = prev_samples[-1]
+                        s_det = sample.get("det") or live_det
+                        s_candy = sample.get("candy") or live_candy
+                        s_candy_ans = sample.get("candy_ans") or live_candy_ans
+                        s_model = sample.get("det_m") or live_det_m
+                        s_reason = sample.get("det_r") or live_det_r
+                        sample_t = sample.get("t", int(s_start_ts))
+                        sample_time_str = datetime.fromtimestamp(sample_t).strftime("%m-%d %H:%M:%S")
+                        eff_val = sample.get("eff")
+                        cache_val = sample.get("cache")
+                        sr_val = sample.get("sr")
+                    else:
+                        sample = None
+                        s_det = "none"
+                        s_candy = "none"
+                        s_candy_ans = ""
+                        s_model = ""
+                        s_reason = ""
+                        sample_time_str = ""
+                        eff_val = None
+                        cache_val = None
+                        sr_val = None
+
+                # Tally statistics
+                if s_det == "passed":
+                    det_passed_slots += 1
+                    det_tested_slots += 1
+                elif s_det in ("suspected", "other", "wrong"):
+                    det_tested_slots += 1
+
+                if s_candy == "correct":
+                    candy_correct_slots += 1
+                    candy_tested_slots += 1
+                elif s_candy == "wrong":
+                    candy_tested_slots += 1
+
+                det_lbl = "通过" if s_det == "passed" else ("疑似" if s_det == "suspected" else ("未通过" if s_det == "wrong" else "无数据"))
+                candy_lbl = "通过 (21)" if s_candy == "correct" else ("未通过" if s_candy == "wrong" else "无数据")
+
+                slots.append({
+                    "slot_index": s,
+                    "time_range": range_str,
+                    "is_future": False,
+                    "det_status": s_det,
+                    "candy_status": s_candy,
+                    "det_label": det_lbl,
+                    "candy_label": candy_lbl,
+                    "candy_ans": s_candy_ans,
+                    "model": s_model,
+                    "reason": s_reason,
+                    "sample_time": sample_time_str,
+                    "eff": eff_val,
+                    "cache": cache_val,
+                    "sr": sr_val,
+                    "has_sample": bool(sample),
+                })
+
+            det_rate_str = f"{(det_passed_slots / det_tested_slots * 100):.1f}%" if det_tested_slots > 0 else "--"
+            candy_rate_str = f"{(candy_correct_slots / candy_tested_slots * 100):.1f}%" if candy_tested_slots > 0 else "--"
+
+            daily_rows.append({
+                "date_str": date_str,
+                "display_label": display_label,
+                "is_today": day_offset == 0,
+                "slots": slots,
+                "det_passed": det_passed_slots,
+                "det_total": det_tested_slots,
+                "det_rate_str": det_rate_str,
+                "candy_correct": candy_correct_slots,
+                "candy_total": candy_tested_slots,
+                "candy_rate_str": candy_rate_str,
+            })
+
+        return {
+            "code": code,
+            "provider": live_provider,
+            "granularity_mins": granularity_mins,
+            "slots_per_day": slots_per_day,
+            "daily_rows": daily_rows,
+            "generated_at": now_dt.strftime("%Y-%m-%d %H:%M:%S"),
+        }

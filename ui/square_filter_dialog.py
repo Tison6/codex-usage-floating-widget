@@ -15,41 +15,9 @@ from PyQt5.QtGui import QColor, QFont, QCursor
 
 from core.square_client import DEFAULT_SELECTED_GROUPS, DEFAULT_SELECTED_MODELS, DEFAULT_GROUP_MODELS
 from core.aihub_client import DEFAULT_SELECTED_PROVIDERS, is_ds_or_glm_provider, is_default_excluded_provider
-from ui.relay_view import CandyBadge
+from ui.relay_view import DetectionDot, CandyDot, CandyBadge
 from PyQt5.QtCore import QRectF
 from PyQt5.QtGui import QPainter
-
-class DetectionDot(QWidget):
-    """Compact circular status dot for AIHub model verification status."""
-    def __init__(self, status: str = "other", tooltip: str = "", size: int = 8, parent=None):
-        super().__init__(parent)
-        self.status = status
-        self._size = size
-        self.setFixedSize(size, size)
-        self.setCursor(Qt.PointingHandCursor)
-        if tooltip:
-            self.setToolTip(tooltip)
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        if self.status == "passed":
-            color = QColor("#10B981")
-            glow = QColor(16, 185, 129, 65)
-        elif self.status == "suspected":
-            color = QColor("#F59E0B")
-            glow = QColor(245, 158, 11, 65)
-        else:
-            color = QColor("#64748B")
-            glow = QColor(100, 116, 139, 45)
-
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(glow)
-        r = float(self._size) / 2.0
-        painter.drawEllipse(0, 0, self._size, self._size)
-        painter.setBrush(color)
-        inner = max(2.0, r * 0.65)
-        painter.drawEllipse(QRectF(r - inner / 2.0, r - inner / 2.0, inner, inner))
 
 SCROLL_STYLE = """
     QScrollArea {
@@ -986,16 +954,17 @@ class AIHubFilterDialog(QDialog):
 
             # Detection Dot
             det_status = p.get("detection_status", "other")
-            det_tip = p.get("detection_tip", "")
+            det_tip = p.get("detection_tip", "") + "\n💡 点击查看 24h 历史时序图"
             dot = DetectionDot(det_status, tooltip=det_tip, size=9, parent=row)
+            dot.clicked.connect(lambda _, c=code: self._open_history(c, "detection"))
             r_lay.addWidget(dot)
 
-            # Candy Badge
+            # Candy Dot (通过/未通过状态圆点)
             candy_status = p.get("candy_status", "none")
             candy_label = p.get("candy_label", "--")
-            candy_tip = p.get("candy_tip", "糖果题: ⚪ 暂无实测数据")
-            c_badge = CandyBadge(candy_status, candy_label, scale=1.0, parent=row)
-            c_badge.setToolTip(candy_tip)
+            candy_tip = p.get("candy_tip", "糖果题: ⚪ 暂无实测数据") + "\n💡 点击查看 24h 历史时序图"
+            c_badge = CandyDot(candy_status, candy_label, tooltip=candy_tip, size=9, parent=row)
+            c_badge.clicked.connect(lambda _, c=code: self._open_history(c, "candy"))
             r_lay.addWidget(c_badge)
 
             # Provider Code Label + Gray Description Note
@@ -1300,6 +1269,14 @@ class AIHubFilterDialog(QDialog):
         self.aihub_client.fetch_data(force=True)
         self.filters_changed.emit()
         self.close()
+
+    def _open_history(self, code: str, dimension: str = "detection"):
+        try:
+            from ui.history_timeline_dialog import AIHubHistoryDialog
+            dlg = AIHubHistoryDialog(self.aihub_client, initial_code=code, initial_dimension=dimension, parent=self)
+            dlg.exec_()
+        except Exception as e:
+            print("Error opening history dialog:", e)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:

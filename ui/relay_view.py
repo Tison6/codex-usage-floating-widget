@@ -133,7 +133,9 @@ class DetectionDot(QWidget):
     - suspected: electric amber orange (#F59E0B)
     - other/none: muted slate gray (#64748B)
     Renders as a clean single circular dot without any background oval.
+    Clicking emits clicked(str) to open 24h history timeline.
     """
+    clicked = pyqtSignal(str)
 
     def __init__(self, status: str = "other", tooltip: str = "", size: int = 7, parent=None):
         super().__init__(parent)
@@ -149,6 +151,13 @@ class DetectionDot(QWidget):
         if tooltip:
             self.setToolTip(tooltip)
         self.update()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit(self.status)
+            event.accept()
+        else:
+            super().mousePressEvent(event)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -169,71 +178,63 @@ class DetectionDot(QWidget):
         painter.end()
 
 
-class CandyBadge(QLabel):
+class CandyDot(QWidget):
     """
-    Renders AIHub candy question test result (糖果题):
-    - 21 (correct): emerald green pill (#10B981 / #34D399)
-    - other (wrong): rose red pill (#EF4444 / #F87171)
-    - none/empty: muted gray '--'
+    Compact circular status dot for AIHub candy question test result (糖果题):
+    - correct (通过 / 21): emerald green (#10B981)
+    - wrong (未通过 / 非21): rose red (#EF4444)
+    - none/empty (无数据): muted slate gray (#64748B)
+    Renders as a circular dot matching DetectionDot.
+    Clicking emits clicked(str) to open 24h history timeline.
     """
+    clicked = pyqtSignal(str)
 
-    def __init__(self, status: str = "none", label: str = "--", scale: float = 1.0, parent=None):
+    def __init__(self, status: str = "none", label: str = "--", scale: float = 1.0, tooltip: str = "", size: int = 7, parent=None):
         super().__init__(parent)
         self.scale = max(0.5, float(scale))
         self.status = status
         self.label = label
-        self.setAlignment(Qt.AlignCenter)
-        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self._apply_style()
+        self._size = size
+        self.setFixedSize(size, size)
+        self.setCursor(Qt.PointingHandCursor)
+        if tooltip:
+            self.setToolTip(tooltip)
 
     def set_data(self, status: str, label: str = "--", tooltip: str = ""):
         self.status = status
         self.label = label
         if tooltip:
             self.setToolTip(tooltip)
-        self._apply_style()
+        self.update()
 
-    def _apply_style(self):
-        fs = max(6, int(round(7.5 * self.scale)))
-        w = max(16, int(round(18 * self.scale)))
-        h = max(11, int(round(13 * self.scale)))
-        self.setFixedSize(w, h)
-        self.setText(self.label)
-        if self.status == "correct":
-            self.setStyleSheet(f"""
-                QLabel {{
-                    background: rgba(16, 185, 129, 0.2);
-                    border: 1px solid rgba(16, 185, 129, 0.45);
-                    border-radius: 3px;
-                    color: #34D399;
-                    font-size: {fs}px;
-                    font-weight: 700;
-                    padding: 0px;
-                }}
-            """)
-        elif self.status == "wrong":
-            self.setStyleSheet(f"""
-                QLabel {{
-                    background: rgba(239, 68, 68, 0.2);
-                    border: 1px solid rgba(239, 68, 68, 0.45);
-                    border-radius: 3px;
-                    color: #F87171;
-                    font-size: {fs}px;
-                    font-weight: 700;
-                    padding: 0px;
-                }}
-            """)
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit(self.status)
+            event.accept()
         else:
-            self.setStyleSheet(f"""
-                QLabel {{
-                    background: transparent;
-                    border: none;
-                    color: #64748B;
-                    font-size: {fs}px;
-                    font-weight: 600;
-                    padding: 0px;
-                }}
-            """)
+            super().mousePressEvent(event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        w = float(self.width())
+        h = float(self.height())
+        if self.status == "correct":
+            color = QColor("#10B981")
+        elif self.status == "wrong":
+            color = QColor("#EF4444")
+        else:
+            color = QColor("#64748B")
+
+        dot_d = max(4.0, float(self._size))
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(color)
+        painter.drawEllipse(QRectF((w - dot_d) / 2.0, (h - dot_d) / 2.0, dot_d, dot_d))
+        painter.end()
+
+
+# Backward compatibility alias
+CandyBadge = CandyDot
 
 
 class ProviderNameLabel(QWidget):
@@ -599,6 +600,7 @@ class RelayStationView(QWidget):
     pelican_clicked = pyqtSignal(dict)  # emits provider_item dict
     filter_dialog_requested = pyqtSignal()
     aihub_filter_requested = pyqtSignal()
+    history_timeline_requested = pyqtSignal(str, str)  # emits (provider_code, dimension)
     refresh_requested = pyqtSignal()
     aihub_mode_toggled = pyqtSignal(bool)  # emits new auto_mode boolean (True=auto, False=manual)
 
@@ -968,6 +970,26 @@ class RelayStationView(QWidget):
         """)
         self.btn_aihub_filter.clicked.connect(self.aihub_filter_requested.emit)
 
+        self.btn_aihub_history = QPushButton("📊 历史")
+        self.btn_aihub_history.setCursor(Qt.PointingHandCursor)
+        self.btn_aihub_history.setToolTip("查看 AIHub 探针检测与糖果题 24h 历史时序图")
+        self.btn_aihub_history.setStyleSheet("""
+            QPushButton {
+                background: rgba(56, 189, 248, 0.15);
+                border: 1px solid rgba(56, 189, 248, 0.35);
+                border-radius: 3px;
+                color: #38BDF8;
+                font-size: 8px;
+                font-weight: 600;
+                padding: 1px 4px;
+            }
+            QPushButton:hover {
+                background: rgba(56, 189, 248, 0.28);
+                color: #7DD3FC;
+            }
+        """)
+        self.btn_aihub_history.clicked.connect(lambda: self.history_timeline_requested.emit("", "detection"))
+
         self.aihub_status_lbl = QLabel("实时更新")
         self.aihub_status_lbl.setStyleSheet("font-size: 8px; color: #94A3B8;")
 
@@ -976,6 +998,7 @@ class RelayStationView(QWidget):
         sub_hdr.addStretch()
         sub_hdr.addWidget(self.btn_aihub_mode)
         sub_hdr.addWidget(self.btn_aihub_filter)
+        sub_hdr.addWidget(self.btn_aihub_history)
         sub_hdr.addWidget(self.aihub_status_lbl)
         p_layout.addLayout(sub_hdr)
 
@@ -1174,8 +1197,8 @@ class RelayStationView(QWidget):
         left_h_aligns = [Qt.AlignCenter, Qt.AlignCenter, Qt.AlignLeft]
         left_col_widths = [
             max(14, int(round(15 * self.scale))),
-            max(18, int(round(20 * self.scale))),
-            max(54, int(round(62 * self.scale))),
+            max(14, int(round(15 * self.scale))),
+            max(58, int(round(66 * self.scale))),
         ]
 
         for col_idx, (title, align, col_w) in enumerate(zip(left_h_titles, left_h_aligns, left_col_widths)):
@@ -1185,9 +1208,9 @@ class RelayStationView(QWidget):
             if col_w:
                 h_lbl.setFixedWidth(col_w)
             if title == "检测":
-                h_lbl.setToolTip("模型真实性检测:\n🟢 检测通过 (官方验证通过)\n🟠 模型疑似 (验证无法定论)\n⚪ 其他 (证据不足/未配置)")
+                h_lbl.setToolTip("模型真实性检测:\n🟢 检测通过 (官方验证通过)\n🟠 模型疑似 (验证无法定论)\n⚪ 其他 (证据不足/未配置)\n💡 点击下方圆点可查看 24h 历史时序图")
             elif title == "糖果":
-                h_lbl.setToolTip("AIHub 糖果题实测:\n🟢 21: 正确 (袋子三种口味糖果问题)\n🔴 29/其他: 错误\n⚪ --: 暂无实测")
+                h_lbl.setToolTip("AIHub 糖果题实测:\n🟢 通过 (回答: 21)\n🔴 未通过 (回答非21)\n⚪ --: 暂无实测\n💡 点击下方圆点可查看 24h 历史时序图")
             elif title == "供应商":
                 h_lbl.setToolTip("供应商通道与名称 (固定列，左右滑动时始终固定在左侧)")
             self.aihub_header_grid_left.addWidget(h_lbl, 0, col_idx)
@@ -1492,8 +1515,8 @@ class RelayStationView(QWidget):
 
         left_col_widths = [
             max(14, int(round(15 * self.scale))),   # 0: 检测 (单圆点居中，极简紧凑)
-            max(18, int(round(20 * self.scale))),   # 1: 糖果 (21/29胶囊标签)
-            max(54, int(round(62 * self.scale))),   # 2: 供应商 (代号+双行灰色小字，紧凑留出右侧空间)
+            max(14, int(round(15 * self.scale))),   # 1: 糖果 (单圆点居中，通过/不通过)
+            max(58, int(round(66 * self.scale))),   # 2: 供应商 (代号+双行灰色小字，紧凑留出右侧空间)
         ]
         right_col_widths = [
             max(22, int(round(25 * self.scale))),   # 0: 倍率
@@ -1538,10 +1561,10 @@ class RelayStationView(QWidget):
             self.aihub_grid_right.setRowMinimumHeight(row_idx, data_row_h)
 
             det_status = g.get("detection_status", "other")
-            det_tip = g.get("detection_tip", "模型检测: ⚪ 未配置 / 暂无检测数据")
+            det_tip = g.get("detection_tip", "模型检测: ⚪ 未配置 / 暂无检测数据") + "\n💡 点击圆点查看 24h 历史时序图"
             candy_status = g.get("candy_status", "none")
             candy_label = g.get("candy_label", "--")
-            candy_tip = g.get("candy_tip", "糖果题: ⚪ 暂无实测数据")
+            candy_tip = g.get("candy_tip", "糖果题: ⚪ 暂无实测数据") + "\n💡 点击圆点查看 24h 历史时序图"
             candy_dot_emoji = g.get("candy_dot", "⚪")
             detail = (g.get("public_detail") or "").strip() or "公开供应商线路"
             is_on = bool(g.get("available", True)) and bool(g.get("visible_in_hall", True))
@@ -1571,7 +1594,8 @@ class RelayStationView(QWidget):
                 f"成功率(现/1h/1d/7d): {sr_multi_str}\n"
                 f"参考缓存基准: {g.get('reference_cache_hit_rate', '--')}\n"
                 f"首字延迟 (TTFT): {g.get('ttft_str', '--')}\n"
-                f"输出速度 (TPS): {g.get('tps_str', '--')}"
+                f"输出速度 (TPS): {g.get('tps_str', '--')}\n"
+                f"💡 点击前方检测或糖果圆点可查看 24h 历史时序图"
             )
             if not is_on:
                 err_cat = g.get('error_category')
@@ -1603,6 +1627,7 @@ class RelayStationView(QWidget):
 
             if row_idx < len(self._aihub_rows):
                 entry = self._aihub_rows[row_idx]
+                entry["code"] = g["code"]
                 entry["dot"].set_status(det_status, tooltip=det_tip)
                 if "candy" in entry:
                     entry["candy"].set_data(candy_status, candy_label, tooltip=candy_tip)
@@ -1626,13 +1651,16 @@ class RelayStationView(QWidget):
                     if w:
                         w.show()
             else:
+                entry_dict = {"code": g["code"]}
                 c_dot = DetectionDot(det_status, tooltip=det_tip, size=dot_size, parent=self.aihub_scroll_content_left)
                 c_dot.setFixedWidth(left_col_widths[0])
                 c_dot.setToolTip(tip_text)
+                c_dot.clicked.connect(lambda _, e=entry_dict: self.history_timeline_requested.emit(e.get("code", ""), "detection"))
 
-                c_candy = CandyBadge(candy_status, candy_label, scale=self.scale, parent=self.aihub_scroll_content_left)
+                c_candy = CandyDot(candy_status, candy_label, scale=self.scale, tooltip=candy_tip, size=dot_size, parent=self.aihub_scroll_content_left)
                 c_candy.setFixedWidth(left_col_widths[1])
                 c_candy.setToolTip(candy_tip)
+                c_candy.clicked.connect(lambda _, e=entry_dict: self.history_timeline_requested.emit(e.get("code", ""), "candy"))
 
                 c_name = ProviderNameLabel(code_text, detail=detail, scale=self.scale, parent=self.aihub_scroll_content_left)
                 c_name.setFixedWidth(left_col_widths[2])
@@ -1691,11 +1719,12 @@ class RelayStationView(QWidget):
                 self.aihub_grid_right.addWidget(c_sr_multi, row_idx, 4, Qt.AlignCenter | Qt.AlignVCenter)
                 self.aihub_grid_right.addWidget(c_ref, row_idx, 5, Qt.AlignCenter | Qt.AlignVCenter)
 
-                self._aihub_rows.append({
+                entry_dict.update({
                     "dot": c_dot, "candy": c_candy, "name": c_name, "nom": c_nom,
                     "thumb": thumb, "eff": c_eff_multi, "hit": c_hit_multi,
                     "sr": c_sr_multi, "ref": c_ref
                 })
+                self._aihub_rows.append(entry_dict)
 
         for extra in self._aihub_rows[len(monitored):]:
             for w in (extra["dot"], extra.get("candy"), extra["name"], extra["nom"], extra["thumb"], extra["eff"], extra["hit"], extra["sr"], extra["ref"]):
