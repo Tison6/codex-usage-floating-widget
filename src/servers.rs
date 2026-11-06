@@ -253,8 +253,8 @@ impl ServerManager {
 
         std::thread::spawn(move || {
             loop {
-                // Query 3 Windows servers
-                if let Some(c) = query_windows_cpu("server-quad", "SJTU", "lab116") {
+                // Query 3 Windows servers (prefer direct LAN IPs to prevent Clash TUN fake-ip interception)
+                if let Some(c) = query_windows_cpu("192.168.120.167", "SJTU", "lab116").or_else(|| query_windows_cpu("server-quad", "SJTU", "lab116")) {
                     if let Ok(mut lock) = stats_worker.write() {
                         if let Some(h) = lock.iter_mut().find(|x| x.id == "quad") {
                             h.cpu_pct = c;
@@ -262,7 +262,7 @@ impl ServerManager {
                         }
                     }
                 }
-                if let Some(c) = query_windows_cpu("server-e5", "SJTU", "lab116") {
+                if let Some(c) = query_windows_cpu("192.168.120.91", "SJTU", "lab116").or_else(|| query_windows_cpu("server-e5", "SJTU", "lab116")) {
                     if let Ok(mut lock) = stats_worker.write() {
                         if let Some(h) = lock.iter_mut().find(|x| x.id == "e5") {
                             h.cpu_pct = c;
@@ -270,7 +270,7 @@ impl ServerManager {
                         }
                     }
                 }
-                if let Some(c) = query_windows_cpu("server-8375c", "SJTU", "lab116") {
+                if let Some(c) = query_windows_cpu("192.168.120.92", "SJTU", "lab116").or_else(|| query_windows_cpu("server-8375c", "SJTU", "lab116")) {
                     if let Ok(mut lock) = stats_worker.write() {
                         if let Some(h) = lock.iter_mut().find(|x| x.id == "8375c") {
                             h.cpu_pct = c;

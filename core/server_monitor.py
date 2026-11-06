@@ -21,7 +21,7 @@ DEFAULT_CPU_SERVERS = [
     {
         "id": "quad",
         "name": "server-quad",
-        "host": "server-quad",
+        "host": "192.168.120.167",
         "port": 22,
         "user": "SJTU",
         "password": "lab116",
@@ -30,7 +30,7 @@ DEFAULT_CPU_SERVERS = [
     {
         "id": "e5",
         "name": "server-e5",
-        "host": "server-e5",
+        "host": "192.168.120.91",
         "port": 22,
         "user": "SJTU",
         "password": "lab116",
@@ -39,7 +39,7 @@ DEFAULT_CPU_SERVERS = [
     {
         "id": "8375c",
         "name": "server-8375c",
-        "host": "server-8375c",
+        "host": "192.168.120.92",
         "port": 22,
         "user": "SJTU",
         "password": "lab116",
@@ -90,6 +90,18 @@ def get_hex_for_cpu(val: float) -> str:
         return "#EF4444"  # High (>=30%): Alert red
 
 
+# Fallback mapping for Windows CPU servers to LAN IPs
+# Prevents connection failures caused by Clash/Mihomo TUN fake-ip intercepting hostnames
+KNOWN_CPU_HOST_IPS = {
+    "server-quad": "192.168.120.167",
+    "quad": "192.168.120.167",
+    "server-e5": "192.168.120.91",
+    "e5": "192.168.120.91",
+    "server-8375c": "192.168.120.92",
+    "8375c": "192.168.120.92",
+}
+
+
 class SingleWindowsServerWorker(QThread):
     """Background worker monitoring a Windows server's CPU via typeperf and RAM/Disk via wmic."""
     cpu_updated = pyqtSignal(str, float)
@@ -102,7 +114,14 @@ class SingleWindowsServerWorker(QThread):
         self.interval = max(1, interval)
         self.server_id = server_cfg.get("id", server_cfg.get("name", "server"))
         self.name = server_cfg.get("name", self.server_id)
-        self.host = server_cfg.get("host", self.name)
+        self.raw_host = server_cfg.get("host", self.name)
+        # Prefer direct LAN IP to prevent Clash/Mihomo Fake-IP DNS interception
+        if self.raw_host in KNOWN_CPU_HOST_IPS:
+            self.host = KNOWN_CPU_HOST_IPS[self.raw_host]
+        elif self.server_id in KNOWN_CPU_HOST_IPS and (not self.raw_host or self.raw_host.startswith("server-")):
+            self.host = KNOWN_CPU_HOST_IPS[self.server_id]
+        else:
+            self.host = self.raw_host
         self.port = int(server_cfg.get("port", 22))
         self.user = server_cfg.get("user", "SJTU")
         self.password = server_cfg.get("password", "lab116")
@@ -234,15 +253,31 @@ class SingleWindowsServerWorker(QThread):
                 self.status_updated.emit(self.server_id, "connecting")
                 self.client = paramiko.SSHClient()
                 self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                self.client.connect(
-                    hostname=self.host,
-                    port=self.port,
-                    username=self.user,
-                    password=self.password,
-                    timeout=5,
-                    banner_timeout=5,
-                    auth_timeout=5
-                )
+
+                connected = False
+                hosts_to_try = [self.host]
+                if hasattr(self, "raw_host") and self.raw_host and self.raw_host != self.host:
+                    hosts_to_try.append(self.raw_host)
+
+                last_conn_err = None
+                for target_host in hosts_to_try:
+                    try:
+                        self.client.connect(
+                            hostname=target_host,
+                            port=self.port,
+                            username=self.user,
+                            password=self.password,
+                            timeout=5,
+                            banner_timeout=5,
+                            auth_timeout=5
+                        )
+                        connected = True
+                        break
+                    except Exception as ce:
+                        last_conn_err = ce
+
+                if not connected:
+                    raise last_conn_err or Exception("Failed to connect to host")
 
                 transport = self.client.get_transport()
                 if transport:

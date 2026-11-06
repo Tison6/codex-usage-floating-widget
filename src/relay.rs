@@ -812,7 +812,7 @@ impl AIHubClient {
         selected_providers: &[String],
         excluded_providers: &[String],
     ) -> AIHubData {
-        let url = "https://aihub.dog/api/v1/public/providers";
+        let url = "https://aihub.dog/api/v2/public/providers";
         match self.client.get(url).send().await {
             Ok(resp) => {
                 let status = resp.status();

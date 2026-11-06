@@ -67,7 +67,7 @@ class AIHubClient:
     """Client for querying AIHub provider metrics, cache rate, success rate, and pelican test images."""
 
     BASE_URL = "https://aihub.dog"
-    PROVIDERS_URL = "https://aihub.dog/api/v1/public/providers"
+    PROVIDERS_URL = "https://aihub.dog/api/v2/public/providers"
     USAGE_STATS_URL = "https://aihub.dog/api/v1/public/groups/usage-stats"
 
     def __init__(self, config=None, cache_dir: Optional[str] = None, email: Optional[str] = None, password: Optional[str] = None, **kwargs):
