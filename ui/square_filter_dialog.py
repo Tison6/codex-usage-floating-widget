@@ -14,7 +14,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QCursor
 
 from core.square_client import DEFAULT_SELECTED_GROUPS, DEFAULT_SELECTED_MODELS, DEFAULT_GROUP_MODELS
-from core.aihub_client import DEFAULT_SELECTED_PROVIDERS, is_ds_or_glm_provider, is_default_excluded_provider
+from core.aihub_client import DEFAULT_SELECTED_PROVIDERS, is_ds_or_glm_provider, is_default_excluded_provider, is_banned_provider
 from ui.relay_view import DetectionDot, CandyDot, CandyBadge
 from PyQt5.QtCore import QRectF
 from PyQt5.QtGui import QPainter
@@ -490,7 +490,7 @@ class AIHubFilterDialog(QDialog):
         self.provider_exclude_checkboxes: Dict[str, QCheckBox] = {}
         self.provider_row_frames: Dict[str, QFrame] = {}
         self.provider_data_map: Dict[str, Dict[str, Any]] = {}
-        self.excluded_providers = set(self.aihub_client.get_excluded_providers() or [])
+        self.excluded_providers = {c for c in (self.aihub_client.get_excluded_providers() or []) if not is_banned_provider(c)}
 
         if not self.aihub_client.cached_data:
             try:
@@ -875,6 +875,7 @@ class AIHubFilterDialog(QDialog):
         c_layout.setSpacing(4)
 
         all_providers = (self.aihub_client.cached_data or {}).get("all_providers", [])
+        all_providers = [p for p in all_providers if not is_banned_provider(p.get("code", ""), p)]
         all_providers = sorted(all_providers, key=lambda x: x["code"].lower())
         cur_selected = set(self.aihub_client.get_selected_providers() or [])
 
@@ -898,7 +899,7 @@ class AIHubFilterDialog(QDialog):
             r_lay.setContentsMargins(6, 4, 6, 4)
             r_lay.setSpacing(6)
 
-            is_exc = code in self.excluded_providers or (is_default_excluded_provider(code, p) and code not in cur_selected)
+            is_exc = code in self.excluded_providers
 
             # Column 1: Select Checkbox (监听)
             cb = QCheckBox()

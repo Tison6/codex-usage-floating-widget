@@ -37,8 +37,9 @@ def format_iso_timestamp(iso_str: Optional[str]) -> str:
 
 # Default recommended providers matching user selection
 DEFAULT_SELECTED_PROVIDERS = [
-    "A018-Plus/K12",
     "A031-Pro",
+    "S045-Pro",
+    "S084-Pro",
 ]
 
 # Default filter thresholds for automatic mode (按默认值: 仅限 0.2x 以下)
@@ -48,21 +49,73 @@ DEFAULT_FILTER_MAX_EFF = 0.20
 DEFAULT_FILTER_MAX_NOM = 0.20
 
 
-def is_default_excluded_provider(code: str, item: Optional[Dict[str, Any]] = None) -> bool:
-    """Check if a provider belongs to DeepSeek (DS), GLM, or Grok lines (default excluded)."""
+def is_banned_provider(code: str, item: Optional[Dict[str, Any]] = None) -> bool:
+    """
+    Check if a provider should be strictly filtered out and never appear anywhere.
+    Banned rules per user instruction:
+    - 已下架: available=False, visible_in_hall=False, bool(error_category), or '已下架'/'下架' in text/code
+    - kimi: 'kimi', 'moonshot' in code, public_detail, or platform
+    - gemini: 'gemini', 'google' in code, public_detail, or platform
+    - DS: DeepSeek line (DS as standalone token or 'deepseek')
+    - GLM: GLM line (GLM, ChatGLM, Zhipu)
+    - Grok: Grok line (Grok, xAI)
+    - 带bug: 'bug' in code or public_detail
+    """
     if not code:
-        return False
-    u = code.upper()
-    if re.search(r'(^|[^A-Z0-9])(DS|GLM|GROK)($|[^A-Z0-9])', u):
         return True
-    if item and isinstance(item, dict):
-        platform = str(item.get("platform") or "").lower()
-        if platform in ("deepseek", "glm", "chatglm", "grok", "xai"):
-            return True
+
+    it = item if isinstance(item, dict) else {}
+
+    # 1. 已下架 (Unlisted / Offline / Off-shelf)
+    avail = it.get("available")
+    if avail is False or avail == 0:
+        return True
+    visible = it.get("visible_in_hall")
+    if visible is False or visible == 0:
+        return True
+    err = it.get("error_category")
+    if bool(err):
+        return True
+
+    detail = str(it.get("public_detail") or "").strip()
+    if "已下架" in detail or "下架" in detail:
+        return True
+    if "已下架" in code or "下架" in code:
+        return True
+
+    platform = str(it.get("platform") or "").strip().lower()
+    combined = f"{code} {detail} {platform}".lower()
+
+    # 2. kimi
+    if "kimi" in combined or "moonshot" in combined:
+        return True
+
+    # 3. gemini
+    if "gemini" in combined or "google" in combined:
+        return True
+
+    # 4. DS / DeepSeek
+    u = code.upper()
+    if re.search(r'(^|[^A-Z0-9])(DS|DEEPSEEK)($|[^A-Z0-9])', u) or "deepseek" in combined:
+        return True
+
+    # 5. GLM
+    if re.search(r'(^|[^A-Z0-9])(GLM|CHATGLM|ZHIPU)($|[^A-Z0-9])', u) or "glm" in combined or "chatglm" in combined or "zhipu" in combined:
+        return True
+
+    # 6. Grok
+    if re.search(r'(^|[^A-Z0-9])(GROK|XAI)($|[^A-Z0-9])', u) or "grok" in combined or "xai" in combined:
+        return True
+
+    # 7. 带bug
+    if "bug" in combined:
+        return True
+
     return False
 
 
-is_ds_or_glm_provider = is_default_excluded_provider
+is_default_excluded_provider = is_banned_provider
+is_ds_or_glm_provider = is_banned_provider
 
 
 class AIHubClient:
@@ -169,26 +222,34 @@ class AIHubClient:
         if self.config:
             sel = self.config.get("aihub_selected_providers")
             if sel and isinstance(sel, list):
-                return sel
+                cleaned = [c for c in sel if not is_banned_provider(c)]
+                if len(cleaned) != len(sel):
+                    self.set_selected_providers(cleaned)
+                return cleaned or list(DEFAULT_SELECTED_PROVIDERS)
         return list(DEFAULT_SELECTED_PROVIDERS)
 
     def set_selected_providers(self, providers: List[str]):
         """Save user-selected provider codes."""
         if self.config:
-            self.config.set("aihub_selected_providers", providers)
+            cleaned = [c for c in providers if not is_banned_provider(c)]
+            self.config.set("aihub_selected_providers", cleaned)
 
     def get_excluded_providers(self) -> List[str]:
         """Get list of user-excluded (blacklisted) provider codes."""
         if self.config:
             exc = self.config.get("aihub_excluded_providers")
             if exc and isinstance(exc, list):
-                return exc
+                cleaned = [c for c in exc if not is_banned_provider(c)]
+                if len(cleaned) != len(exc):
+                    self.set_excluded_providers(cleaned)
+                return cleaned
         return []
 
     def set_excluded_providers(self, providers: List[str]):
         """Save user-excluded provider codes."""
         if self.config:
-            self.config.set("aihub_excluded_providers", providers)
+            cleaned = [c for c in providers if not is_banned_provider(c)]
+            self.config.set("aihub_excluded_providers", cleaned)
 
     def fetch_data(self, force: bool = False, timeout: int = 8) -> Dict[str, Any]:
         """
@@ -252,11 +313,6 @@ class AIHubClient:
 
         excluded_codes = set(self.get_excluded_providers() or [])
         selected_codes = set(self.get_selected_providers() or [])
-        # Default exclude any DS, GLM, or Grok providers unless explicitly selected by user
-        for it in providers_raw:
-            c = it.get("code", "")
-            if is_default_excluded_provider(c, it) and c not in selected_codes:
-                excluded_codes.add(c)
 
         all_parsed_providers = []
 
@@ -298,6 +354,10 @@ class AIHubClient:
         for it in providers_raw:
             code = it.get("code", "")
             if not code:
+                continue
+
+            # Strictly eliminate banned & offline providers: 已下架, kimi, gemini, DS, GLM, Grok, 带bug
+            if is_banned_provider(code, it):
                 continue
 
             item_1h = range_data.get("1h", {}).get(code, it)
@@ -588,54 +648,6 @@ class AIHubClient:
         # Persist updated rolling metrics history safely and atomically
         self._metrics_history = metrics_history
         self._save_metrics_history()
-
-        # Ensure manually selected providers that might be completely absent from API are still tracked as unlisted
-        selected_codes = self.get_selected_providers() or []
-        parsed_codes = {p["code"] for p in all_parsed_providers}
-        for sel_c in selected_codes:
-            if sel_c not in parsed_codes and sel_c not in excluded_codes:
-                all_parsed_providers.append({
-                    "code": sel_c,
-                    "group_id": None,
-                    "rate_multiplier": 1.0,
-                    "multiplier_str": "--",
-                    "effective_multiplier": None,
-                    "effective_multiplier_str": "--",
-                    "effective_multiplier_ready": False,
-                    "effective_multiplier_reason": "官方无此数据",
-                    "effective_multiplier_multi_str": "--/--/--/--",
-                    "effective_input_price": None,
-                    "effective_input_price_str": "--",
-                    "cache_hit_rate": "--",
-                    "cache_hit_val": 0.0,
-                    "cache_hit_multi_str": "--/--/--/--",
-                    "reference_cache_hit_rate": "--",
-                    "reference_cache_val": None,
-                    "has_cache_rate": False,
-                    "ttft_str": "--",
-                    "ttft_ms": 99999,
-                    "tps_str": "--",
-                    "success_rate": None,
-                    "success_rate_str": "--",
-                    "success_rate_multi_str": "--/--/--",
-                    "has_success_rate": False,
-                    "available": False,
-                    "visible_in_hall": False,
-                    "error_category": "unlisted",
-                    "is_online": False,
-                    "has_image": False,
-                    "image_url": "",
-                    "detection_status": "other",
-                    "detection_label": "已下架",
-                    "detection_color": "#64748B",
-                    "detection_dot": "⚪",
-                    "detection_tip": f"供应商: {sel_c}\n⚠️ 当前在官方API大厅已完全下架/无数据",
-                    "detection_model": "",
-                    "detection_raw_status": None,
-                    "public_detail": "官方大厅已下架",
-                    "is_excluded": False,
-                    "hist_span_hours": 0.0,
-                })
 
         # Sort all providers alphabetically by name for selection dialogs
         all_parsed_providers.sort(key=lambda x: x["code"].lower())

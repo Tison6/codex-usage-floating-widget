@@ -18,7 +18,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QRectF, QPoint, QPointF, pyqtSignal, QEvent
 from PyQt5.QtGui import QColor, QPainter, QBrush, QPen, QFont, QCursor
 
-from core.aihub_client import AIHubClient
+from core.aihub_client import AIHubClient, is_banned_provider
 
 
 COLOR_PASSED = QColor("#10B981")     # Emerald Green
@@ -385,7 +385,7 @@ class AIHubHistoryDialog(QDialog):
         self.current_granularity = 30    # 30 mins (48 blocks/day)
         self.current_days = 7            # 7 days
 
-        # Available provider codes
+        # Available provider codes (filter out any banned or offline providers)
         self.all_providers = []
         if self.aihub_client.cached_data:
             self.all_providers = self.aihub_client.cached_data.get("all_providers", [])
@@ -396,7 +396,9 @@ class AIHubHistoryDialog(QDialog):
             except Exception:
                 pass
 
-        if not self.current_code and self.all_providers:
+        self.all_providers = [p for p in self.all_providers if not is_banned_provider(p.get("code", ""), p)]
+
+        if (not self.current_code or is_banned_provider(self.current_code)) and self.all_providers:
             self.current_code = self.all_providers[0]["code"]
 
         self.init_window()
