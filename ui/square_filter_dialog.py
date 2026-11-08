@@ -956,7 +956,7 @@ class AIHubFilterDialog(QDialog):
             det_status = p.get("detection_status", "other")
             det_tip = p.get("detection_tip", "") + "\n💡 点击查看 24h 历史时序图"
             dot = DetectionDot(det_status, tooltip=det_tip, size=9, parent=row)
-            dot.clicked.connect(lambda _, c=code: self._open_history(c, "detection"))
+            dot.clicked.connect(lambda _, c=code: self._open_history(c, "dual"))
             r_lay.addWidget(dot)
 
             # Candy Dot (通过/未通过状态圆点)
@@ -964,7 +964,7 @@ class AIHubFilterDialog(QDialog):
             candy_label = p.get("candy_label", "--")
             candy_tip = p.get("candy_tip", "糖果题: ⚪ 暂无实测数据") + "\n💡 点击查看 24h 历史时序图"
             c_badge = CandyDot(candy_status, candy_label, tooltip=candy_tip, size=9, parent=row)
-            c_badge.clicked.connect(lambda _, c=code: self._open_history(c, "candy"))
+            c_badge.clicked.connect(lambda _, c=code: self._open_history(c, "dual"))
             r_lay.addWidget(c_badge)
 
             # Provider Code Label + Gray Description Note

@@ -1538,18 +1538,36 @@ class RelayStationView(QWidget):
                 self.aihub_empty_left.setFont(QFont("Segoe UI", row_title_fs))
                 self.aihub_empty_left.setText("<span style='color: #94A3B8; padding: 10px;'>暂无数据</span>")
                 self.aihub_grid_left.addWidget(self.aihub_empty_left, 0, 0, 1, 3, Qt.AlignCenter)
-            self.aihub_empty_lbl.show()
-            self.aihub_empty_left.show()
+            try:
+                if self.aihub_empty_lbl:
+                    self.aihub_empty_lbl.show()
+            except RuntimeError:
+                self.aihub_empty_lbl = None
+            try:
+                if self.aihub_empty_left:
+                    self.aihub_empty_left.show()
+            except RuntimeError:
+                self.aihub_empty_left = None
+
             for extra in self._aihub_rows:
                 for w in (extra["dot"], extra.get("candy"), extra["name"], extra["nom"], extra["thumb"], extra["eff"], extra["hit"], extra["sr"], extra["ref"]):
                     if w:
-                        w.hide()
+                        try:
+                            w.hide()
+                        except RuntimeError:
+                            pass
             return
 
-        if self.aihub_empty_lbl:
-            self.aihub_empty_lbl.hide()
-        if self.aihub_empty_left:
-            self.aihub_empty_left.hide()
+        if self.aihub_empty_lbl is not None:
+            try:
+                self.aihub_empty_lbl.hide()
+            except RuntimeError:
+                self.aihub_empty_lbl = None
+        if self.aihub_empty_left is not None:
+            try:
+                self.aihub_empty_left.hide()
+            except RuntimeError:
+                self.aihub_empty_left = None
 
         dot_size = max(5, int(round(6 * self.scale)))
         data_row_h = max(22, int(round(24 * self.scale)))

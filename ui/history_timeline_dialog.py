@@ -55,10 +55,27 @@ class TimelineCanvas(QWidget):
         self.label_width = 82
         self.summary_width = 110
         self.header_height = 28
-        self.cell_height_single = 16
         self.cell_height_dual = 28
         self.row_padding = 6
         self.cell_gap = 2
+
+        # Pre-cached fonts to prevent runtime allocations and float-type crashes
+        self.font_axis = QFont("Segoe UI", 8)
+        self.font_day_normal = QFont("Segoe UI", 8, QFont.Normal)
+        self.font_day_bold = QFont("Segoe UI", 8, QFont.Bold)
+        self.font_summary = QFont("Segoe UI", 7, QFont.Bold)
+
+        # Pre-cached brushes and pens for 60fps zero-allocation painting
+        self.brush_passed = QBrush(COLOR_PASSED)
+        self.brush_suspected = QBrush(COLOR_SUSPECTED)
+        self.brush_wrong = QBrush(COLOR_WRONG)
+        self.brush_empty = QBrush(COLOR_EMPTY)
+        self.brush_future = QBrush(COLOR_FUTURE)
+
+        self.pen_hover = QPen(COLOR_HOVER, 1.5)
+        self.pen_select = QPen(QColor("#FFFFFF"), 1.5)
+        self.pen_tick = QPen(QColor(255, 255, 255, 12), 1, Qt.DotLine)
+        self.pen_none = Qt.NoPen
 
     def set_data(self, data: Dict[str, Any], mode: str = "dual"):
         self.timeline_data = data
@@ -87,6 +104,26 @@ class TimelineCanvas(QWidget):
         cell_w = (grid_width - (slots_per_day - 1) * self.cell_gap) / max(1, slots_per_day)
         return grid_left, grid_width, slots_per_day, cell_w
 
+    def _get_status_brush(self, status: Optional[str], is_future: bool) -> QBrush:
+        if is_future:
+            return self.brush_future
+        if status == "passed":
+            return self.brush_passed
+        if status == "suspected":
+            return self.brush_suspected
+        if status in ("wrong", "failed"):
+            return self.brush_wrong
+        return self.brush_empty
+
+    def _get_candy_brush(self, status: Optional[str], is_future: bool) -> QBrush:
+        if is_future:
+            return self.brush_future
+        if status == "correct":
+            return self.brush_passed
+        if status == "wrong":
+            return self.brush_wrong
+        return self.brush_empty
+
     def paintEvent(self, event):
         daily_rows = self.timeline_data.get("daily_rows", [])
         if not daily_rows:
@@ -97,21 +134,18 @@ class TimelineCanvas(QWidget):
 
         grid_left, grid_width, slots_per_day, cell_w = self._get_grid_metrics()
         row_h = self.cell_height_dual
+        half_h = (row_h - 1) / 2.0
 
         # -------------------------------------------------------------
         # 1. Header Time Axis (00:00, 02:00, ... 24:00)
         # -------------------------------------------------------------
-        font_axis = QFont("Segoe UI", 8)
-        painter.setFont(font_axis)
+        painter.setFont(self.font_axis)
         painter.setPen(QColor("#64748B"))
 
-        # Date label title
         painter.drawText(QRectF(4, 2, self.label_width, 18), Qt.AlignLeft | Qt.AlignVCenter, "日期")
-        # Summary title
         summary_left = grid_left + grid_width + 8
         painter.drawText(QRectF(summary_left, 2, self.summary_width, 18), Qt.AlignLeft | Qt.AlignVCenter, "当日概览 (检测/糖果)")
 
-        # Time tick labels across 24h
         for hour in range(0, 25, 2):
             frac = hour / 24.0
             x = grid_left + frac * grid_width
@@ -119,8 +153,7 @@ class TimelineCanvas(QWidget):
             t_rect = QRectF(x - 18, 2, 36, 16)
             painter.drawText(t_rect, Qt.AlignCenter, label)
 
-            # Subtle vertical tick mark
-            painter.setPen(QPen(QColor(255, 255, 255, 12), 1, Qt.DotLine))
+            painter.setPen(self.pen_tick)
             painter.drawLine(QPointF(x, 18), QPointF(x, self.height() - 6))
             painter.setPen(QColor("#64748B"))
 
@@ -130,9 +163,8 @@ class TimelineCanvas(QWidget):
         for d_idx, day_info in enumerate(daily_rows):
             y = self.header_height + d_idx * (row_h + self.row_padding)
 
-            # Left Date Label
             is_today = day_info.get("is_today", False)
-            painter.setFont(QFont("Segoe UI", 8, QFont.Bold if is_today else QFont.Normal))
+            painter.setFont(self.font_day_bold if is_today else self.font_day_normal)
             if is_today:
                 painter.setPen(QColor("#38BDF8"))
             elif d_idx == 1:
@@ -144,7 +176,6 @@ class TimelineCanvas(QWidget):
             painter.drawText(label_rect, Qt.AlignLeft | Qt.AlignVCenter, day_info.get("display_label", ""))
 
             # Right Summary Badge: Dual split summary (Top: Model Detection, Bottom: Candy Question)
-            half_h = (row_h - 1) / 2.0
             sum_rect_det = QRectF(summary_left, y, self.summary_width, half_h)
             sum_rect_candy = QRectF(summary_left, y + half_h + 1, self.summary_width, half_h)
 
@@ -155,7 +186,7 @@ class TimelineCanvas(QWidget):
             if det_rate_str == "--":
                 c_det_rate = "#64748B"
 
-            painter.setFont(QFont("Segoe UI", 6.5, QFont.Bold))
+            painter.setFont(self.font_summary)
             painter.setPen(QColor(c_det_rate))
             painter.drawText(sum_rect_det, Qt.AlignLeft | Qt.AlignVCenter, f"🎯 {det_rate_str} ({det_cnt_str})")
 
@@ -166,7 +197,7 @@ class TimelineCanvas(QWidget):
             if candy_rate_str == "--":
                 c_candy_rate = "#64748B"
 
-            painter.setFont(QFont("Segoe UI", 6.5, QFont.Bold))
+            painter.setFont(self.font_summary)
             painter.setPen(QColor(c_candy_rate))
             painter.drawText(sum_rect_candy, Qt.AlignLeft | Qt.AlignVCenter, f"🍬 {candy_rate_str} ({candy_cnt_str})")
 
@@ -183,21 +214,20 @@ class TimelineCanvas(QWidget):
                 r_det = QRectF(x, y, cell_w, half_h)
                 r_candy = QRectF(x, y + half_h + 1, cell_w, half_h)
 
-                c_det = self._get_status_color(slot.get("det_status"), is_future)
-                c_candy = self._get_candy_color(slot.get("candy_status"), is_future)
+                b_det = self._get_status_brush(slot.get("det_status"), is_future)
+                b_candy = self._get_candy_brush(slot.get("candy_status"), is_future)
 
-                painter.setPen(Qt.NoPen)
-                painter.setBrush(QBrush(c_det))
+                painter.setPen(self.pen_none)
+                painter.setBrush(b_det)
                 painter.drawRoundedRect(r_det, 1.5, 1.5)
 
-                painter.setBrush(QBrush(c_candy))
+                painter.setBrush(b_candy)
                 painter.drawRoundedRect(r_candy, 1.5, 1.5)
 
                 # Highlight outline if hovered or selected
                 if is_hovered or is_selected:
                     full_r = QRectF(x - 1, y - 1, cell_w + 2, row_h + 2)
-                    p_color = QColor("#FFFFFF") if is_selected else COLOR_HOVER
-                    painter.setPen(QPen(p_color, 1.5))
+                    painter.setPen(self.pen_select if is_selected else self.pen_hover)
                     painter.setBrush(Qt.NoBrush)
                     painter.drawRoundedRect(full_r, 2.5, 2.5)
 
@@ -375,7 +405,7 @@ class AIHubHistoryDialog(QDialog):
 
     def init_window(self):
         self.setWindowTitle("AIHub 探针实测与质量历史 (24h时间轴)")
-        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.resize(760, 540)
 

@@ -8,6 +8,7 @@ import os
 import re
 import json
 import time
+import bisect
 import concurrent.futures
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
@@ -120,10 +121,14 @@ class AIHubClient:
                 pass
         return {}
 
-    def _save_metrics_history(self):
-        """Safely and atomically persist metrics history to disk with .bak copy."""
+    def _save_metrics_history(self, force: bool = False):
+        """Safely and atomically persist metrics history to disk with .bak copy (throttled)."""
         if not getattr(self, "_metrics_history", None):
             return
+        now = time.time()
+        if not force and hasattr(self, "_last_history_save_time") and (now - self._last_history_save_time < 180):
+            return
+        self._last_history_save_time = now
         try:
             tmp_path = self.metrics_history_file + ".tmp"
             with open(tmp_path, "w", encoding="utf-8") as f:
@@ -504,27 +509,29 @@ class AIHubClient:
                     rec["candy"] = "none"
 
                 if len(rec) > 1:
-                    existing = [h for h in metrics_history[code] if abs(h.get("t", 0) - probe_ts) < 120]
-                    if existing:
-                        existing[-1].update(rec)
+                    hist = metrics_history[code]
+                    if hist and abs(hist[-1].get("t", 0) - probe_ts) < 180:
+                        hist[-1].update(rec)
                     else:
-                        metrics_history[code].append(rec)
+                        # Append if new, changed, or interval exceeded
+                        should_append = True
+                        if hist:
+                            last = hist[-1]
+                            changed = (
+                                last.get("det") != rec.get("det") or
+                                last.get("candy") != rec.get("candy") or
+                                abs((last.get("eff") or 0) - (rec.get("eff") or 0)) > 0.005 or
+                                abs((last.get("cache") or 0) - (rec.get("cache") or 0)) > 1.0 or
+                                abs((last.get("sr") or 0) - (rec.get("sr") or 0)) > 1.0 or
+                                (probe_ts - last.get("t", 0) >= 600)
+                            )
+                            should_append = changed
 
-                    # Also ensure current snapshot is recorded if probe occurred earlier
-                    if abs(probe_ts - int(now)) >= 300:
-                        rec_now = dict(rec)
-                        rec_now["t"] = int(now)
-                        now_existing = [h for h in metrics_history[code] if abs(h.get("t", 0) - int(now)) < 60]
-                        if now_existing:
-                            now_existing[-1].update(rec_now)
-                        else:
-                            metrics_history[code].append(rec_now)
-
-                    cutoff = now - 7 * 86400
-                    metrics_history[code] = sorted(
-                        [h for h in metrics_history[code] if h.get("t", 0) >= cutoff],
-                        key=lambda x: x.get("t", 0)
-                    )
+                        if should_append:
+                            hist.append(rec)
+                            # Keep at most 1500 items per provider (roughly 7-10 days)
+                            if len(hist) > 1500:
+                                metrics_history[code] = hist[-1500:]
 
             if not is_avail or not visible_in_hall:
                 off_reason = f"探针异常: {error_cat}" if error_cat else "官方大厅未在架/离线"
@@ -771,9 +778,11 @@ class AIHubClient:
         today_start_dt = now_dt.replace(hour=0, minute=0, second=0, microsecond=0)
         today_start_ts = today_start_dt.timestamp()
 
-        # Load metrics history
+        # Load metrics history and prepare sorted timestamps for O(log N) binary search
         history_map = self.get_metrics_history()
-        history_list = history_map.get(code, [])
+        raw_history = history_map.get(code, [])
+        history_list = sorted(raw_history, key=lambda x: x.get("t", 0)) if raw_history else []
+        timestamps = [r.get("t", 0) for r in history_list]
 
         # Current live provider data
         live_provider = None
@@ -838,12 +847,12 @@ class AIHubClient:
                     })
                     continue
 
-                # Find samples in this slot
-                slot_samples = [r for r in history_list if s_start_ts <= r.get("t", 0) < s_end_ts]
-                
-                # Check if sample exists
-                if slot_samples:
-                    sample = slot_samples[-1]
+                # O(log N) Binary search for samples in this slot [s_start_ts, s_end_ts)
+                i_start = bisect.bisect_left(timestamps, s_start_ts)
+                i_end = bisect.bisect_left(timestamps, s_end_ts)
+
+                if i_start < i_end:
+                    sample = history_list[i_end - 1]
                     s_det = sample.get("det") or live_det
                     s_candy = sample.get("candy") or live_candy
                     s_candy_ans = sample.get("candy_ans") or live_candy_ans
@@ -855,10 +864,10 @@ class AIHubClient:
                     cache_val = sample.get("cache")
                     sr_val = sample.get("sr")
                 else:
-                    # Look for nearest prior sample within 3 hours (10800 seconds)
-                    prev_samples = [r for r in history_list if r.get("t", 0) <= s_end_ts and (s_start_ts - r.get("t", 0) <= 10800)]
-                    if prev_samples:
-                        sample = prev_samples[-1]
+                    # O(log N) Look for nearest prior sample before s_end_ts within 3 hours (10800s)
+                    idx = bisect.bisect_right(timestamps, s_end_ts) - 1
+                    if idx >= 0 and (s_start_ts - timestamps[idx] <= 10800):
+                        sample = history_list[idx]
                         s_det = sample.get("det") or live_det
                         s_candy = sample.get("candy") or live_candy
                         s_candy_ans = sample.get("candy_ans") or live_candy_ans
