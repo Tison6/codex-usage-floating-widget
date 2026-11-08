@@ -749,7 +749,7 @@ class AIHubFilterDialog(QDialog):
 
         # 3. 真实倍率 <=
         f_lay.addWidget(QLabel("真实倍率≤"))
-        self.edit_max_eff = QLineEdit("0.25")
+        self.edit_max_eff = QLineEdit("0.20")
         self.edit_max_eff.setFixedWidth(40)
         self.edit_max_eff.setAlignment(Qt.AlignCenter)
         self.edit_max_eff.setStyleSheet(input_style)
@@ -757,7 +757,7 @@ class AIHubFilterDialog(QDialog):
 
         # 4. 标准倍率 <=
         f_lay.addWidget(QLabel("标准倍率≤"))
-        self.edit_max_nom = QLineEdit("0.25")
+        self.edit_max_nom = QLineEdit("0.20")
         self.edit_max_nom.setFixedWidth(40)
         self.edit_max_nom.setAlignment(Qt.AlignCenter)
         self.edit_max_nom.setStyleSheet(input_style)

@@ -1007,7 +1007,7 @@ impl AIHubClient {
         let mut filtered: Vec<AIHubProviderItem> = if auto_mode {
             let mut list: Vec<AIHubProviderItem> = all_items
                 .iter()
-                .filter(|p| !p.is_excluded && p.success_rate >= 80.0)
+                .filter(|p| !p.is_excluded && p.success_rate >= 80.0 && p.rate_multiplier <= 0.20)
                 .cloned()
                 .collect();
             list.sort_by(|a, b| {

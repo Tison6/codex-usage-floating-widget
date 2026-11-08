@@ -39,11 +39,11 @@ DEFAULT_SELECTED_PROVIDERS = [
     "A031-Pro",
 ]
 
-# Default filter thresholds for automatic mode (按默认值)
+# Default filter thresholds for automatic mode (按默认值: 仅限 0.2x 以下)
 DEFAULT_FILTER_MIN_SR = 80.0
 DEFAULT_FILTER_MIN_CACHE = 80.0
-DEFAULT_FILTER_MAX_EFF = 0.25
-DEFAULT_FILTER_MAX_NOM = 0.25
+DEFAULT_FILTER_MAX_EFF = 0.20
+DEFAULT_FILTER_MAX_NOM = 0.20
 
 
 def is_default_excluded_provider(code: str, item: Optional[Dict[str, Any]] = None) -> bool:
@@ -650,7 +650,7 @@ class AIHubClient:
             if matched_providers:
                 monitored_rows = matched_providers
             else:
-                # Fallback: strictly require valid cache, success rate, and online status
+                # Fallback: strictly require valid cache, success rate, online status, and <= 0.2x multiplier
                 monitored_rows = [
                     p for p in all_parsed_providers
                     if p["code"] not in excluded_codes
@@ -661,6 +661,7 @@ class AIHubClient:
                     and p["success_rate"] >= DEFAULT_FILTER_MIN_SR
                     and p["has_cache_rate"]
                     and p["cache_hit_val"] >= DEFAULT_FILTER_MIN_CACHE
+                    and (p["rate_multiplier"] <= DEFAULT_FILTER_MAX_NOM or (p["effective_multiplier"] is not None and p["effective_multiplier"] <= DEFAULT_FILTER_MAX_EFF))
                 ][:5]
                 if not monitored_rows:
                     monitored_rows = []
@@ -673,6 +674,7 @@ class AIHubClient:
                     if p["code"] not in excluded_codes
                     and p["has_success_rate"]
                     and p["has_cache_rate"]
+                    and (p["rate_multiplier"] <= DEFAULT_FILTER_MAX_NOM or (p["effective_multiplier"] is not None and p["effective_multiplier"] <= DEFAULT_FILTER_MAX_EFF))
                 ][:5]
 
         # Always sort monitored rows by effective multiplier ascending, placing unmeasured/None at the end
