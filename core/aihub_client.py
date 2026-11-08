@@ -8,6 +8,7 @@ import os
 import re
 import json
 import time
+import concurrent.futures
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 import requests
@@ -91,6 +92,57 @@ class AIHubClient:
         self.history_metadata_cache: Dict[int, Any] = {}
         self._auto_mode_override: Optional[bool] = None
 
+        # Persistent history files (aihub_history.json with .bak fallback)
+        self.metrics_history_file = os.path.join(
+            os.path.dirname(self.cache_dir), "aihub_history.json"
+        )
+        self.metrics_history_bak = self.metrics_history_file + ".bak"
+        self._metrics_history: Dict[str, List[Dict[str, Any]]] = self._load_metrics_history()
+
+    def _load_metrics_history(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Safely load local metrics history from file with backup fallback."""
+        if os.path.exists(self.metrics_history_file) and os.path.getsize(self.metrics_history_file) > 2:
+            try:
+                with open(self.metrics_history_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        return data
+            except Exception:
+                pass
+
+        if os.path.exists(self.metrics_history_bak) and os.path.getsize(self.metrics_history_bak) > 2:
+            try:
+                with open(self.metrics_history_bak, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        return data
+            except Exception:
+                pass
+        return {}
+
+    def _save_metrics_history(self):
+        """Safely and atomically persist metrics history to disk with .bak copy."""
+        if not getattr(self, "_metrics_history", None):
+            return
+        try:
+            tmp_path = self.metrics_history_file + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(self._metrics_history, f, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+
+            # Create backup before replacing
+            if os.path.exists(self.metrics_history_file) and os.path.getsize(self.metrics_history_file) > 10:
+                try:
+                    import shutil
+                    shutil.copy2(self.metrics_history_file, self.metrics_history_bak)
+                except Exception:
+                    pass
+
+            os.replace(tmp_path, self.metrics_history_file)
+        except Exception:
+            pass
+
     def get_auto_mode(self) -> bool:
         """Get whether AIHub is in automatic filter mode (vs manual selection)."""
         if self._auto_mode_override is not None:
@@ -135,20 +187,41 @@ class AIHubClient:
 
     def fetch_data(self, force: bool = False, timeout: int = 8) -> Dict[str, Any]:
         """
-        Fetch public providers and live usage stats from AIHub.
-        Parses multiplier, cache rate, TTFT, TPS, success rate, and test images.
+        Fetch public providers and live usage stats from AIHub across official time dimensions:
+        1h, 6h, 24h, 7d for cache hit rate, success rate, and effective multiplier.
         """
         now = time.time()
         if not force and self.cached_data and (now - self.last_fetch_time < 30):
             return self.cached_data
 
-        providers_raw = []
+        ranges = ["1h", "6h", "24h", "7d"]
+        range_results: Dict[str, List[Dict[str, Any]]] = {}
+
+        def _fetch_range(r: str):
+            try:
+                url = f"{self.PROVIDERS_URL}?range={r}"
+                resp = self.session.get(url, timeout=timeout)
+                if resp.status_code == 200:
+                    return r, resp.json().get("data", {}).get("items", [])
+            except Exception:
+                pass
+            return r, []
+
         try:
-            resp = self.session.get(self.PROVIDERS_URL, timeout=timeout)
-            if resp.status_code == 200:
-                providers_raw = resp.json().get("data", {}).get("items", [])
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                for r, items in executor.map(_fetch_range, ranges):
+                    range_results[r] = items
         except Exception as e:
             self.last_error = f"获取 AIHub 列表失败: {e}"
+
+        range_data: Dict[str, Dict[str, Dict[str, Any]]] = {
+            r: {it.get("code"): it for it in items if it.get("code")}
+            for r, items in range_results.items()
+        }
+
+        providers_raw = range_results.get("1h") or range_results.get("24h") or range_results.get("6h") or range_results.get("7d") or []
+        if not providers_raw and not self.last_error:
+            self.last_error = "AIHub 数据为空或请求超时"
 
         stats_by_code = {}
         try:
@@ -169,15 +242,8 @@ class AIHubClient:
             except Exception:
                 pass
 
-        # Load rolling metrics history for 1h/1d/7d averages
-        metrics_history_file = os.path.join(os.path.dirname(self.cache_dir), "aihub_history.json")
-        metrics_history: Dict[str, List[Dict[str, Any]]] = {}
-        if os.path.exists(metrics_history_file):
-            try:
-                with open(metrics_history_file, "r", encoding="utf-8") as f:
-                    metrics_history = json.load(f)
-            except Exception:
-                pass
+        # Get local metrics history
+        metrics_history = self.get_metrics_history()
 
         excluded_codes = set(self.get_excluded_providers() or [])
         selected_codes = set(self.get_selected_providers() or [])
@@ -186,11 +252,54 @@ class AIHubClient:
             c = it.get("code", "")
             if is_default_excluded_provider(c, it) and c not in selected_codes:
                 excluded_codes.add(c)
+
         all_parsed_providers = []
+
+        # Helper to parse percentage from official cache hit rate
+        def _parse_cache(p_item: Dict[str, Any]):
+            raw = p_item.get("cache_hit_rate")
+            if raw is None or raw == "-" or raw == "":
+                return None, "-"
+            if isinstance(raw, (float, int)):
+                val = float(raw) * 100.0 if float(raw) <= 1.0 else float(raw)
+                return val, f"{round(val)}%"
+            if isinstance(raw, str) and "%" in raw:
+                try:
+                    val = float(raw.replace("%", "").strip())
+                    return val, f"{round(val)}%"
+                except Exception:
+                    pass
+            return None, "-"
+
+        # Helper to parse percentage from official success rates
+        def _parse_sr(p_item: Dict[str, Any], r_key: str):
+            sr_d = p_item.get("success_rates") or {}
+            val = sr_d.get(r_key)
+            if val is None and r_key == "6h":
+                val = p_item.get("probe_success_rate_6h")
+            if val is not None:
+                pct = float(val) * 100.0 if float(val) <= 1.0 else float(val)
+                return pct, f"{round(pct)}%"
+            return None, "--"
+
+        # Helper to parse official effective multiplier
+        def _parse_eff(p_item: Dict[str, Any]):
+            eff = p_item.get("effective_multiplier")
+            ready = bool(p_item.get("effective_multiplier_ready", False))
+            if eff is not None and isinstance(eff, (int, float)) and ready:
+                return float(eff), f"{float(eff):.2f}"
+            return None, "--"
+
         for it in providers_raw:
             code = it.get("code", "")
             if not code:
                 continue
+
+            item_1h = range_data.get("1h", {}).get(code, it)
+            item_6h = range_data.get("6h", {}).get(code, {})
+            item_24h = range_data.get("24h", {}).get(code, {})
+            item_7d = range_data.get("7d", {}).get(code, {})
+
             mult = it.get("rate_multiplier")
             if mult is None:
                 mult = 1.0
@@ -199,56 +308,47 @@ class AIHubClient:
             visible_in_hall = bool(it.get("visible_in_hall", False))
             error_cat = it.get("error_category") or ""
 
-            # Cache hit rate
-            cache_hit = it.get("cache_hit_rate", "-")
-            cache_hit_str = "-"
-            cache_hit_val = 0.0
-            has_cache = False
-            if isinstance(cache_hit, (float, int)):
-                cache_hit_val = float(cache_hit) * 100.0 if float(cache_hit) <= 1.0 else float(cache_hit)
-                cache_hit_str = f"{cache_hit_val:.1f}%"
-                has_cache = True
-            elif isinstance(cache_hit, str) and "%" in cache_hit:
-                try:
-                    cache_hit_val = float(cache_hit.replace("%", "").strip())
-                    cache_hit_str = f"{cache_hit_val:.1f}%"
-                    has_cache = True
-                except Exception:
-                    pass
+            # 1h / 6h / 24h / 7d Cache hit rates
+            c1_v, c1_s = _parse_cache(item_1h)
+            c6_v, c6_s = _parse_cache(item_6h)
+            c24_v, c24_s = _parse_cache(item_24h)
+            c7_v, c7_s = _parse_cache(item_7d)
 
-            # TTFT
-            stat = stats_by_code.get(code, {})
-            ttft_ms = it.get("avg_ttft_ms") or it.get("user_avg_ttft_ms") or stat.get("avg_ttft_ms")
-            ttft_str = f"{ttft_ms/1000:.1f}s" if ttft_ms else "--"
+            cache_hit_val = c1_v if c1_v is not None else 0.0
+            cache_hit_str = f"{c1_v:.1f}%" if c1_v is not None else "-"
+            has_cache = (c1_v is not None)
+            cache_multi_str = f"{c1_s}/{c6_s}/{c24_s}/{c7_s}"
 
-            # TPS
-            tps_val = it.get("output_tps")
-            tps_str = f"{tps_val:.1f} t/s" if tps_val else "--"
+            # 1h / 6h / 24h / 7d Success rates
+            s1_v, s1_s = _parse_sr(item_1h, "1h")
+            s6_v, s6_s = _parse_sr(item_6h, "6h")
+            s24_v, s24_s = _parse_sr(item_24h, "24h")
+            s7_v, s7_s = _parse_sr(item_7d, "7d")
 
-            # Success rate: calculate from 1h, then 24h, then 6h, or probe_success_rate_6h (must use is not None, not or, since 0% is valid!)
-            sr_obj = it.get("success_rates") or {}
-            sr_val = None
-            if isinstance(sr_obj, dict) and sr_obj:
-                for k in ["1h", "24h", "6h"]:
-                    if sr_obj.get(k) is not None:
-                        sr_val = sr_obj.get(k)
-                        break
-            if sr_val is None:
-                sr_val = it.get("probe_success_rate_6h")
-
-            if sr_val is not None:
-                sr_percent = round(float(sr_val) * 100, 1)
+            if s1_v is not None:
+                sr_percent = round(s1_v, 1)
+                sr_str = f"{sr_percent:.1f}%"
+                has_sr = True
+            elif s6_v is not None:
+                sr_percent = round(s6_v, 1)
                 sr_str = f"{sr_percent:.1f}%"
                 has_sr = True
             else:
                 sr_percent = None
                 sr_str = "--"
                 has_sr = False
+            sr_multi_str = f"{s1_s}/{s6_s}/{s24_s}/{s7_s}"
 
-            # Real / Effective Multiplier (official AIHub effective_multiplier factoring in caching)
-            eff_mult = it.get("effective_multiplier")
-            eff_ready = bool(it.get("effective_multiplier_ready", False))
-            eff_reason_raw = it.get("effective_multiplier_reason")
+            # 1h / 6h / 24h / 7d Effective multipliers
+            e1_v, e1_s = _parse_eff(item_1h)
+            e6_v, e6_s = _parse_eff(item_6h)
+            e24_v, e24_s = _parse_eff(item_24h)
+            e7_v, e7_s = _parse_eff(item_7d)
+
+            eff_mult_val = e1_v
+            eff_mult_str = f"{e1_v:.2f}x" if e1_v is not None else "--"
+            eff_ready = bool(item_1h.get("effective_multiplier_ready", False))
+            eff_reason_raw = item_1h.get("effective_multiplier_reason")
             reason_map = {
                 "not_configured": "未配置",
                 "insufficient_samples": "样本不足",
@@ -261,78 +361,22 @@ class AIHubClient:
                 "openrouter_reference_stale": "参考已过期",
             }
             eff_reason_str = reason_map.get(eff_reason_raw, eff_reason_raw or "")
-            if eff_mult is not None and isinstance(eff_mult, (int, float)) and eff_ready:
-                eff_mult_val = float(eff_mult)
-                eff_mult_str = f"{eff_mult_val:.2f}x"
-            else:
-                eff_mult_val = None
-                eff_mult_str = "--"
+            eff_multi_str = f"{e1_s}/{e6_s}/{e24_s}/{e7_s}"
 
-            # 1M tokens effective input price (e.g. ¥0.12/M)
-            price_1m = it.get("effective_input_price_per_million_1h")
+            # TTFT & TPS
+            stat = stats_by_code.get(code, {})
+            ttft_ms = it.get("avg_ttft_ms") or it.get("user_avg_ttft_ms") or stat.get("avg_ttft_ms")
+            ttft_str = f"{ttft_ms/1000:.1f}s" if ttft_ms else "--"
+
+            tps_val = item_1h.get("summary_tps") or it.get("output_tps")
+            tps_str = f"{tps_val:.1f} t/s" if tps_val else "--"
+
+            # 1M tokens effective input price
+            price_1m = item_1h.get("effective_input_price_per_million_1h")
             price_1m_str = f"¥{price_1m:.2f}/M" if price_1m is not None else "--"
 
-            hist_items = metrics_history.get(code, [])
-            hist_span = (now - hist_items[0]["t"]) if hist_items else 0
-
-            # Multi-period success rates: 成功率(现/1h/1d/7d) 全部由本地采集样本独立计算滑动均值
-            sr_cur_str = f"{round(sr_percent)}%" if sr_percent is not None else "--"
-            sr1h_samples = [h["sr"] for h in hist_items if h.get("sr") is not None and h["t"] >= now - 3600]
-            sr1d_samples = [h["sr"] for h in hist_items if h.get("sr") is not None and h["t"] >= now - 86400]
-            sr7d_samples = [h["sr"] for h in hist_items if h.get("sr") is not None and h["t"] >= now - 7 * 86400]
-
-            # 1h: Local past 1-hour rolling average
-            if sr1h_samples:
-                s1h_str = f"{round(sum(sr1h_samples) / len(sr1h_samples))}%"
-            elif sr_percent is not None:
-                s1h_str = sr_cur_str
-            else:
-                s1h_str = "--"
-
-            # 1d (24h): Local past 24-hour rolling average
-            if sr1d_samples and len(sr1d_samples) >= 5 and hist_span >= 7200:
-                s1d_str = f"{round(sum(sr1d_samples) / len(sr1d_samples))}%"
-            else:
-                s1d_str = s1h_str
-
-            # 7d: Local past 7-day rolling average (requires >= 3 days accumulated)
-            if sr7d_samples and len(sr7d_samples) >= 10 and hist_span >= 86400 * 3:
-                s7d_str = f"{round(sum(sr7d_samples) / len(sr7d_samples))}%"
-            else:
-                s7d_str = "--"
-
-            sr_multi_str = f"{sr_cur_str}/{s1h_str}/{s1d_str}/{s7d_str}"
-
-            # Multi-period cache hit rates: 缓存率(现/1h/1d/7d) 全部由本地采集样本独立计算滑动均值
-            c_cur_str = f"{round(cache_hit_val)}%" if has_cache else "-"
-            c1h_samples = [h["cache"] for h in hist_items if h.get("cache") is not None and h["t"] >= now - 3600]
-            c1d_samples = [h["cache"] for h in hist_items if h.get("cache") is not None and h["t"] >= now - 86400]
-            c7d_samples = [h["cache"] for h in hist_items if h.get("cache") is not None and h["t"] >= now - 7 * 86400]
-
-            # 1h cache hit rate: Local past 1-hour rolling average
-            if c1h_samples:
-                c1h_str = f"{round(sum(c1h_samples) / len(c1h_samples))}%"
-            elif has_cache:
-                c1h_str = c_cur_str
-            else:
-                c1h_str = "--"
-
-            # 1d cache hit rate: Past 24h rolling average from local history if span >= 2 hours, else 1h
-            if c1d_samples and len(c1d_samples) >= 5 and hist_span >= 7200:
-                c1d_str = f"{round(sum(c1d_samples) / len(c1d_samples))}%"
-            else:
-                c1d_str = c1h_str
-
-            # 7d cache hit rate: Past 7d rolling average from local history only if span >= 3 days (72 hours), else "--"
-            if c7d_samples and len(c7d_samples) >= 10 and hist_span >= 86400 * 3:
-                c7d_str = f"{round(sum(c7d_samples) / len(c7d_samples))}%"
-            else:
-                c7d_str = "--"
-
-            cache_multi_str = f"{c_cur_str}/{c1h_str}/{c1d_str}/{c7d_str}"
-
-            # Reference cache hit rate: reference_cache_hit_rate (官方 Sol 参考缓存率基准, 如 81%)
-            rc_1h_obj = it.get("runtime_cache_1h") or {}
+            # Reference cache hit rate
+            rc_1h_obj = item_1h.get("runtime_cache_1h") or {}
             cref_raw = rc_1h_obj.get("reference_cache_hit_rate")
             if cref_raw is not None:
                 cref_val = float(cref_raw) * 100.0 if float(cref_raw) <= 1.0 else float(cref_raw)
@@ -341,34 +385,6 @@ class AIHubClient:
             else:
                 ref_cache_str = "--"
                 ref_cache_val = None
-
-            # Multi-period effective multipliers: 真实倍率(现/1h/1d/7d) 全部由本地采集样本独立计算滑动均值
-            cur_eff_num = f"{eff_mult_val:.2f}" if eff_mult_val is not None else "--"
-            eff1h_samples = [h["eff"] for h in hist_items if h.get("eff") is not None and h["t"] >= now - 3600]
-            eff1d_samples = [h["eff"] for h in hist_items if h.get("eff") is not None and h["t"] >= now - 86400]
-            eff7d_samples = [h["eff"] for h in hist_items if h.get("eff") is not None and h["t"] >= now - 7 * 86400]
-
-            # 1h: Local past 1-hour rolling average
-            if eff1h_samples:
-                eff1h_num = f"{(sum(eff1h_samples) / len(eff1h_samples)):.2f}"
-            elif eff_mult_val is not None:
-                eff1h_num = cur_eff_num
-            else:
-                eff1h_num = "--"
-
-            # 1d: Local past 24-hour rolling average
-            if eff1d_samples and len(eff1d_samples) >= 5 and hist_span >= 7200:
-                eff1d_num = f"{(sum(eff1d_samples) / len(eff1d_samples)):.2f}"
-            else:
-                eff1d_num = eff1h_num
-
-            # 7d: Local past 7-day rolling average (requires >= 3 days)
-            if eff7d_samples and len(eff7d_samples) >= 10 and hist_span >= 86400 * 3:
-                eff7d_num = f"{(sum(eff7d_samples) / len(eff7d_samples)):.2f}"
-            else:
-                eff7d_num = "--"
-
-            eff_multi_str = f"{cur_eff_num}/{eff1h_num}/{eff1d_num}/{eff7d_num}"
 
             # Detection media / image
             dm = it.get("detection_media") or {}
@@ -380,10 +396,11 @@ class AIHubClient:
 
             # Model verification / detection (是否通过 / 疑似 / 其他)
             md = it.get("model_detection") or {}
-            md_status = md.get("status")  # 'passed', 'suspected', 'insufficient_evidence', 'not_configured', 'detection_failed', None
+            md_status = md.get("status")
             md_model = md.get("model", "")
             md_reason = md.get("user_reason", "")
-            md_time = format_iso_timestamp(md.get("detected_at"))
+            detected_at_raw = md.get("detected_at")
+            md_time = format_iso_timestamp(detected_at_raw)
 
             # Candy question test (糖果题: 21 为正确，其他为错误)
             candy_text = (md.get("presentation") or {}).get("text") or (pres.get("text")) or {}
@@ -447,13 +464,21 @@ class AIHubClient:
                 det_dot = "⚪"
                 det_tip = "模型检测: ⚪ 未配置 / 暂无检测数据"
 
-            # Append current reading to metrics history (record any valid metric independently)
+            # Parse probe timestamp for accurate historical timeline slotting
+            probe_ts = int(now)
+            if detected_at_raw:
+                try:
+                    probe_dt = datetime.fromisoformat(str(detected_at_raw).replace("Z", "+00:00"))
+                    probe_ts = int(probe_dt.timestamp())
+                except Exception:
+                    probe_ts = int(now)
+
+            # Persist reading to metrics history
             if has_sr or has_cache or eff_mult_val is not None or det_status or candy_status:
                 if code not in metrics_history:
                     metrics_history[code] = []
-                
-                cur_t = int(now)
-                rec = {"t": cur_t}
+
+                rec = {"t": probe_ts}
                 if eff_mult_val is not None:
                     rec["eff"] = round(eff_mult_val, 4)
                 if has_cache:
@@ -479,42 +504,27 @@ class AIHubClient:
                     rec["candy"] = "none"
 
                 if len(rec) > 1:
-                    # Update if sample is within 30 seconds to prevent spamming duplicates, else append
-                    if metrics_history[code] and abs(metrics_history[code][-1].get("t", 0) - cur_t) < 30:
-                        metrics_history[code][-1].update(rec)
+                    existing = [h for h in metrics_history[code] if abs(h.get("t", 0) - probe_ts) < 120]
+                    if existing:
+                        existing[-1].update(rec)
                     else:
                         metrics_history[code].append(rec)
-                    metrics_history[code] = [h for h in metrics_history[code] if h["t"] >= now - 7 * 86400]
-                if md_time:
-                    det_tip += f"\n检测时间: {md_time}"
-            elif md_status == "suspected":
-                det_status = "suspected"
-                det_label = "疑似"
-                det_color = "#F59E0B"
-                det_dot = "🟠"
-                det_tip = f"模型检测: 🟠 疑似 (存疑)\n测试目标: {md_model or '默认'}\n说明: {md_reason or '验证无法定论'}"
-                if md_time:
-                    det_tip += f"\n检测时间: {md_time}"
-            elif md_status == "insufficient_evidence":
-                det_status = "other"
-                det_label = "待定"
-                det_color = "#64748B"
-                det_dot = "⚪"
-                det_tip = f"模型检测: ⚪ 证据不足 (无法定论)\n测试目标: {md_model or '默认'}\n说明: {md_reason or '暂无定论'}"
-                if md_time:
-                    det_tip += f"\n检测时间: {md_time}"
-            elif md_status == "detection_failed":
-                det_status = "other"
-                det_label = "失败"
-                det_color = "#64748B"
-                det_dot = "⚪"
-                det_tip = f"模型检测: ⚪ 检测失败\n说明: {md_reason or '检测暂时不可用'}"
-            else:
-                det_status = "other"
-                det_label = "未检"
-                det_color = "#475569"
-                det_dot = "⚪"
-                det_tip = "模型检测: ⚪ 未配置 / 暂无检测数据"
+
+                    # Also ensure current snapshot is recorded if probe occurred earlier
+                    if abs(probe_ts - int(now)) >= 300:
+                        rec_now = dict(rec)
+                        rec_now["t"] = int(now)
+                        now_existing = [h for h in metrics_history[code] if abs(h.get("t", 0) - int(now)) < 60]
+                        if now_existing:
+                            now_existing[-1].update(rec_now)
+                        else:
+                            metrics_history[code].append(rec_now)
+
+                    cutoff = now - 7 * 86400
+                    metrics_history[code] = sorted(
+                        [h for h in metrics_history[code] if h.get("t", 0) >= cutoff],
+                        key=lambda x: x.get("t", 0)
+                    )
 
             if not is_avail or not visible_in_hall:
                 off_reason = f"探针异常: {error_cat}" if error_cat else "官方大厅未在架/离线"
@@ -566,15 +576,11 @@ class AIHubClient:
                 "candy_answer": candy_ans,
                 "public_detail": (it.get("public_detail") or "").strip(),
                 "is_excluded": code in excluded_codes,
-                "hist_span_hours": round(hist_span / 3600, 1),
             })
 
-        # Persist updated rolling metrics history
-        try:
-            with open(metrics_history_file, "w", encoding="utf-8") as f:
-                json.dump(metrics_history, f, ensure_ascii=False)
-        except Exception:
-            pass
+        # Persist updated rolling metrics history safely and atomically
+        self._metrics_history = metrics_history
+        self._save_metrics_history()
 
         # Ensure manually selected providers that might be completely absent from API are still tracked as unlisted
         selected_codes = self.get_selected_providers() or []
@@ -746,15 +752,10 @@ class AIHubClient:
         return all_items
 
     def get_metrics_history(self) -> Dict[str, List[Dict[str, Any]]]:
-        """Return rolling metrics history from disk or memory."""
-        metrics_history_file = os.path.join(os.path.dirname(self.cache_dir), "aihub_history.json")
-        if os.path.exists(metrics_history_file):
-            try:
-                with open(metrics_history_file, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception:
-                pass
-        return getattr(self, "_metrics_history", {})
+        """Return rolling metrics history from memory or safely reload from disk."""
+        if not getattr(self, "_metrics_history", None):
+            self._metrics_history = self._load_metrics_history()
+        return self._metrics_history
 
     def get_provider_timeline_data(self, code: str, days: int = 7, granularity_mins: int = 30) -> Dict[str, Any]:
         """
@@ -854,8 +855,8 @@ class AIHubClient:
                     cache_val = sample.get("cache")
                     sr_val = sample.get("sr")
                 else:
-                    # If within 45 minutes of a sample
-                    prev_samples = [r for r in history_list if r.get("t", 0) <= s_end_ts and s_start_ts - r.get("t", 0) < 2700]
+                    # Look for nearest prior sample within 3 hours (10800 seconds)
+                    prev_samples = [r for r in history_list if r.get("t", 0) <= s_end_ts and (s_start_ts - r.get("t", 0) <= 10800)]
                     if prev_samples:
                         sample = prev_samples[-1]
                         s_det = sample.get("det") or live_det
@@ -868,6 +869,18 @@ class AIHubClient:
                         eff_val = sample.get("eff")
                         cache_val = sample.get("cache")
                         sr_val = sample.get("sr")
+                    elif day_offset == 0 and live_provider and live_det and s_start_ts >= (now - 14400):
+                        # Today within past 4 hours: use live provider verified status
+                        sample = {"t": int(s_start_ts), "det": live_det, "candy": live_candy}
+                        s_det = live_det
+                        s_candy = live_candy
+                        s_candy_ans = live_candy_ans
+                        s_model = live_det_m
+                        s_reason = live_det_r
+                        sample_time_str = "官网实时状态"
+                        eff_val = live_provider.get("effective_multiplier")
+                        cache_val = live_provider.get("cache_hit_val")
+                        sr_val = live_provider.get("success_rate")
                     else:
                         sample = None
                         s_det = "none"

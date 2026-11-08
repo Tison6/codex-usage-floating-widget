@@ -972,7 +972,7 @@ class FloatingWidget(QWidget):
             import traceback
             traceback.print_exc()
 
-    def open_aihub_history_dialog(self, code: str = "", dimension: str = "detection"):
+    def open_aihub_history_dialog(self, code: str = "", dimension: str = "dual"):
         """Open AIHub 24-hour probe and candy timeline visualization dialog."""
         try:
             from ui.history_timeline_dialog import AIHubHistoryDialog

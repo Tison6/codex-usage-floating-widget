@@ -988,7 +988,7 @@ class RelayStationView(QWidget):
                 color: #7DD3FC;
             }
         """)
-        self.btn_aihub_history.clicked.connect(lambda: self.history_timeline_requested.emit("", "detection"))
+        self.btn_aihub_history.clicked.connect(lambda: self.history_timeline_requested.emit("", "dual"))
 
         self.aihub_status_lbl = QLabel("实时更新")
         self.aihub_status_lbl.setStyleSheet("font-size: 8px; color: #94A3B8;")
@@ -1221,7 +1221,7 @@ class RelayStationView(QWidget):
 
         right_h_titles = [
             "倍率", "实测图",
-            "真实倍率(现/1h/1d/7d)", "缓存率(现/1h/1d/7d)", "成功率(现/1h/1d/7d)", "参考缓存率"
+            "真实倍率(1h/6h/24h/7d)", "缓存率(1h/6h/24h/7d)", "成功率(1h/6h/24h/7d)", "参考缓存率"
         ]
         right_h_aligns = [
             Qt.AlignCenter, Qt.AlignCenter,
@@ -1243,11 +1243,11 @@ class RelayStationView(QWidget):
             if col_w:
                 h_lbl.setFixedWidth(col_w)
             if "真实倍率" in title:
-                h_lbl.setToolTip("真实倍率 (当前 / 1小时 / 1天 / 7天):\n• 现: 在线获取当前瞬时值\n• 1h/1d/7d: 全部基于本地数据库历史采样独立计算滑动均值 (需分别累积1h/2h/72h以上)\n• <=0.10: 绿色\n• >=0.20: 红色\n• 0.10~0.20: 渐变")
+                h_lbl.setToolTip("真实倍率 (1小时 / 6小时 / 24小时 / 7天):\n• 全部来自 AIHub 官方区间实时统计数据\n• 1h: 过去1小时区间折算倍率\n• 6h: 过去6小时区间折算倍率\n• 24h: 过去24小时全天折算倍率\n• 7d: 过去7天长期折算倍率\n• <=0.10: 绿色\n• >=0.20: 红色\n• 0.10~0.20: 渐变")
             elif "缓存率" in title and "参考" not in title:
-                h_lbl.setToolTip("缓存命中率 (当前 / 1小时 / 1天 / 7天):\n• 现: 在线获取当前瞬时值\n• 1h/1d/7d: 全部基于本地数据库历史采样独立计算滑动均值 (需分别累积1h/2h/72h以上)\n• 100%: 绿色\n• <=85%: 红色\n• 85%~100%: 渐变")
+                h_lbl.setToolTip("缓存命中率 (1小时 / 6小时 / 24小时 / 7天):\n• 全部来自 AIHub 官方区间实时统计数据\n• 1h: 过去1小时缓存命中率\n• 6h: 过去6小时缓存命中率\n• 24h: 过去24小时缓存命中率\n• 7d: 过去7天长期缓存命中率\n• 100%: 绿色\n• <=85%: 红色\n• 85%~100%: 渐变")
             elif "成功率" in title or "通过率" in title:
-                h_lbl.setToolTip("接口成功率 (当前 / 1小时 / 1天 / 7天):\n• 现: 在线获取当前瞬时值\n• 1h/1d/7d: 全部基于本地数据库历史采样独立计算滑动均值 (需分别累积1h/2h/72h以上)\n• 100%: 绿色\n• <=90%: 红色\n• 90%~100%: 渐变")
+                h_lbl.setToolTip("接口成功率 (1小时 / 6小时 / 24小时 / 7天):\n• 全部来自 AIHub 官方区间实时统计数据\n• 1h: 过去1小时请求成功率\n• 6h: 过去6小时请求成功率\n• 24h: 过去24小时请求成功率\n• 7d: 过去7天长期请求成功率\n• 100%: 绿色\n• <=90%: 红色\n• 90%~100%: 渐变")
             elif "参考缓存率" in title:
                 h_lbl.setToolTip("官方参考缓存率基准:\n来自接口 runtime_cache_1h 的 reference_cache_hit_rate\n(全网模型统一参考缓存基准)")
             self.aihub_header_grid_right.addWidget(h_lbl, 0, col_idx)
@@ -1521,9 +1521,9 @@ class RelayStationView(QWidget):
         right_col_widths = [
             max(22, int(round(25 * self.scale))),   # 0: 倍率
             max(32, int(round(38 * self.scale))),   # 1: 实测图
-            max(92, int(round(108 * self.scale))),  # 2: 真实倍率(现/1h/1d/7d)
-            max(80, int(round(92 * self.scale))),   # 3: 缓存率(现/1h/1d/7d)
-            max(60, int(round(70 * self.scale))),   # 4: 成功率(1h/1d/7d)
+            max(92, int(round(108 * self.scale))),  # 2: 真实倍率(1h/6h/24h/7d)
+            max(80, int(round(92 * self.scale))),   # 3: 缓存率(1h/6h/24h/7d)
+            max(80, int(round(92 * self.scale))),   # 4: 成功率(1h/6h/24h/7d)
             max(50, int(round(58 * self.scale))),   # 5: 参考缓存率
         ]
 
@@ -1589,9 +1589,9 @@ class RelayStationView(QWidget):
                 f"折算输入单价: {price_str}\n"
                 f"当前实测缓存率: {g.get('cache_hit_rate', '-')}\n"
                 f"当前实测成功率: {g.get('success_rate_str', '--')}\n"
-                f"真实倍率(现/1h/1d/7d): {eff_multi_str}\n"
-                f"缓存率(现/1h/1d/7d): {cache_multi_str}\n"
-                f"成功率(现/1h/1d/7d): {sr_multi_str}\n"
+                f"真实倍率(1h/6h/24h/7d): {eff_multi_str}\n"
+                f"缓存率(1h/6h/24h/7d): {cache_multi_str}\n"
+                f"成功率(1h/6h/24h/7d): {sr_multi_str}\n"
                 f"参考缓存基准: {g.get('reference_cache_hit_rate', '--')}\n"
                 f"首字延迟 (TTFT): {g.get('ttft_str', '--')}\n"
                 f"输出速度 (TPS): {g.get('tps_str', '--')}\n"
@@ -1619,11 +1619,10 @@ class RelayStationView(QWidget):
             else:
                 ref_color = "#64748B"
 
-            span_h = g.get('hist_span_hours', 0.0)
-            span_note = f"• 1h/1d/7d 全部基于本地采集历史独立计算滑动均值 (已累积 {span_h:.1f}h，7d需满72h)"
-            eff_tip = f"真实倍率 (现/1h/1d/7d):\n{eff_multi_str}\n• 现: 当前瞬时倍率 ({price_str})\n{span_note}\n• <=0.10: 绿色\n• >=0.20: 红色\n• 0.10~0.20: 渐变"
-            hit_tip = f"缓存命中率 (现/1h/1d/7d):\n{cache_multi_str}\n• 现: 当前实测缓存率 ({g.get('cache_hit_rate', '-')})\n{span_note}\n• 100%: 绿色\n• <=85%: 红色\n• 85%~100%: 渐变"
-            sr_tip = f"接口请求成功率 (现/1h/1d/7d):\n{sr_multi_str}\n• 现: 当前实测成功率 ({g.get('success_rate_str', '--')})\n{span_note}\n• 100%: 绿色\n• <=90%: 红色\n• 90%~100%: 渐变"
+            note_str = "• 1h/6h/24h/7d: 全部来自 AIHub 官网官方统计维度实时数据"
+            eff_tip = f"真实倍率 (1h/6h/24h/7d):\n{eff_multi_str}\n• 1h折算输入单价: {price_str}\n{note_str}\n• <=0.10: 绿色\n• >=0.20: 红色\n• 0.10~0.20: 渐变"
+            hit_tip = f"缓存命中率 (1h/6h/24h/7d):\n{cache_multi_str}\n• 1h实时缓存率: {g.get('cache_hit_rate', '-')}\n{note_str}\n• 100%: 绿色\n• <=85%: 红色\n• 85%~100%: 渐变"
+            sr_tip = f"接口请求成功率 (1h/6h/24h/7d):\n{sr_multi_str}\n• 1h实时成功率: {g.get('success_rate_str', '--')}\n{note_str}\n• 100%: 绿色\n• <=90%: 红色\n• 90%~100%: 渐变"
 
             if row_idx < len(self._aihub_rows):
                 entry = self._aihub_rows[row_idx]
@@ -1655,12 +1654,12 @@ class RelayStationView(QWidget):
                 c_dot = DetectionDot(det_status, tooltip=det_tip, size=dot_size, parent=self.aihub_scroll_content_left)
                 c_dot.setFixedWidth(left_col_widths[0])
                 c_dot.setToolTip(tip_text)
-                c_dot.clicked.connect(lambda _, e=entry_dict: self.history_timeline_requested.emit(e.get("code", ""), "detection"))
+                c_dot.clicked.connect(lambda _, e=entry_dict: self.history_timeline_requested.emit(e.get("code", ""), "dual"))
 
                 c_candy = CandyDot(candy_status, candy_label, scale=self.scale, tooltip=candy_tip, size=dot_size, parent=self.aihub_scroll_content_left)
                 c_candy.setFixedWidth(left_col_widths[1])
                 c_candy.setToolTip(candy_tip)
-                c_candy.clicked.connect(lambda _, e=entry_dict: self.history_timeline_requested.emit(e.get("code", ""), "candy"))
+                c_candy.clicked.connect(lambda _, e=entry_dict: self.history_timeline_requested.emit(e.get("code", ""), "dual"))
 
                 c_name = ProviderNameLabel(code_text, detail=detail, scale=self.scale, parent=self.aihub_scroll_content_left)
                 c_name.setFixedWidth(left_col_widths[2])

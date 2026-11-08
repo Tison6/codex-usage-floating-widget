@@ -33,7 +33,8 @@ COLOR_HOVER = QColor("#38BDF8")      # Sky Blue
 class TimelineCanvas(QWidget):
     """
     High-performance custom-painted 24-hour timeline grid.
-    Renders 1 row per day (today at top down to 7 days).
+    Renders 1 row per day (today at top down to 7 days) in dual-dimension mode:
+    top half = Model Detection, bottom half = Candy Question.
     """
 
     slot_hovered = pyqtSignal(dict)   # Emits hovered slot dict or empty dict
@@ -42,7 +43,7 @@ class TimelineCanvas(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.timeline_data: Dict[str, Any] = {}
-        self.mode: str = "detection"  # "detection", "candy", "dual"
+        self.mode: str = "dual"  # Locked to dual dimension
         self.selected_slot_key: Optional[str] = None  # f"{day_idx}_{slot_idx}"
         self.hovered_slot_key: Optional[str] = None
         self.hovered_slot_info: Optional[Dict[str, Any]] = None
@@ -59,22 +60,21 @@ class TimelineCanvas(QWidget):
         self.row_padding = 6
         self.cell_gap = 2
 
-    def set_data(self, data: Dict[str, Any], mode: str = "detection"):
+    def set_data(self, data: Dict[str, Any], mode: str = "dual"):
         self.timeline_data = data
-        self.mode = mode
+        self.mode = "dual"
         self._update_geometry()
         self.update()
 
     def set_mode(self, mode: str):
-        if self.mode != mode:
-            self.mode = mode
-            self._update_geometry()
-            self.update()
+        self.mode = "dual"
+        self._update_geometry()
+        self.update()
 
     def _update_geometry(self):
         daily_rows = self.timeline_data.get("daily_rows", [])
         num_days = max(1, len(daily_rows))
-        row_h = self.cell_height_dual if self.mode == "dual" else self.cell_height_single
+        row_h = self.cell_height_dual
         total_h = self.header_height + num_days * (row_h + self.row_padding) + 16
         self.setFixedHeight(total_h)
 
@@ -96,7 +96,7 @@ class TimelineCanvas(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
 
         grid_left, grid_width, slots_per_day, cell_w = self._get_grid_metrics()
-        row_h = self.cell_height_dual if self.mode == "dual" else self.cell_height_single
+        row_h = self.cell_height_dual
 
         # -------------------------------------------------------------
         # 1. Header Time Axis (00:00, 02:00, ... 24:00)
@@ -109,7 +109,7 @@ class TimelineCanvas(QWidget):
         painter.drawText(QRectF(4, 2, self.label_width, 18), Qt.AlignLeft | Qt.AlignVCenter, "日期")
         # Summary title
         summary_left = grid_left + grid_width + 8
-        painter.drawText(QRectF(summary_left, 2, self.summary_width, 18), Qt.AlignLeft | Qt.AlignVCenter, "当日概览")
+        painter.drawText(QRectF(summary_left, 2, self.summary_width, 18), Qt.AlignLeft | Qt.AlignVCenter, "当日概览 (检测/糖果)")
 
         # Time tick labels across 24h
         for hour in range(0, 25, 2):
@@ -143,26 +143,34 @@ class TimelineCanvas(QWidget):
             label_rect = QRectF(4, y, self.label_width, row_h)
             painter.drawText(label_rect, Qt.AlignLeft | Qt.AlignVCenter, day_info.get("display_label", ""))
 
-            # Right Summary Badge
-            if self.mode == "candy":
-                rate_str = day_info.get("candy_rate_str", "--")
-                cnt_str = f"{day_info.get('candy_correct', 0)}/{day_info.get('candy_total', 0)}"
-                main_rate = day_info.get("candy_correct", 0) / max(1, day_info.get("candy_total", 1))
-            else:
-                rate_str = day_info.get("det_rate_str", "--")
-                cnt_str = f"{day_info.get('det_passed', 0)}/{day_info.get('det_total', 0)}"
-                main_rate = day_info.get("det_passed", 0) / max(1, day_info.get("det_total", 1))
+            # Right Summary Badge: Dual split summary (Top: Model Detection, Bottom: Candy Question)
+            half_h = (row_h - 1) / 2.0
+            sum_rect_det = QRectF(summary_left, y, self.summary_width, half_h)
+            sum_rect_candy = QRectF(summary_left, y + half_h + 1, self.summary_width, half_h)
 
-            sum_rect = QRectF(summary_left, y, self.summary_width, row_h)
-            painter.setFont(QFont("Segoe UI", 7, QFont.Bold))
-            if rate_str != "--":
-                color_rate = "#10B981" if main_rate >= 0.9 else ("#F59E0B" if main_rate >= 0.7 else "#EF4444")
-            else:
-                color_rate = "#64748B"
-            painter.setPen(QColor(color_rate))
-            painter.drawText(sum_rect, Qt.AlignLeft | Qt.AlignVCenter, f"{rate_str} ({cnt_str})")
+            det_rate_str = day_info.get("det_rate_str", "--")
+            det_cnt_str = f"{day_info.get('det_passed', 0)}/{day_info.get('det_total', 0)}"
+            d_rate = day_info.get("det_passed", 0) / max(1, day_info.get("det_total", 1))
+            c_det_rate = "#10B981" if d_rate >= 0.9 else ("#F59E0B" if d_rate >= 0.7 else "#EF4444")
+            if det_rate_str == "--":
+                c_det_rate = "#64748B"
 
-            # Slots Grid for this Day
+            painter.setFont(QFont("Segoe UI", 6.5, QFont.Bold))
+            painter.setPen(QColor(c_det_rate))
+            painter.drawText(sum_rect_det, Qt.AlignLeft | Qt.AlignVCenter, f"🎯 {det_rate_str} ({det_cnt_str})")
+
+            candy_rate_str = day_info.get("candy_rate_str", "--")
+            candy_cnt_str = f"{day_info.get('candy_correct', 0)}/{day_info.get('candy_total', 0)}"
+            c_rate = day_info.get("candy_correct", 0) / max(1, day_info.get("candy_total", 1))
+            c_candy_rate = "#10B981" if c_rate >= 0.9 else "#EF4444"
+            if candy_rate_str == "--":
+                c_candy_rate = "#64748B"
+
+            painter.setFont(QFont("Segoe UI", 6.5, QFont.Bold))
+            painter.setPen(QColor(c_candy_rate))
+            painter.drawText(sum_rect_candy, Qt.AlignLeft | Qt.AlignVCenter, f"🍬 {candy_rate_str} ({candy_cnt_str})")
+
+            # Slots Grid for this Day: Always dual-dimension split cells
             slots = day_info.get("slots", [])
             for s_idx, slot in enumerate(slots):
                 x = grid_left + s_idx * (cell_w + self.cell_gap)
@@ -171,47 +179,27 @@ class TimelineCanvas(QWidget):
                 is_selected = (self.selected_slot_key == slot_key)
                 is_future = slot.get("is_future", False)
 
-                if self.mode == "dual":
-                    # Split cell: top half is detection, bottom half is candy
-                    half_h = (row_h - 1) / 2.0
-                    r_det = QRectF(x, y, cell_w, half_h)
-                    r_candy = QRectF(x, y + half_h + 1, cell_w, half_h)
+                # Split cell: top half is detection, bottom half is candy
+                r_det = QRectF(x, y, cell_w, half_h)
+                r_candy = QRectF(x, y + half_h + 1, cell_w, half_h)
 
-                    c_det = self._get_status_color(slot.get("det_status"), is_future)
-                    c_candy = self._get_candy_color(slot.get("candy_status"), is_future)
+                c_det = self._get_status_color(slot.get("det_status"), is_future)
+                c_candy = self._get_candy_color(slot.get("candy_status"), is_future)
 
-                    painter.setPen(Qt.NoPen)
-                    painter.setBrush(QBrush(c_det))
-                    painter.drawRoundedRect(r_det, 1.5, 1.5)
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QBrush(c_det))
+                painter.drawRoundedRect(r_det, 1.5, 1.5)
 
-                    painter.setBrush(QBrush(c_candy))
-                    painter.drawRoundedRect(r_candy, 1.5, 1.5)
+                painter.setBrush(QBrush(c_candy))
+                painter.drawRoundedRect(r_candy, 1.5, 1.5)
 
-                    # Highlight outline if hovered or selected
-                    if is_hovered or is_selected:
-                        full_r = QRectF(x - 1, y - 1, cell_w + 2, row_h + 2)
-                        p_color = QColor("#FFFFFF") if is_selected else COLOR_HOVER
-                        painter.setPen(QPen(p_color, 1.5))
-                        painter.setBrush(Qt.NoBrush)
-                        painter.drawRoundedRect(full_r, 2.5, 2.5)
-                else:
-                    # Single mode: detection or candy
-                    r_cell = QRectF(x, y, cell_w, row_h)
-                    if self.mode == "candy":
-                        fill_c = self._get_candy_color(slot.get("candy_status"), is_future)
-                    else:
-                        fill_c = self._get_status_color(slot.get("det_status"), is_future)
-
-                    painter.setPen(QPen(COLOR_BORDER, 0.5) if not is_future else Qt.NoPen)
-                    painter.setBrush(QBrush(fill_c))
-                    painter.drawRoundedRect(r_cell, 2.0, 2.0)
-
-                    # Highlight outline if hovered or selected
-                    if is_hovered or is_selected:
-                        p_color = QColor("#FFFFFF") if is_selected else COLOR_HOVER
-                        painter.setPen(QPen(p_color, 1.5))
-                        painter.setBrush(Qt.NoBrush)
-                        painter.drawRoundedRect(QRectF(x - 0.5, y - 0.5, cell_w + 1, row_h + 1), 2.5, 2.5)
+                # Highlight outline if hovered or selected
+                if is_hovered or is_selected:
+                    full_r = QRectF(x - 1, y - 1, cell_w + 2, row_h + 2)
+                    p_color = QColor("#FFFFFF") if is_selected else COLOR_HOVER
+                    painter.setPen(QPen(p_color, 1.5))
+                    painter.setBrush(Qt.NoBrush)
+                    painter.drawRoundedRect(full_r, 2.5, 2.5)
 
         painter.end()
 
@@ -359,13 +347,13 @@ class AIHubHistoryDialog(QDialog):
     Modern dark-themed popup dialog for inspecting 24-hour probe timeline history.
     """
 
-    def __init__(self, aihub_client: AIHubClient, initial_code: str = "", initial_dimension: str = "detection", parent=None):
+    def __init__(self, aihub_client: AIHubClient, initial_code: str = "", initial_dimension: str = "dual", parent=None):
         super().__init__(parent)
         self.aihub_client = aihub_client
         self.current_code = initial_code
-        self.current_dimension = initial_dimension  # "detection", "candy", "dual"
-        self.current_granularity = 30               # 30 mins (48 blocks/day)
-        self.current_days = 7                       # 7 days
+        self.current_dimension = "dual"  # Always dual dimension
+        self.current_granularity = 30    # 30 mins (48 blocks/day)
+        self.current_days = 7            # 7 days
 
         # Available provider codes
         self.all_providers = []
@@ -487,7 +475,7 @@ class AIHubHistoryDialog(QDialog):
         layout.addLayout(header)
 
         # -------------------------------------------------------------
-        # 2. Control Row: Dimension Toggle + Granularity Toggle + Days
+        # 2. Control Row: Dual Dimension Badge + Granularity + Days
         # -------------------------------------------------------------
         ctrl_frame = QFrame()
         ctrl_frame.setStyleSheet("""
@@ -501,61 +489,19 @@ class AIHubHistoryDialog(QDialog):
         ctrl_lay.setContentsMargins(8, 4, 8, 4)
         ctrl_lay.setSpacing(8)
 
-        lbl_dim = QLabel("维度:")
-        lbl_dim.setStyleSheet("font-size: 10px; font-weight: 700; color: #CBD5E1;")
-        ctrl_lay.addWidget(lbl_dim)
-
-        btn_style = """
-            QPushButton {
-                background: rgba(255, 255, 255, 0.05);
-                color: #94A3B8;
-                border: 1px solid rgba(255, 255, 255, 0.1);
+        lbl_mode_badge = QLabel("📋 双维度时序 (上半格: 🎯模型真实性检测 · 下半格: 🍬糖果题实测)")
+        lbl_mode_badge.setStyleSheet("""
+            QLabel {
+                background: rgba(56, 189, 248, 0.12);
+                border: 1px solid rgba(56, 189, 248, 0.3);
                 border-radius: 4px;
-                padding: 2px 8px;
-                font-size: 10px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background: rgba(255, 255, 255, 0.1);
-                color: #F8FAFC;
-            }
-            QPushButton:checked {
-                background: rgba(56, 189, 248, 0.2);
-                border-color: #38BDF8;
                 color: #38BDF8;
+                font-size: 10px;
                 font-weight: 700;
+                padding: 3px 8px;
             }
-        """
-
-        self.btn_mode_det = QPushButton("🎯 模型真实性检测")
-        self.btn_mode_det.setCheckable(True)
-        self.btn_mode_det.setCursor(Qt.PointingHandCursor)
-        self.btn_mode_det.setStyleSheet(btn_style)
-
-        self.btn_mode_candy = QPushButton("🍬 糖果题实测")
-        self.btn_mode_candy.setCheckable(True)
-        self.btn_mode_candy.setCursor(Qt.PointingHandCursor)
-        self.btn_mode_candy.setStyleSheet(btn_style)
-
-        self.btn_mode_dual = QPushButton("📋 双维度对比")
-        self.btn_mode_dual.setCheckable(True)
-        self.btn_mode_dual.setCursor(Qt.PointingHandCursor)
-        self.btn_mode_dual.setStyleSheet(btn_style)
-
-        if self.current_dimension == "candy":
-            self.btn_mode_candy.setChecked(True)
-        elif self.current_dimension == "dual":
-            self.btn_mode_dual.setChecked(True)
-        else:
-            self.btn_mode_det.setChecked(True)
-
-        self.btn_mode_det.clicked.connect(lambda: self._set_dimension("detection"))
-        self.btn_mode_candy.clicked.connect(lambda: self._set_dimension("candy"))
-        self.btn_mode_dual.clicked.connect(lambda: self._set_dimension("dual"))
-
-        ctrl_lay.addWidget(self.btn_mode_det)
-        ctrl_lay.addWidget(self.btn_mode_candy)
-        ctrl_lay.addWidget(self.btn_mode_dual)
+        """)
+        ctrl_lay.addWidget(lbl_mode_badge)
 
         ctrl_lay.addStretch()
 
@@ -691,6 +637,9 @@ class AIHubHistoryDialog(QDialog):
             lbl_leg = QLabel(f"<span style='color: {col}; font-weight: 700;'>{emo}</span> <span style='font-size: 9px; color: #94A3B8;'>{desc}</span>")
             footer.addWidget(lbl_leg)
 
+        lbl_split_desc = QLabel("<span style='font-size: 9px; color: #38BDF8; font-weight: 700;'>[方格结构: 上半格=模型检测 · 下半格=糖果题]</span>")
+        footer.addWidget(lbl_split_desc)
+
         footer.addStretch()
 
         btn_ok = QPushButton("确定")
@@ -759,12 +708,9 @@ class AIHubHistoryDialog(QDialog):
         # Update canvas
         self.canvas.set_data(tl_data, mode=self.current_dimension)
 
-    def _set_dimension(self, dim: str):
-        self.current_dimension = dim
-        self.btn_mode_det.setChecked(dim == "detection")
-        self.btn_mode_candy.setChecked(dim == "candy")
-        self.btn_mode_dual.setChecked(dim == "dual")
-        self.canvas.set_mode(dim)
+    def _set_dimension(self, dim: str = "dual"):
+        self.current_dimension = "dual"
+        self.canvas.set_mode("dual")
 
     def _on_granularity_changed(self, idx: int):
         if idx == 0:

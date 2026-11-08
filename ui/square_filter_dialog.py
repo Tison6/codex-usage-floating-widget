@@ -1270,7 +1270,7 @@ class AIHubFilterDialog(QDialog):
         self.filters_changed.emit()
         self.close()
 
-    def _open_history(self, code: str, dimension: str = "detection"):
+    def _open_history(self, code: str, dimension: str = "dual"):
         try:
             from ui.history_timeline_dialog import AIHubHistoryDialog
             dlg = AIHubHistoryDialog(self.aihub_client, initial_code=code, initial_dimension=dimension, parent=self)
