@@ -1037,9 +1037,19 @@ class FloatingWidget(QWidget):
 
         tip_lines = [f"ChatGPT {data.get('plan_type','PLUS')}"]
         if five_h:
-            tip_lines.append(f"• 5H 剩余: {fh_rem}% (倒计时: {five_h.get('reset_countdown','')})")
+            fh_tip = f"• 5H 剩余: {fh_rem}% (倒计时: {five_h.get('reset_countdown','')})"
+            if hasattr(self, "quota_tracker"):
+                fh_ana = self.quota_tracker.get_analysis_for_current_cycle(five_h)
+                if fh_ana.get("has_data") and fh_ana.get("exhaustion_text"):
+                    fh_tip += f" [{fh_ana['exhaustion_text']}]"
+            tip_lines.append(fh_tip)
         if weekly:
-            tip_lines.append(f"• 周限额 剩余: {wk_rem}% (倒计时: {weekly.get('reset_countdown','')})")
+            wk_tip = f"• 周限额 剩余: {wk_rem}% (倒计时: {weekly.get('reset_countdown','')})"
+            if hasattr(self, "quota_tracker"):
+                wk_ana = self.quota_tracker.get_analysis_for_current_cycle(weekly)
+                if wk_ana.get("has_data") and wk_ana.get("exhaustion_text"):
+                    wk_tip += f" [{wk_ana['exhaustion_text']}]"
+            tip_lines.append(wk_tip)
         tooltip = "\n".join(tip_lines)
         self.mini_cdx_5h.setToolTip(tooltip)
         self.mini_cdx_wk.setToolTip(tooltip)

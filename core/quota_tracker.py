@@ -79,9 +79,20 @@ class QuotaTracker:
             reset_after = w.get("reset_after_seconds", 0)
             reset_at = now + reset_after
             
+        five_h = codex_data.get("five_hour_window")
+        fh_used = five_h.get("used_percent") if five_h else None
+        fh_remain = five_h.get("remaining_percent") if five_h else None
+        fh_reset_at = five_h.get("reset_at") if five_h else None
+        if five_h and not fh_reset_at:
+            fh_reset_after = five_h.get("reset_after_seconds", 0)
+            fh_reset_at = now + fh_reset_after
+            
         if self.history:
             last = self.history[-1]
-            if last.get("reset_at") == reset_at and last.get("remaining_percent") == remain and (now - last.get("timestamp", 0) < 180):
+            if (last.get("reset_at") == reset_at and 
+                last.get("remaining_percent") == remain and 
+                last.get("fh_remaining_percent") == fh_remain and 
+                (now - last.get("timestamp", 0) < 180)):
                 return
                 
         self.history.append({
@@ -89,6 +100,9 @@ class QuotaTracker:
             "used_percent": used,
             "remaining_percent": remain,
             "reset_at": reset_at,
+            "fh_used_percent": fh_used,
+            "fh_remaining_percent": fh_remain,
+            "fh_reset_at": fh_reset_at,
             "plan_type": codex_data.get("plan_type", "PLUS")
         })
         
@@ -127,10 +141,18 @@ class QuotaTracker:
         cycle_start = reset_at - window_seconds
         cycle_end = reset_at
         
-        cycle_points = [
-            p for p in self.history
-            if p.get("reset_at") == reset_at and cycle_start <= p.get("timestamp", 0) <= cycle_end
-        ]
+        is_short_window = (window_seconds <= 86400)
+        if is_short_window:
+            cycle_points = [
+                {"timestamp": p["timestamp"], "remaining_percent": p["fh_remaining_percent"]}
+                for p in self.history
+                if p.get("fh_reset_at") == reset_at and p.get("fh_remaining_percent") is not None and cycle_start <= p.get("timestamp", 0) <= cycle_end
+            ]
+        else:
+            cycle_points = [
+                p for p in self.history
+                if p.get("reset_at") == reset_at and cycle_start <= p.get("timestamp", 0) <= cycle_end
+            ]
         
         normalized_points: List[Tuple[float, float]] = []
         normalized_points.append((0.0, 100.0))
@@ -149,11 +171,15 @@ class QuotaTracker:
         
         ideal_remain = max(0.0, 100.0 * (1.0 - now_norm))
         
-        elapsed_secs = max(1800, now - cycle_start)
+        min_elapsed = 180 if is_short_window else 1800
+        elapsed_secs = max(min_elapsed, now - cycle_start)
         used_total = 100.0 - float(current_remain)
         burn_rate_per_hour = (used_total / elapsed_secs) * 3600.0
         
-        if burn_rate_per_hour > 0.01:
+        if float(current_remain) <= 0:
+            exhaustion_text = "额度已耗尽: 等待重置"
+            pace_status = "已耗尽"
+        elif burn_rate_per_hour > 0.01:
             hours_to_zero = float(current_remain) / burn_rate_per_hour
             secs_to_zero = int(hours_to_zero * 3600)
             exhaust_ts = now + secs_to_zero

@@ -94,12 +94,19 @@ class CodexQuotaView(QWidget):
         self.fh_pbar.setRange(0, 100)
         self.fh_pbar.setValue(0)
         
+        lbl_h = max(11, int(round(14 * self.scale)))
         self.fh_reset_lbl = QLabel("倒计时: --", self.five_hour_container)
         self.fh_reset_lbl.setStyleSheet(f"font-size: {sub_fs}px; color: #9CA3AF; font-weight: 400;")
+        self.fh_reset_lbl.setFixedHeight(lbl_h)
+        
+        self.fh_exhaust_lbl = QLabel("预计分析中...", self.five_hour_container)
+        self.fh_exhaust_lbl.setStyleSheet(f"font-size: {sub_fs}px; color: #F3F4F6; font-weight: 700;")
+        self.fh_exhaust_lbl.setFixedHeight(lbl_h)
         
         fh_layout.addLayout(fh_top)
         fh_layout.addWidget(self.fh_pbar)
         fh_layout.addWidget(self.fh_reset_lbl)
+        fh_layout.addWidget(self.fh_exhaust_lbl)
         self.card_layout.addWidget(self.five_hour_container)
         self.five_hour_container.hide()
         
@@ -178,6 +185,8 @@ class CodexQuotaView(QWidget):
         lbl_h = max(11, int(round(14 * self.scale)))
         self.reset_lbl.setFixedHeight(lbl_h)
         self.exhaust_lbl.setFixedHeight(lbl_h)
+        self.fh_reset_lbl.setFixedHeight(lbl_h)
+        self.fh_exhaust_lbl.setFixedHeight(lbl_h)
         pbar_h = max(3, int(round(4 * self.scale)))
         self.fh_pbar.setFixedHeight(pbar_h)
         self.pbar.setFixedHeight(pbar_h)
@@ -252,6 +261,14 @@ class CodexQuotaView(QWidget):
                 fh_str += f" ({fh_exact_dt})"
             self.fh_reset_lbl.setText(fh_str)
             self.fh_reset_lbl.setStyleSheet(f"font-size: {sub_fs}px; color: #9CA3AF; font-weight: 400;")
+            
+            # 5H Exhaustion prediction
+            fh_analysis = self.tracker.get_analysis_for_current_cycle(five_h)
+            if fh_analysis.get("has_data"):
+                self.fh_exhaust_lbl.setText(fh_analysis.get("exhaustion_text", ""))
+            else:
+                self.fh_exhaust_lbl.setText("预计分析中...")
+            self.fh_exhaust_lbl.setStyleSheet(f"font-size: {sub_fs}px; color: #F3F4F6; font-weight: 700;")
         else:
             self.five_hour_container.hide()
         
