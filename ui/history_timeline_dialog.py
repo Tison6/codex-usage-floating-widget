@@ -349,8 +349,13 @@ class TimelineCanvas(QWidget):
         det_lbl = slot.get("det_label", "")
         candy_lbl = slot.get("candy_label", "")
         candy_ans = slot.get("candy_ans", "")
-        sample_time = slot.get("sample_time") or "时段内聚合"
+        sample_time = slot.get("sample_time")
         model = slot.get("model", "")
+        reason = slot.get("reason", "")
+
+        if slot.get("det_status") == "none" and slot.get("candy_status") == "none" and not slot.get("has_sample"):
+            self.setToolTip(f"📅 {date_lbl} [{time_range}]\n⚪ 该时段官方暂无检测采样 (官方探针测试间隔通常约35~40分钟)")
+            return
 
         candy_desc = f"{candy_lbl} (回答: {candy_ans})" if candy_ans else candy_lbl
 
@@ -359,8 +364,8 @@ class TimelineCanvas(QWidget):
             f"🎯 模型真实性检测: {det_lbl} (测试目标: {model or '默认'})",
             f"🍬 糖果题实测结果: {candy_desc}",
         ]
-        if slot.get("reason"):
-            lines.append(f"📝 官方检测说明: {slot.get('reason')}")
+        if reason:
+            lines.append(f"📝 官方检测说明: {reason}")
         if slot.get("eff") is not None or slot.get("cache") is not None or slot.get("sr") is not None:
             eff_s = f"{slot['eff']:.2f}x" if slot.get("eff") is not None else "--"
             c_s = f"{slot['cache']:.1f}%" if slot.get("cache") is not None else "--"
