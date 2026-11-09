@@ -237,6 +237,41 @@ class CandyDot(QWidget):
 CandyBadge = CandyDot
 
 
+class ReviewDot(QWidget):
+    """
+    Compact circular status dot for codex-auto-review support (审阅):
+    - True (支持 / 绿点): emerald green (#10B981)
+    - False (不支持 / 红点): rose red (#EF4444)
+    Renders as a clean circular dot matching DetectionDot & CandyDot.
+    """
+    def __init__(self, supported: bool = False, scale: float = 1.0, tooltip: str = "", size: int = 7, parent=None):
+        super().__init__(parent)
+        self.scale = max(0.5, float(scale))
+        self.supported = supported
+        self._size = size
+        self.setFixedSize(size, size)
+        if tooltip:
+            self.setToolTip(tooltip)
+
+    def set_supported(self, supported: bool, tooltip: str = ""):
+        self.supported = supported
+        if tooltip:
+            self.setToolTip(tooltip)
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        w = float(self.width())
+        h = float(self.height())
+        color = QColor("#10B981") if self.supported else QColor("#EF4444")
+        dot_d = max(4.0, float(self._size))
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(color)
+        painter.drawEllipse(QRectF((w - dot_d) / 2.0, (h - dot_d) / 2.0, dot_d, dot_d))
+        painter.end()
+
+
 class ProviderNameLabel(QWidget):
     """
     Renders provider index + code (bold whitish) and optional public detail (grey subtext).
@@ -645,7 +680,7 @@ class RelayStationView(QWidget):
 
     def _clear_aihub_rows(self):
         for entry in self._aihub_rows:
-            for w in (entry.get("dot"), entry.get("candy"), entry.get("name"), entry.get("nom"), entry.get("thumb"), entry.get("eff"), entry.get("hit"), entry.get("sr"), entry.get("ref")):
+            for w in (entry.get("dot"), entry.get("candy"), entry.get("name"), entry.get("nom"), entry.get("thumb"), entry.get("eff"), entry.get("hit"), entry.get("sr"), entry.get("ref"), entry.get("review")):
                 if w:
                     w.hide()
                     w.setParent(None)
@@ -692,6 +727,7 @@ class RelayStationView(QWidget):
             max(80, int(round(92 * self.scale))) +
             max(60, int(round(70 * self.scale))) +
             max(50, int(round(58 * self.scale))) +
+            max(22, int(round(26 * self.scale))) +
             max(16, int(round(20 * self.scale)))
         )
         if hasattr(self, "sq_scroll"):
@@ -1017,6 +1053,7 @@ class RelayStationView(QWidget):
             max(80, int(round(92 * self.scale))) +
             max(60, int(round(70 * self.scale))) +
             max(50, int(round(58 * self.scale))) +
+            max(22, int(round(26 * self.scale))) +
             max(16, int(round(20 * self.scale)))
         )
 
@@ -1221,11 +1258,11 @@ class RelayStationView(QWidget):
 
         right_h_titles = [
             "倍率", "实测图",
-            "真实倍率(1h/6h/24h/7d)", "缓存率(1h/6h/24h/7d)", "成功率(1h/6h/24h/7d)", "参考缓存率"
+            "真实倍率(1h/6h/24h/7d)", "缓存率(1h/6h/24h/7d)", "成功率(1h/6h/24h/7d)", "参考缓存率", "审阅"
         ]
         right_h_aligns = [
             Qt.AlignCenter, Qt.AlignCenter,
-            Qt.AlignCenter, Qt.AlignCenter, Qt.AlignCenter, Qt.AlignCenter
+            Qt.AlignCenter, Qt.AlignCenter, Qt.AlignCenter, Qt.AlignCenter, Qt.AlignCenter
         ]
         right_col_widths = [
             max(22, int(round(25 * self.scale))),
@@ -1234,6 +1271,7 @@ class RelayStationView(QWidget):
             max(80, int(round(92 * self.scale))),
             max(80, int(round(92 * self.scale))),
             max(50, int(round(58 * self.scale))),
+            max(22, int(round(26 * self.scale))),
         ]
 
         for col_idx, (title, align, col_w) in enumerate(zip(right_h_titles, right_h_aligns, right_col_widths)):
@@ -1250,9 +1288,11 @@ class RelayStationView(QWidget):
                 h_lbl.setToolTip("接口成功率 (1小时 / 6小时 / 24小时 / 7天):\n• 全部来自 AIHub 官方区间实时统计数据\n• 1h: 过去1小时请求成功率\n• 6h: 过去6小时请求成功率\n• 24h: 过去24小时请求成功率\n• 7d: 过去7天长期请求成功率\n• 100%: 绿色\n• <=90%: 红色\n• 90%~100%: 渐变")
             elif "参考缓存率" in title:
                 h_lbl.setToolTip("官方参考缓存率基准:\n来自接口 runtime_cache_1h 的 reference_cache_hit_rate\n(全网模型统一参考缓存基准)")
+            elif title == "审阅":
+                h_lbl.setToolTip("Codex Auto Review 审阅模型支持 (codex-auto-review):\n🟢 绿点: 该分组支持 codex-auto-review 审阅模型\n🔴 红点: 不支持 codex-auto-review")
             self.aihub_header_grid_right.addWidget(h_lbl, 0, col_idx)
 
-        for c_i in range(6):
+        for c_i in range(7):
             self.aihub_header_grid_right.setColumnStretch(c_i, 0)
             self.aihub_grid_right.setColumnStretch(c_i, 0)
 
@@ -1525,6 +1565,7 @@ class RelayStationView(QWidget):
             max(80, int(round(92 * self.scale))),   # 3: 缓存率(1h/6h/24h/7d)
             max(80, int(round(92 * self.scale))),   # 4: 成功率(1h/6h/24h/7d)
             max(50, int(round(58 * self.scale))),   # 5: 参考缓存率
+            max(22, int(round(26 * self.scale))),   # 6: 审阅 (codex-auto-review 绿/红 dot)
         ]
 
         if not monitored:
@@ -1532,7 +1573,7 @@ class RelayStationView(QWidget):
                 self.aihub_empty_lbl = QLabel()
                 self.aihub_empty_lbl.setFont(QFont("Segoe UI", row_title_fs))
                 self.aihub_empty_lbl.setText("<span style='color: #94A3B8; padding: 10px;'>暂无勾选的供应商，请点击右上角 [⚙️ 勾选监控] 选择</span>")
-                self.aihub_grid_right.addWidget(self.aihub_empty_lbl, 0, 0, 1, 6, Qt.AlignCenter)
+                self.aihub_grid_right.addWidget(self.aihub_empty_lbl, 0, 0, 1, 7, Qt.AlignCenter)
             if not self.aihub_empty_left:
                 self.aihub_empty_left = QLabel()
                 self.aihub_empty_left.setFont(QFont("Segoe UI", row_title_fs))
@@ -1642,6 +1683,11 @@ class RelayStationView(QWidget):
             hit_tip = f"缓存命中率 (1h/6h/24h/7d):\n{cache_multi_str}\n• 1h实时缓存率: {g.get('cache_hit_rate', '-')}\n{note_str}\n• 100%: 绿色\n• <=85%: 红色\n• 85%~100%: 渐变"
             sr_tip = f"接口请求成功率 (1h/6h/24h/7d):\n{sr_multi_str}\n• 1h实时成功率: {g.get('success_rate_str', '--')}\n{note_str}\n• 100%: 绿色\n• <=90%: 红色\n• 90%~100%: 渐变"
 
+            has_review = bool(g.get("has_codex_review"))
+            rev_tip = g.get("review_tip") or (
+                f"审阅 (codex-auto-review): {'🟢 支持' if has_review else '🔴 不支持'}\n供应商: {g.get('code', '')}"
+            )
+
             if row_idx < len(self._aihub_rows):
                 entry = self._aihub_rows[row_idx]
                 entry["code"] = g["code"]
@@ -1663,8 +1709,10 @@ class RelayStationView(QWidget):
                 entry["sr"].setToolTip(sr_tip)
                 entry["ref"].setText(f"<span style='color: {ref_color}; font-weight: 600;'>{ref_cache_str}</span>")
                 entry["ref"].setToolTip(f"官方参考缓存率基准:\n{ref_cache_str} ({g.get('code')})\n(来自官方 runtime_cache_1h 全网参考缓存基准)")
+                if "review" in entry:
+                    entry["review"].set_supported(has_review, tooltip=rev_tip)
 
-                for w in (entry["dot"], entry.get("candy"), entry["name"], entry["nom"], entry["thumb"], entry["eff"], entry["hit"], entry["sr"], entry["ref"]):
+                for w in (entry["dot"], entry.get("candy"), entry["name"], entry["nom"], entry["thumb"], entry["eff"], entry["hit"], entry["sr"], entry["ref"], entry.get("review")):
                     if w:
                         w.show()
             else:
@@ -1726,6 +1774,10 @@ class RelayStationView(QWidget):
                 c_ref.setFixedWidth(right_col_widths[5])
                 c_ref.setFixedHeight(data_row_h)
 
+                c_review = ReviewDot(has_review, scale=self.scale, tooltip=rev_tip, size=dot_size, parent=self.aihub_scroll_content_right)
+                c_review.setFixedWidth(right_col_widths[6])
+                c_review.setFixedHeight(data_row_h)
+
                 self.aihub_grid_left.addWidget(c_dot, row_idx, 0, Qt.AlignCenter | Qt.AlignVCenter)
                 self.aihub_grid_left.addWidget(c_candy, row_idx, 1, Qt.AlignCenter | Qt.AlignVCenter)
                 self.aihub_grid_left.addWidget(c_name, row_idx, 2, Qt.AlignLeft | Qt.AlignVCenter)
@@ -1735,16 +1787,17 @@ class RelayStationView(QWidget):
                 self.aihub_grid_right.addWidget(c_hit_multi, row_idx, 3, Qt.AlignCenter | Qt.AlignVCenter)
                 self.aihub_grid_right.addWidget(c_sr_multi, row_idx, 4, Qt.AlignCenter | Qt.AlignVCenter)
                 self.aihub_grid_right.addWidget(c_ref, row_idx, 5, Qt.AlignCenter | Qt.AlignVCenter)
+                self.aihub_grid_right.addWidget(c_review, row_idx, 6, Qt.AlignCenter | Qt.AlignVCenter)
 
                 entry_dict.update({
                     "dot": c_dot, "candy": c_candy, "name": c_name, "nom": c_nom,
                     "thumb": thumb, "eff": c_eff_multi, "hit": c_hit_multi,
-                    "sr": c_sr_multi, "ref": c_ref
+                    "sr": c_sr_multi, "ref": c_ref, "review": c_review
                 })
                 self._aihub_rows.append(entry_dict)
 
         for extra in self._aihub_rows[len(monitored):]:
-            for w in (extra["dot"], extra.get("candy"), extra["name"], extra["nom"], extra["thumb"], extra["eff"], extra["hit"], extra["sr"], extra["ref"]):
+            for w in (extra["dot"], extra.get("candy"), extra["name"], extra["nom"], extra["thumb"], extra["eff"], extra["hit"], extra["sr"], extra["ref"], extra.get("review")):
                 if w:
                     w.hide()
 

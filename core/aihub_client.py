@@ -598,6 +598,19 @@ class AIHubClient:
                 off_reason = f"探针异常: {error_cat}" if error_cat else "官方大厅未在架/离线"
                 det_tip += f"\n⚠️ [官网状态]: 当前大厅已下架 ({off_reason})"
 
+            # Check codex-auto-review model support (审阅)
+            group_models = it.get("group_models", []) or []
+            m_cards = it.get("model_cards", []) or []
+            all_m_names = [m.get("model", "") for m in group_models if isinstance(m, dict)] + [m.get("model", "") for m in m_cards if isinstance(m, dict)]
+            has_codex_review = any("codex-auto-review" in m.lower() for m in all_m_names)
+            review_dot = "🟢" if has_codex_review else "🔴"
+            review_color = "#10B981" if has_codex_review else "#EF4444"
+            review_tip = (
+                f"审阅 (codex-auto-review): 🟢 支持\n供应商: {code}\n可直接用于 Codex 自动代码审查"
+                if has_codex_review else
+                f"审阅 (codex-auto-review): 🔴 不支持\n供应商: {code}"
+            )
+
             all_parsed_providers.append({
                 "code": code,
                 "group_id": group_id,
@@ -642,6 +655,11 @@ class AIHubClient:
                 "candy_dot": candy_dot,
                 "candy_tip": candy_tip,
                 "candy_answer": candy_ans,
+                "has_codex_review": has_codex_review,
+                "review_dot": review_dot,
+                "review_color": review_color,
+                "review_tip": review_tip,
+                "models": all_m_names,
                 "public_detail": (it.get("public_detail") or "").strip(),
                 "is_excluded": code in excluded_codes,
             })

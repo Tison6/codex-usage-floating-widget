@@ -805,6 +805,27 @@ class AIHubFilterDialog(QDialog):
         """)
         f_lay.addWidget(self.combo_candy)
 
+        # 7. 审阅模型 (codex-auto-review)
+        f_lay.addWidget(QLabel("审阅:"))
+        self.combo_review = QComboBox()
+        self.combo_review.addItems(["全部", "仅支持 🟢", "仅不支持 🔴"])
+        self.combo_review.setStyleSheet("""
+            QComboBox {
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                border-radius: 4px;
+                color: #CBD5E1;
+                font-size: 9px;
+                padding: 1px 4px;
+            }
+            QComboBox QAbstractItemView {
+                background: #1E293B;
+                color: #F8FAFC;
+                selection-background-color: #3B82F6;
+            }
+        """)
+        f_lay.addWidget(self.combo_review)
+
         f_lay.addStretch()
 
         btn_filter = QPushButton("确定筛选")
@@ -853,11 +874,13 @@ class AIHubFilterDialog(QDialog):
         h_row.addWidget(h_prov)
         h_row.addStretch()
 
-        for title, w in [("倍率", 40), ("真实倍率", 46), ("缓存率", 44), ("TTFT", 40), ("成功率", 52), ("实测图", 36)]:
+        for title, w in [("倍率", 40), ("真实倍率", 46), ("缓存率", 44), ("TTFT", 40), ("成功率", 52), ("实测图", 36), ("审阅", 36)]:
             lbl = QLabel(title)
             lbl.setFixedWidth(w)
             lbl.setAlignment(Qt.AlignCenter)
             lbl.setStyleSheet("font-size: 9px; font-weight: 700; color: #64748B;")
+            if title == "审阅":
+                lbl.setToolTip("Codex Auto Review 审阅模型支持 (codex-auto-review):\n🟢 绿色: 支持 codex-auto-review 审阅模型\n🔴 红色: 不支持 codex-auto-review")
             h_row.addWidget(lbl)
         layout.addLayout(h_row)
 
@@ -1087,6 +1110,21 @@ class AIHubFilterDialog(QDialog):
                     return _open_pelican
                 img_lbl.mousePressEvent = _make_pelican_handler(p)
             r_lay.addWidget(img_lbl)
+
+            # Column: Codex auto-review support indicator (审阅)
+            has_rev = bool(p.get("has_codex_review"))
+            rev_lbl = QLabel("🟢" if has_rev else "🔴")
+            rev_lbl.setFixedWidth(36)
+            rev_lbl.setAlignment(Qt.AlignCenter)
+            rev_lbl.setStyleSheet("font-size: 8px;")
+            rev_tip = (
+                f"审阅模型支持: 🟢 支持 codex-auto-review\n供应商: {code}\n可直接用于 Codex 自动代码审查"
+                if has_rev else
+                f"审阅模型支持: 🔴 不支持 codex-auto-review\n供应商: {code}"
+            )
+            rev_lbl.setToolTip(rev_tip)
+            r_lay.addWidget(rev_lbl)
+
             c_layout.addWidget(row)
 
         c_layout.addStretch()
@@ -1170,6 +1208,7 @@ class AIHubFilterDialog(QDialog):
         max_nom = parse_val(self.edit_max_nom.text())
         det_mode = self.combo_detect.currentText()
         candy_mode = self.combo_candy.currentText()
+        review_mode = self.combo_review.currentText() if hasattr(self, "combo_review") else "全部"
 
         for code, p in self.provider_data_map.items():
             cb = self.provider_checkboxes.get(code)
@@ -1200,6 +1239,15 @@ class AIHubFilterDialog(QDialog):
                 cb.setChecked(False)
                 continue
             elif "仅错误" in candy_mode and candy_status != "wrong":
+                cb.setChecked(False)
+                continue
+
+            # Codex auto-review model support filter
+            has_rev = bool(p.get("has_codex_review"))
+            if "仅支持" in review_mode and not has_rev:
+                cb.setChecked(False)
+                continue
+            elif "仅不支持" in review_mode and has_rev:
                 cb.setChecked(False)
                 continue
 
