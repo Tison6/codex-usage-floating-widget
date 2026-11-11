@@ -11,6 +11,9 @@ config.json
 *.log
 *.tmp
 *.bak
+target/
+build/
+dist/
 
 # IDE / Editor configurations
 .vscode/
@@ -18,7 +21,3 @@ config.json
 *.sublime-project
 *.sublime-workspace
 
-
-# Added by cargo
-
-/target
