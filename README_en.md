@@ -48,7 +48,7 @@ Model verification and candy-test history can be explored by provider and time r
 
 ![AIHub test history](assets/aihub-history.png)
 
-Exclude providers directly with the row checkbox in either automatic or manual mode, and restore them in the selection dialog. Test images load after clicking View. The image viewer uses a bounded memory cache. Historical metrics use compressed local SQLite storage.
+The history timeline shows the selected provider description and an exclusion checkbox. Exclusions apply in automatic and manual modes and can be unchecked to restore the provider. Test images load after clicking View. The image viewer uses a bounded memory cache. Historical metrics use compressed local SQLite storage.
 
 Square displays selected groups and models with pricing multipliers, output prices, speed, time to first token, latency, and success rate.
 

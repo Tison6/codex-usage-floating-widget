@@ -361,7 +361,6 @@ class FloatingWidget(QWidget):
         self.relay_view.pelican_clicked.connect(self.open_pelican_viewer)
         self.relay_view.filter_dialog_requested.connect(self.open_square_filter_dialog)
         self.relay_view.aihub_filter_requested.connect(self.open_aihub_filter_dialog)
-        self.relay_view.aihub_exclusion_requested.connect(self.on_aihub_provider_excluded)
         self.relay_view.history_timeline_requested.connect(self.open_aihub_history_dialog)
         self.relay_view.aihub_mode_toggled.connect(self.on_aihub_mode_toggled)
         self.relay_view.refresh_requested.connect(lambda: self.fetch_relay_async(force=True))
@@ -1205,16 +1204,14 @@ class FloatingWidget(QWidget):
         if not self.is_mini:
             self._schedule_content_resize()
 
-    def on_aihub_provider_excluded(self, code: str):
-        """Persist a row exclusion and remove it from the current table immediately."""
-        excluded = set(self.aihub_client.get_excluded_providers())
-        excluded.add(code)
-        self.aihub_client.set_excluded_providers(sorted(excluded))
-        self.on_aihub_data_received(self.relay_view._aihub_data)
-
     def on_aihub_mode_toggled(self, new_mode: bool):
         """Handle user toggling between AIHub automatic filter mode and manual checked mode."""
         self.aihub_client.set_auto_mode(new_mode)
+        self.fetch_relay_async(force=True)
+
+    def on_aihub_history_filters_changed(self):
+        """Apply a history-window exclusion immediately, then recompute monitored rows."""
+        self.on_aihub_data_received(self.aihub_client.cached_data or self.relay_view._aihub_data)
         self.fetch_relay_async(force=True)
 
     def open_pelican_viewer(self, provider_item_or_images=None, code=""):
@@ -1276,6 +1273,7 @@ class FloatingWidget(QWidget):
         try:
             from ui.history_timeline_dialog import AIHubHistoryDialog
             dlg = AIHubHistoryDialog(self.aihub_client, initial_code=code, initial_dimension=dimension, parent=self)
+            dlg.filters_changed.connect(self.on_aihub_history_filters_changed)
             try:
                 dlg.exec_()
             finally:

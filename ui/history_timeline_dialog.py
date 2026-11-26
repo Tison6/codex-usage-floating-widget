@@ -13,7 +13,7 @@ import sys
 from typing import Dict, Any, List, Optional
 from PyQt5.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFrame, QComboBox, QScrollArea, QGraphicsDropShadowEffect, QSizePolicy, QApplication
+    QFrame, QComboBox, QScrollArea, QGraphicsDropShadowEffect, QSizePolicy, QApplication, QCheckBox
 )
 from PyQt5.QtCore import Qt, QRectF, QPoint, QPointF, pyqtSignal, QEvent
 from PyQt5.QtGui import QColor, QPainter, QBrush, QPen, QFont, QCursor
@@ -382,6 +382,8 @@ class AIHubHistoryDialog(QDialog):
     Modern dark-themed popup dialog for inspecting 24-hour probe timeline history.
     """
 
+    filters_changed = pyqtSignal()
+
     def __init__(self, aihub_client: AIHubClient, initial_code: str = "", initial_dimension: str = "dual", parent=None):
         super().__init__(parent)
         self.aihub_client = aihub_client
@@ -489,6 +491,23 @@ class AIHubHistoryDialog(QDialog):
         self.combo_provider.currentIndexChanged.connect(self._on_provider_changed)
         header.addWidget(self.combo_provider)
 
+        self.cb_exclude = QCheckBox("剔除")
+        self.cb_exclude.setStyleSheet("""
+            QCheckBox { color: #F87171; font-size: 10px; spacing: 4px; }
+            QCheckBox::indicator {
+                width: 12px;
+                height: 12px;
+                border: 1px solid #B45353;
+                border-radius: 2px;
+                background: #20242C;
+            }
+            QCheckBox::indicator:hover { border-color: #F87171; }
+            QCheckBox::indicator:checked { background: #EF4444; }
+        """)
+        self.cb_exclude.setToolTip("剔除当前供应商，自动和手动监控均生效；取消勾选可恢复")
+        self.cb_exclude.toggled.connect(self._on_exclusion_toggled)
+        header.addWidget(self.cb_exclude)
+
         # Close button
         btn_close = QPushButton("✕")
         btn_close.setFixedSize(24, 24)
@@ -592,8 +611,15 @@ class AIHubHistoryDialog(QDialog):
                 padding: 4px;
             }
         """)
-        banner_lay = QHBoxLayout(self.banner_frame)
+        banner_lay = QVBoxLayout(self.banner_frame)
         banner_lay.setContentsMargins(8, 4, 8, 4)
+        banner_lay.setSpacing(2)
+
+        self.lbl_provider_detail = QLabel()
+        self.lbl_provider_detail.setTextFormat(Qt.PlainText)
+        self.lbl_provider_detail.setWordWrap(True)
+        self.lbl_provider_detail.setStyleSheet("font-size: 10px; color: #94A3B8;")
+        banner_lay.addWidget(self.lbl_provider_detail)
 
         self.lbl_banner_info = QLabel("正在加载供应商历史...")
         self.lbl_banner_info.setStyleSheet("font-size: 10px; color: #CBD5E1;")
@@ -702,7 +728,12 @@ class AIHubHistoryDialog(QDialog):
         root.addWidget(container)
 
     def load_data(self):
+        self.cb_exclude.blockSignals(True)
+        self.cb_exclude.setChecked(self.current_code in self.aihub_client.get_excluded_providers())
+        self.cb_exclude.setEnabled(bool(self.current_code))
+        self.cb_exclude.blockSignals(False)
         if not self.current_code:
+            self.lbl_provider_detail.setText("暂无供应商说明")
             return
 
         # Fetch timeline data from AIHubClient
@@ -714,6 +745,9 @@ class AIHubHistoryDialog(QDialog):
 
         # Update banner
         prov = tl_data.get("provider") or {}
+        cached_provider = next((p for p in self.all_providers if p.get("code") == self.current_code), {})
+        detail = (prov.get("public_detail") or cached_provider.get("public_detail") or "").strip()
+        self.lbl_provider_detail.setText(detail or "暂无供应商说明")
         det_dot = prov.get("detection_dot", "⚪")
         det_lbl = prov.get("detection_label", "未检")
         candy_dot = prov.get("candy_dot", "⚪")
@@ -744,6 +778,17 @@ class AIHubHistoryDialog(QDialog):
 
         # Update canvas
         self.canvas.set_data(tl_data, mode=self.current_dimension)
+
+    def _on_exclusion_toggled(self, checked: bool):
+        if not self.current_code:
+            return
+        excluded = set(self.aihub_client.get_excluded_providers())
+        if checked:
+            excluded.add(self.current_code)
+        else:
+            excluded.discard(self.current_code)
+        self.aihub_client.set_excluded_providers(sorted(excluded))
+        self.filters_changed.emit()
 
     def _set_dimension(self, dim: str = "dual"):
         self.current_dimension = "dual"

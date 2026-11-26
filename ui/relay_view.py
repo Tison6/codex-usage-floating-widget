@@ -9,7 +9,7 @@ import re
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFrame, QStackedWidget, QScrollArea, QGridLayout, QSizePolicy, QCheckBox
+    QFrame, QStackedWidget, QScrollArea, QGridLayout, QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QRectF, QEvent
 from ui.typography import pixel_font
@@ -483,7 +483,6 @@ class RelayStationView(QWidget):
     pelican_clicked = pyqtSignal(dict)  # emits provider_item dict
     filter_dialog_requested = pyqtSignal()
     aihub_filter_requested = pyqtSignal()
-    aihub_exclusion_requested = pyqtSignal(str)
     history_timeline_requested = pyqtSignal(str, str)  # emits (provider_code, dimension)
     refresh_requested = pyqtSignal()
     aihub_mode_toggled = pyqtSignal(bool)  # emits new auto_mode boolean (True=auto, False=manual)
@@ -563,7 +562,6 @@ class RelayStationView(QWidget):
             max(14, int(round(15 * self.scale))) +
             max(18, int(round(20 * self.scale))) +
             max(58, int(round(66 * self.scale))) +
-            max(20, int(round(22 * self.scale))) +
             max(2, int(round(2 * self.scale)))
         )
         right_w = (
@@ -905,7 +903,6 @@ class RelayStationView(QWidget):
             max(14, int(round(15 * self.scale))) +
             max(18, int(round(20 * self.scale))) +
             max(58, int(round(66 * self.scale))) +
-            max(20, int(round(22 * self.scale))) +
             max(2, int(round(2 * self.scale)))
         )
         right_w = (
@@ -1092,13 +1089,12 @@ class RelayStationView(QWidget):
     def _init_aihub_headers(self):
         """Build permanent fixed header rows for AIHub (locked at top, never scrolled out vertically)."""
         hdr_fs = max(6, int(round(9 * self.scale)))
-        left_h_titles = ["检测", "糖果", "供应商", "剔除"]
-        left_h_aligns = [Qt.AlignCenter, Qt.AlignCenter, Qt.AlignLeft, Qt.AlignCenter]
+        left_h_titles = ["检测", "糖果", "供应商"]
+        left_h_aligns = [Qt.AlignCenter, Qt.AlignCenter, Qt.AlignLeft]
         left_col_widths = [
             max(14, int(round(15 * self.scale))),
             max(14, int(round(15 * self.scale))),
             max(58, int(round(66 * self.scale))),
-            max(20, int(round(22 * self.scale))),
         ]
 
         for col_idx, (title, align, col_w) in enumerate(zip(left_h_titles, left_h_aligns, left_col_widths)):
@@ -1115,7 +1111,7 @@ class RelayStationView(QWidget):
                 h_lbl.setToolTip("供应商通道与名称 (固定列，左右滑动时始终固定在左侧)")
             self.aihub_header_grid_left.addWidget(h_lbl, 0, col_idx)
 
-        for c_i in range(4):
+        for c_i in range(3):
             self.aihub_header_grid_left.setColumnStretch(c_i, 0)
             self.aihub_grid_left.setColumnStretch(c_i, 0)
 
@@ -1420,7 +1416,6 @@ class RelayStationView(QWidget):
             max(14, int(round(15 * self.scale))),   # 0: 检测 (单圆点居中，极简紧凑)
             max(14, int(round(15 * self.scale))),   # 1: 糖果 (单圆点居中，通过/不通过)
             max(58, int(round(66 * self.scale))),   # 2: 供应商
-            max(20, int(round(22 * self.scale))),   # 3: 剔除
         ]
         right_col_widths = [
             max(22, int(round(25 * self.scale))),   # 0: 倍率
@@ -1446,7 +1441,7 @@ class RelayStationView(QWidget):
                 self.aihub_empty_left = QLabel()
                 self.aihub_empty_left.setFont(pixel_font("Segoe UI", row_title_fs))
                 self.aihub_empty_left.setText("<span style='color: #94A3B8; padding: 10px;'>暂无数据</span>")
-                self.aihub_grid_left.addWidget(self.aihub_empty_left, 0, 0, 1, 4, Qt.AlignCenter)
+                self.aihub_grid_left.addWidget(self.aihub_empty_left, 0, 0, 1, 3, Qt.AlignCenter)
             try:
                 if self.aihub_empty_lbl:
                     self.aihub_empty_lbl.show()
@@ -1459,7 +1454,7 @@ class RelayStationView(QWidget):
                 self.aihub_empty_left = None
 
             for extra in self._aihub_rows:
-                for w in (extra["exclude"], extra["dot"], extra.get("candy"), extra["name"], extra["nom"], extra["thumb"], extra["eff"], extra["hit"], extra["sr"], extra["ref"], extra.get("review")):
+                for w in (extra["dot"], extra.get("candy"), extra["name"], extra["nom"], extra["thumb"], extra["eff"], extra["hit"], extra["sr"], extra["ref"], extra.get("review")):
                     if w:
                         try:
                             w.hide()
@@ -1559,7 +1554,6 @@ class RelayStationView(QWidget):
             if row_idx < len(self._aihub_rows):
                 entry = self._aihub_rows[row_idx]
                 entry["code"] = g["code"]
-                entry["exclude"].setChecked(False)
                 entry["dot"].set_status(det_status, tooltip=det_tip)
                 if "candy" in entry:
                     entry["candy"].set_data(candy_status, candy_label, tooltip=candy_tip)
@@ -1581,7 +1575,7 @@ class RelayStationView(QWidget):
                 if "review" in entry:
                     entry["review"].set_supported(has_review, tooltip=rev_tip)
 
-                for w in (entry["exclude"], entry["dot"], entry.get("candy"), entry["name"], entry["nom"], entry["thumb"], entry["eff"], entry["hit"], entry["sr"], entry["ref"], entry.get("review")):
+                for w in (entry["dot"], entry.get("candy"), entry["name"], entry["nom"], entry["thumb"], entry["eff"], entry["hit"], entry["sr"], entry["ref"], entry.get("review")):
                     if w:
                         w.show()
             else:
@@ -1595,23 +1589,6 @@ class RelayStationView(QWidget):
                 c_candy.setFixedWidth(left_col_widths[1])
                 c_candy.setToolTip(candy_tip)
                 c_candy.clicked.connect(lambda _, e=entry_dict: self.history_timeline_requested.emit(e.get("code", ""), "dual"))
-
-                c_exclude = QCheckBox(self.aihub_scroll_content_left)
-                c_exclude.setFixedWidth(left_col_widths[3])
-                indicator_size = max(10, round(12 * self.scale))
-                c_exclude.setStyleSheet(f"""
-                    QCheckBox::indicator {{
-                        width: {indicator_size}px;
-                        height: {indicator_size}px;
-                        border: 1px solid #B45353;
-                        border-radius: 2px;
-                        background: #20242C;
-                    }}
-                    QCheckBox::indicator:hover {{ background: #633434; }}
-                    QCheckBox::indicator:checked {{ background: #EF4444; }}
-                """)
-                c_exclude.setToolTip("勾选后立即剔除，自动和手动模式均生效；可在勾选窗口恢复")
-                c_exclude.clicked.connect(lambda checked, e=entry_dict: self.aihub_exclusion_requested.emit(e["code"]))
 
                 c_name = ProviderNameLabel(code_text, detail=detail, scale=self.scale, parent=self.aihub_scroll_content_left)
                 c_name.setFixedWidth(left_col_widths[2])
@@ -1666,7 +1643,6 @@ class RelayStationView(QWidget):
                 self.aihub_grid_left.addWidget(c_dot, row_idx, 0, Qt.AlignCenter | Qt.AlignVCenter)
                 self.aihub_grid_left.addWidget(c_candy, row_idx, 1, Qt.AlignCenter | Qt.AlignVCenter)
                 self.aihub_grid_left.addWidget(c_name, row_idx, 2, Qt.AlignLeft | Qt.AlignVCenter)
-                self.aihub_grid_left.addWidget(c_exclude, row_idx, 3, Qt.AlignCenter | Qt.AlignVCenter)
                 self.aihub_grid_right.addWidget(c_nom, row_idx, 0, Qt.AlignCenter | Qt.AlignVCenter)
                 self.aihub_grid_right.addWidget(thumb, row_idx, 1, Qt.AlignCenter | Qt.AlignVCenter)
                 self.aihub_grid_right.addWidget(c_eff_multi, row_idx, 2, Qt.AlignCenter | Qt.AlignVCenter)
@@ -1676,14 +1652,14 @@ class RelayStationView(QWidget):
                 self.aihub_grid_right.addWidget(c_review, row_idx, 6, Qt.AlignCenter | Qt.AlignVCenter)
 
                 entry_dict.update({
-                    "dot": c_dot, "candy": c_candy, "name": c_name, "exclude": c_exclude, "nom": c_nom,
+                    "dot": c_dot, "candy": c_candy, "name": c_name, "nom": c_nom,
                     "thumb": thumb, "eff": c_eff_multi, "hit": c_hit_multi,
                     "sr": c_sr_multi, "ref": c_ref, "review": c_review
                 })
                 self._aihub_rows.append(entry_dict)
 
         for extra in self._aihub_rows[len(monitored):]:
-            for w in (extra["exclude"], extra["dot"], extra.get("candy"), extra["name"], extra["nom"], extra["thumb"], extra["eff"], extra["hit"], extra["sr"], extra["ref"], extra.get("review")):
+            for w in (extra["dot"], extra.get("candy"), extra["name"], extra["nom"], extra["thumb"], extra["eff"], extra["hit"], extra["sr"], extra["ref"], extra.get("review")):
                 if w:
                     w.hide()
 
