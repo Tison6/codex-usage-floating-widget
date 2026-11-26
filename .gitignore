@@ -1,0 +1,35 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# User runtime data & persistent local states
+data/
+config.json
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Logs & Temporary files
+*.log
+*.tmp
+*.bak
+target/
+build/
+dist/
+
+# IDE / Editor configurations
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+

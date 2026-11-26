@@ -1,0 +1,77 @@
+{
+  "window_pos": [100, 100],
+  "is_mini_mode": true,
+  "always_on_top": true,
+  "lock_position": false,
+  "auto_snap": true,
+  "opacity": 0.95,
+  "theme": "dark",
+  "bt_interval_sec": 10,
+  "codex_interval_sec": 60,
+  "claude_interval_sec": 60,
+  "claude_auth_file_path": "~/.claude/.credentials.json",
+  "relay_interval_sec": 60,
+  "auth_file_path": "~/.codex/auth.json",
+  "square_api_key": "",
+  "aihub_email": "",
+  "aihub_password": "",
+  "square_selected_groups": [
+    "混池优惠",
+    "ds-v4.1可用",
+    "terra分组",
+    "gpt-已过鹈鹕测试不降智",
+    "cc1"
+  ],
+  "square_selected_models": [
+    "claude-opus-5-5",
+    "deepseek-v4.1-flash",
+    "gpt-6-astra",
+    "gpt-6.1-sol"
+  ],
+  "aihub_selected_providers": [
+    "A018-Plus/K12",
+    "A031-Pro"
+  ],
+  "autostart": false,
+  "scale": 1.0,
+  "only_connected": true,
+  "mini_quota_mode": 0,
+  "gpu_db_path": "",
+  "gpu_servers": [
+    {
+      "id": "7",
+      "name": "GPU server",
+      "ip": "gpu-server.example.invalid",
+      "port": 22,
+      "user": "admin",
+      "key_path": "~/.ssh/id_rsa",
+      "type": "gpu"
+    }
+  ],
+  "servers": [
+    {
+      "id": "quad",
+      "name": "server-quad",
+      "host": "server-quad",
+      "port": 22,
+      "user": "admin",
+      "password": ""
+    },
+    {
+      "id": "e5",
+      "name": "server-e5",
+      "host": "server-e5",
+      "port": 22,
+      "user": "admin",
+      "password": ""
+    },
+    {
+      "id": "8375c",
+      "name": "server-8375c",
+      "host": "server-8375c",
+      "port": 22,
+      "user": "admin",
+      "password": ""
+    }
+  ]
+}
