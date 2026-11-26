@@ -361,6 +361,7 @@ class FloatingWidget(QWidget):
         self.relay_view.pelican_clicked.connect(self.open_pelican_viewer)
         self.relay_view.filter_dialog_requested.connect(self.open_square_filter_dialog)
         self.relay_view.aihub_filter_requested.connect(self.open_aihub_filter_dialog)
+        self.relay_view.aihub_exclusion_requested.connect(self.on_aihub_provider_excluded)
         self.relay_view.history_timeline_requested.connect(self.open_aihub_history_dialog)
         self.relay_view.aihub_mode_toggled.connect(self.on_aihub_mode_toggled)
         self.relay_view.refresh_requested.connect(lambda: self.fetch_relay_async(force=True))
@@ -1193,9 +1194,23 @@ class FloatingWidget(QWidget):
 
     def on_aihub_data_received(self, data: Dict[str, Any]):
         """Render AIHub data."""
-        self.relay_view.update_aihub_data(data)
+        # Apply current exclusions even if a worker started before the user's click.
+        excluded = set(self.aihub_client.get_excluded_providers())
+        visible_data = dict(data)
+        for key in ("monitored_providers", "top_groups"):
+            if key in data:
+                visible_data[key] = [row for row in data[key] or [] if row.get("code") not in excluded]
+        visible_data["excluded_codes"] = sorted(excluded)
+        self.relay_view.update_aihub_data(visible_data)
         if not self.is_mini:
             self._schedule_content_resize()
+
+    def on_aihub_provider_excluded(self, code: str):
+        """Persist a row exclusion and remove it from the current table immediately."""
+        excluded = set(self.aihub_client.get_excluded_providers())
+        excluded.add(code)
+        self.aihub_client.set_excluded_providers(sorted(excluded))
+        self.on_aihub_data_received(self.relay_view._aihub_data)
 
     def on_aihub_mode_toggled(self, new_mode: bool):
         """Handle user toggling between AIHub automatic filter mode and manual checked mode."""

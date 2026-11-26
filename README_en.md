@@ -48,7 +48,7 @@ Model verification and candy-test history can be explored by provider and time r
 
 ![AIHub test history](assets/aihub-history.png)
 
-Test thumbnails load on demand with a bounded memory cache. Historical metrics use compressed local SQLite storage.
+Exclude providers directly with the row checkbox in either automatic or manual mode, and restore them in the selection dialog. Test images load after clicking View. The image viewer uses a bounded memory cache. Historical metrics use compressed local SQLite storage.
 
 Square displays selected groups and models with pricing multipliers, output prices, speed, time to first token, latency, and success rate.
 

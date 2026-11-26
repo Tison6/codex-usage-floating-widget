@@ -1,26 +1,19 @@
 """
 Relay Station View Widget.
 Renders real-time monitored tables for Square API and AIHub.
-Supports interactive group/model/provider filtering and per-provider Pelican test image thumbnails.
+Supports provider filtering, exclusion controls, and on-demand test images.
 """
 
-from typing import Dict, Any, List, Optional, Set
-import os
+from typing import Dict, Any, List, Optional
 import re
-import time
-from urllib.parse import urljoin, urlparse
-import threading
-from collections import OrderedDict
-from concurrent.futures import ThreadPoolExecutor
-import requests
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFrame, QStackedWidget, QScrollArea, QGridLayout, QSizePolicy
+    QFrame, QStackedWidget, QScrollArea, QGridLayout, QSizePolicy, QCheckBox
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QSize, QRectF, QObject, QEvent
+from PyQt5.QtCore import Qt, pyqtSignal, QRectF, QEvent
 from ui.typography import pixel_font
-from PyQt5.QtGui import QPixmap, QImage, QColor, QFont, QPainter, QBrush, QFontMetrics, QPen
+from PyQt5.QtGui import QColor, QFont, QPainter, QBrush, QFontMetrics, QPen
 
 
 
@@ -428,204 +421,36 @@ class SuccessRateBarWidget(QWidget):
 
 
 
-class ThumbnailDownloadManager(QObject):
-    """Stream current thumbnails to visible widgets without retaining image history."""
-    _instance: Optional["ThumbnailDownloadManager"] = None
-    _lock = threading.Lock()
-    thumb_loaded = pyqtSignal(str, QImage)
-
-    @classmethod
-    def instance(cls) -> "ThumbnailDownloadManager":
-        with cls._lock:
-            if cls._instance is None:
-                cls._instance = ThumbnailDownloadManager()
-            return cls._instance
-
-    def __init__(self):
-        super().__init__()
-        self.in_flight: Set[str] = set()
-        self._last_request = OrderedDict()
-        self._state_lock = threading.RLock()
-        self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="thumb_worker")
-        self._thread_local = threading.local()
-
-    def _get_session(self) -> requests.Session:
-        if not hasattr(self._thread_local, "session"):
-            s = requests.Session()
-            adapter = requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=4, max_retries=1)
-            s.mount("https://", adapter)
-            s.mount("http://", adapter)
-            s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-            self._thread_local.session = s
-        return self._thread_local.session
-
-    def request_thumbnail(self, url: str, force: bool = False):
-        if not url:
-            return
-        with self._state_lock:
-            now = time.monotonic()
-            if url in self.in_flight or len(self.in_flight) >= 32:
-                return
-            if not force and now - self._last_request.get(url, 0) < 60:
-                return
-            self.in_flight.add(url)
-            self._last_request[url] = now
-            self._last_request.move_to_end(url)
-            while len(self._last_request) > 128:
-                self._last_request.popitem(last=False)
-        self.executor.submit(self._fetch_thumb_worker, url)
-
-    def _fetch_thumb_worker(self, url: str):
-        resp = None
-        try:
-            s = self._get_session()
-            headers = {}
-            if urlparse(url).hostname in ("aihub.dog", "aihub.top"):
-                try:
-                    from core.aihub_client import AIHubClient
-                    headers.update(AIHubClient.get_auth_headers())
-                except Exception:
-                    pass
-            image_url = url
-            if urlparse(url).path.endswith("/images"):
-                # Read one live metadata page and display its first available image.
-                with s.get(url, headers=headers, timeout=(3.0, 5.0)) as metadata:
-                    metadata.raise_for_status()
-                    items = (metadata.json().get("data") or {}).get("items") or []
-                    image_url = next((urljoin(url, (item.get("presentation", {}).get("image") or {}).get("url"))
-                                      for item in items if (item.get("presentation", {}).get("image") or {}).get("url")), "")
-                if not image_url:
-                    return
-            image_headers = headers if urlparse(image_url).hostname == urlparse(url).hostname else {}
-            resp = s.get(image_url, headers=image_headers, timeout=(3.0, 5.0), stream=True)
-            if resp.status_code == 200:
-                content = bytearray()
-                for chunk in resp.iter_content(chunk_size=64 * 1024):
-                    if chunk:
-                        content.extend(chunk)
-                    if len(content) > 2 * 1024 * 1024:
-                        return
-                qimg = QImage()
-                if qimg.loadFromData(bytes(content)):
-                    scaled = qimg.scaled(46, 22, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    self.thumb_loaded.emit(url, scaled)
-        except Exception:
-            pass
-        finally:
-            try:
-                resp.close()
-            except Exception:
-                pass
-            with self._state_lock:
-                self.in_flight.discard(url)
-
-
-class ClickableThumbnail(QWidget):
-    """Clickable thumbnail image representing a provider's detection artifact."""
-    clicked = pyqtSignal(dict)  # emits provider_dict
+class ProviderImageButton(QPushButton):
+    """Open provider images only after an explicit click."""
+    provider_clicked = pyqtSignal(dict)
 
     def __init__(self, provider_item: Dict[str, Any], parent=None, scale: float = 1.0):
         super().__init__(parent)
-        self.provider_item = provider_item
-        self.scale = max(0.5, float(scale))
-        w = max(30, int(round(36 * self.scale)))
-        h = max(15, int(round(18 * self.scale)))
-        self.setFixedSize(w, h)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip("点击在线查看该供应商全部历史鹈鹕图")
-        self._hovered = False
-        self._pixmap = None
-
-        has_img = provider_item.get("has_image")
-        self.img_url = provider_item.get("image_url") or ""
-
-        self.state = "loading" if has_img else "empty"
-        if has_img and self.img_url:
-            ThumbnailDownloadManager.instance().request_thumbnail(self.img_url, force=True)
+        self.setFixedSize(max(30, round(36 * scale)), max(18, round(20 * scale)))
+        self.setFont(pixel_font("Segoe UI", max(7, round(9 * scale))))
+        self.setStyleSheet("""
+            QPushButton {
+                color: #34D399;
+                background: #1D252B;
+                border: 1px solid #31534B;
+                border-radius: 3px;
+                padding: 0px;
+            }
+            QPushButton:hover { background: #254438; }
+            QPushButton:disabled { color: #64748B; border-color: #303640; }
+        """)
+        self.clicked.connect(lambda: self.provider_clicked.emit(self.provider_item))
+        self.set_data(provider_item)
 
     def set_data(self, provider_item: Dict[str, Any]):
         self.provider_item = provider_item
-        new_url = provider_item.get("image_url") or ""
-        if self.img_url != new_url:
-            self.img_url = new_url
-            self._pixmap = None
-        if provider_item.get("has_image") and self.img_url:
-            if self._pixmap is None:
-                self.state = "loading"
-            ThumbnailDownloadManager.instance().request_thumbnail(self.img_url, force=self._pixmap is None)
-        else:
-            self._pixmap = None
-            self.state = "empty"
-        self.update()
+        available = bool(provider_item.get("has_image"))
+        self.setText("查看" if available else "—")
+        self.setEnabled(available)
+        self.setCursor(Qt.PointingHandCursor if available else Qt.ArrowCursor)
+        self.setToolTip("点击后在线加载实测图" if available else "暂无实测图")
 
-    def enterEvent(self, event):
-        self._hovered = True
-        self.update()
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        self._hovered = False
-        self.update()
-        super().leaveEvent(event)
-
-    def apply_image(self, scaled: QImage):
-        try:
-            from PyQt5 import sip
-            if sip.isdeleted(self):
-                return
-            pix = QPixmap.fromImage(scaled)
-            if not pix.isNull():
-                self._pixmap = pix.scaled(self.width() - 2, self.height() - 2, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                self.state = "image"
-                self.update()
-        except Exception:
-            pass
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        rect = QRectF(0.5, 0.5, self.width() - 1, self.height() - 1)
-        r = 3.0
-
-        st = getattr(self, "state", "empty")
-        if st == "image" and self._pixmap and not self._pixmap.isNull():
-            painter.fillRect(rect, QColor(0, 0, 0, 100))
-            px_x = int((self.width() - self._pixmap.width()) / 2)
-            px_y = int((self.height() - self._pixmap.height()) / 2)
-            painter.drawPixmap(px_x, px_y, self._pixmap)
-            border_col = QColor("#34D399") if self._hovered else QColor(16, 185, 129, 115)
-            pen = QPen(border_col, 1.5 if self._hovered else 1.0)
-            painter.setPen(pen)
-            painter.setBrush(Qt.NoBrush)
-            painter.drawRoundedRect(rect, r, r)
-        elif st == "loading":
-            bg_col = QColor(16, 185, 129, 70 if self._hovered else 30)
-            border_col = QColor(16, 185, 129, 200 if self._hovered else 100)
-            painter.setPen(QPen(border_col, 1.0))
-            painter.setBrush(bg_col)
-            painter.drawRoundedRect(rect, r, r)
-            painter.setPen(QColor("#34D399"))
-            font = pixel_font("Segoe UI", max(6, int(round(9 * self.scale))), QFont.Bold)
-            painter.setFont(font)
-            painter.drawText(rect, Qt.AlignCenter, "📷 实测")
-        else:
-            bg_col = QColor(255, 255, 255, 8)
-            border_col = QColor(255, 255, 255, 15)
-            painter.setPen(QPen(border_col, 1.0))
-            painter.setBrush(bg_col)
-            painter.drawRoundedRect(rect, r, r)
-            painter.setPen(QColor("#64748B"))
-            font = pixel_font("Segoe UI", max(6, int(round(9 * self.scale))))
-            painter.setFont(font)
-            painter.drawText(rect, Qt.AlignCenter, "-")
-        painter.end()
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.clicked.emit(self.provider_item)
-            event.accept()
-        else:
-            super().mousePressEvent(event)
 
 class FrozenLeftScrollArea(QScrollArea):
     """
@@ -658,6 +483,7 @@ class RelayStationView(QWidget):
     pelican_clicked = pyqtSignal(dict)  # emits provider_item dict
     filter_dialog_requested = pyqtSignal()
     aihub_filter_requested = pyqtSignal()
+    aihub_exclusion_requested = pyqtSignal(str)
     history_timeline_requested = pyqtSignal(str, str)  # emits (provider_code, dimension)
     refresh_requested = pyqtSignal()
     aihub_mode_toggled = pyqtSignal(bool)  # emits new auto_mode boolean (True=auto, False=manual)
@@ -668,16 +494,11 @@ class RelayStationView(QWidget):
         self.current_tab = 0
         self._square_data: Dict[str, Any] = {}
         self._aihub_data: Dict[str, Any] = {}
-        self._active_thumbnails: List[ClickableThumbnail] = []
         self._sq_rows: List[Dict[str, Any]] = []
         self._aihub_rows: List[Dict[str, Any]] = []
         self.sq_empty_lbl = None
         self.aihub_empty_lbl = None
         self.aihub_empty_left = None
-        try:
-            ThumbnailDownloadManager.instance().thumb_loaded.connect(self._on_thumbnail_loaded, Qt.QueuedConnection)
-        except Exception:
-            pass
         self.init_ui()
 
     def _clear_sq_rows(self):
@@ -717,7 +538,6 @@ class RelayStationView(QWidget):
                 except RuntimeError:
                     pass
                 setattr(self, attr, None)
-        self._active_thumbnails.clear()
         for grid in (getattr(self, "aihub_grid_left", None), getattr(self, "aihub_grid_right", None)):
             if grid is not None:
                 while grid.count():
@@ -732,15 +552,6 @@ class RelayStationView(QWidget):
                             pass
         self._aihub_rows.clear()
 
-    def _on_thumbnail_loaded(self, url: str, scaled: QImage):
-        for thumb in list(self._active_thumbnails):
-            try:
-                from PyQt5 import sip
-                if not sip.isdeleted(thumb) and getattr(thumb, "img_url", None) == url:
-                    thumb.apply_image(scaled)
-            except Exception:
-                pass
-
     def set_scale(self, scale: float):
         """Update scale and re-render header and tables."""
         self.scale = max(0.5, float(scale))
@@ -752,6 +563,7 @@ class RelayStationView(QWidget):
             max(14, int(round(15 * self.scale))) +
             max(18, int(round(20 * self.scale))) +
             max(58, int(round(66 * self.scale))) +
+            max(20, int(round(22 * self.scale))) +
             max(2, int(round(2 * self.scale)))
         )
         right_w = (
@@ -1093,6 +905,7 @@ class RelayStationView(QWidget):
             max(14, int(round(15 * self.scale))) +
             max(18, int(round(20 * self.scale))) +
             max(58, int(round(66 * self.scale))) +
+            max(20, int(round(22 * self.scale))) +
             max(2, int(round(2 * self.scale)))
         )
         right_w = (
@@ -1279,12 +1092,13 @@ class RelayStationView(QWidget):
     def _init_aihub_headers(self):
         """Build permanent fixed header rows for AIHub (locked at top, never scrolled out vertically)."""
         hdr_fs = max(6, int(round(9 * self.scale)))
-        left_h_titles = ["检测", "糖果", "供应商"]
-        left_h_aligns = [Qt.AlignCenter, Qt.AlignCenter, Qt.AlignLeft]
+        left_h_titles = ["检测", "糖果", "供应商", "剔除"]
+        left_h_aligns = [Qt.AlignCenter, Qt.AlignCenter, Qt.AlignLeft, Qt.AlignCenter]
         left_col_widths = [
             max(14, int(round(15 * self.scale))),
             max(14, int(round(15 * self.scale))),
             max(58, int(round(66 * self.scale))),
+            max(20, int(round(22 * self.scale))),
         ]
 
         for col_idx, (title, align, col_w) in enumerate(zip(left_h_titles, left_h_aligns, left_col_widths)):
@@ -1301,7 +1115,7 @@ class RelayStationView(QWidget):
                 h_lbl.setToolTip("供应商通道与名称 (固定列，左右滑动时始终固定在左侧)")
             self.aihub_header_grid_left.addWidget(h_lbl, 0, col_idx)
 
-        for c_i in range(3):
+        for c_i in range(4):
             self.aihub_header_grid_left.setColumnStretch(c_i, 0)
             self.aihub_grid_left.setColumnStretch(c_i, 0)
 
@@ -1521,7 +1335,7 @@ class RelayStationView(QWidget):
                 w.hide()
 
     def update_aihub_data(self, data: Dict[str, Any]):
-        """Render AIHub monitored providers with prominent pelican thumbnails and effective multipliers."""
+        """Render provider metrics and controls without fetching image data."""
         self._aihub_data = data
         if not data.get("success"):
             self.aihub_status_lbl.setText("⚠️ 获取失败")
@@ -1605,7 +1419,8 @@ class RelayStationView(QWidget):
         left_col_widths = [
             max(14, int(round(15 * self.scale))),   # 0: 检测 (单圆点居中，极简紧凑)
             max(14, int(round(15 * self.scale))),   # 1: 糖果 (单圆点居中，通过/不通过)
-            max(58, int(round(66 * self.scale))),   # 2: 供应商 (代号+双行灰色小字，紧凑留出右侧空间)
+            max(58, int(round(66 * self.scale))),   # 2: 供应商
+            max(20, int(round(22 * self.scale))),   # 3: 剔除
         ]
         right_col_widths = [
             max(22, int(round(25 * self.scale))),   # 0: 倍率
@@ -1617,6 +1432,10 @@ class RelayStationView(QWidget):
             max(22, int(round(26 * self.scale))),   # 6: 审阅 (codex-auto-review 绿/红 dot)
         ]
 
+        for row in range(len(monitored), len(self._aihub_rows)):
+            self.aihub_grid_left.setRowMinimumHeight(row, 0)
+            self.aihub_grid_right.setRowMinimumHeight(row, 0)
+
         if not monitored:
             if not self.aihub_empty_lbl:
                 self.aihub_empty_lbl = QLabel()
@@ -1627,7 +1446,7 @@ class RelayStationView(QWidget):
                 self.aihub_empty_left = QLabel()
                 self.aihub_empty_left.setFont(pixel_font("Segoe UI", row_title_fs))
                 self.aihub_empty_left.setText("<span style='color: #94A3B8; padding: 10px;'>暂无数据</span>")
-                self.aihub_grid_left.addWidget(self.aihub_empty_left, 0, 0, 1, 3, Qt.AlignCenter)
+                self.aihub_grid_left.addWidget(self.aihub_empty_left, 0, 0, 1, 4, Qt.AlignCenter)
             try:
                 if self.aihub_empty_lbl:
                     self.aihub_empty_lbl.show()
@@ -1640,7 +1459,7 @@ class RelayStationView(QWidget):
                 self.aihub_empty_left = None
 
             for extra in self._aihub_rows:
-                for w in (extra["dot"], extra.get("candy"), extra["name"], extra["nom"], extra["thumb"], extra["eff"], extra["hit"], extra["sr"], extra["ref"]):
+                for w in (extra["exclude"], extra["dot"], extra.get("candy"), extra["name"], extra["nom"], extra["thumb"], extra["eff"], extra["hit"], extra["sr"], extra["ref"], extra.get("review")):
                     if w:
                         try:
                             w.hide()
@@ -1740,6 +1559,7 @@ class RelayStationView(QWidget):
             if row_idx < len(self._aihub_rows):
                 entry = self._aihub_rows[row_idx]
                 entry["code"] = g["code"]
+                entry["exclude"].setChecked(False)
                 entry["dot"].set_status(det_status, tooltip=det_tip)
                 if "candy" in entry:
                     entry["candy"].set_data(candy_status, candy_label, tooltip=candy_tip)
@@ -1761,7 +1581,7 @@ class RelayStationView(QWidget):
                 if "review" in entry:
                     entry["review"].set_supported(has_review, tooltip=rev_tip)
 
-                for w in (entry["dot"], entry.get("candy"), entry["name"], entry["nom"], entry["thumb"], entry["eff"], entry["hit"], entry["sr"], entry["ref"], entry.get("review")):
+                for w in (entry["exclude"], entry["dot"], entry.get("candy"), entry["name"], entry["nom"], entry["thumb"], entry["eff"], entry["hit"], entry["sr"], entry["ref"], entry.get("review")):
                     if w:
                         w.show()
             else:
@@ -1776,6 +1596,23 @@ class RelayStationView(QWidget):
                 c_candy.setToolTip(candy_tip)
                 c_candy.clicked.connect(lambda _, e=entry_dict: self.history_timeline_requested.emit(e.get("code", ""), "dual"))
 
+                c_exclude = QCheckBox(self.aihub_scroll_content_left)
+                c_exclude.setFixedWidth(left_col_widths[3])
+                indicator_size = max(10, round(12 * self.scale))
+                c_exclude.setStyleSheet(f"""
+                    QCheckBox::indicator {{
+                        width: {indicator_size}px;
+                        height: {indicator_size}px;
+                        border: 1px solid #B45353;
+                        border-radius: 2px;
+                        background: #20242C;
+                    }}
+                    QCheckBox::indicator:hover {{ background: #633434; }}
+                    QCheckBox::indicator:checked {{ background: #EF4444; }}
+                """)
+                c_exclude.setToolTip("勾选后立即剔除，自动和手动模式均生效；可在勾选窗口恢复")
+                c_exclude.clicked.connect(lambda checked, e=entry_dict: self.aihub_exclusion_requested.emit(e["code"]))
+
                 c_name = ProviderNameLabel(code_text, detail=detail, scale=self.scale, parent=self.aihub_scroll_content_left)
                 c_name.setFixedWidth(left_col_widths[2])
                 c_name.setFixedHeight(data_row_h)
@@ -1789,10 +1626,9 @@ class RelayStationView(QWidget):
                 c_nom.setFixedWidth(right_col_widths[0])
                 c_nom.setFixedHeight(data_row_h)
 
-                thumb = ClickableThumbnail(g, self.aihub_scroll_content_right, scale=self.scale)
+                thumb = ProviderImageButton(g, self.aihub_scroll_content_right, scale=self.scale)
                 thumb.setFixedWidth(right_col_widths[1])
-                thumb.clicked.connect(self.pelican_clicked.emit)
-                self._active_thumbnails.append(thumb)
+                thumb.provider_clicked.connect(self.pelican_clicked.emit)
 
                 c_eff_multi = QLabel(html_eff)
                 c_eff_multi.setFont(font_mono)
@@ -1830,6 +1666,7 @@ class RelayStationView(QWidget):
                 self.aihub_grid_left.addWidget(c_dot, row_idx, 0, Qt.AlignCenter | Qt.AlignVCenter)
                 self.aihub_grid_left.addWidget(c_candy, row_idx, 1, Qt.AlignCenter | Qt.AlignVCenter)
                 self.aihub_grid_left.addWidget(c_name, row_idx, 2, Qt.AlignLeft | Qt.AlignVCenter)
+                self.aihub_grid_left.addWidget(c_exclude, row_idx, 3, Qt.AlignCenter | Qt.AlignVCenter)
                 self.aihub_grid_right.addWidget(c_nom, row_idx, 0, Qt.AlignCenter | Qt.AlignVCenter)
                 self.aihub_grid_right.addWidget(thumb, row_idx, 1, Qt.AlignCenter | Qt.AlignVCenter)
                 self.aihub_grid_right.addWidget(c_eff_multi, row_idx, 2, Qt.AlignCenter | Qt.AlignVCenter)
@@ -1839,14 +1676,14 @@ class RelayStationView(QWidget):
                 self.aihub_grid_right.addWidget(c_review, row_idx, 6, Qt.AlignCenter | Qt.AlignVCenter)
 
                 entry_dict.update({
-                    "dot": c_dot, "candy": c_candy, "name": c_name, "nom": c_nom,
+                    "dot": c_dot, "candy": c_candy, "name": c_name, "exclude": c_exclude, "nom": c_nom,
                     "thumb": thumb, "eff": c_eff_multi, "hit": c_hit_multi,
                     "sr": c_sr_multi, "ref": c_ref, "review": c_review
                 })
                 self._aihub_rows.append(entry_dict)
 
         for extra in self._aihub_rows[len(monitored):]:
-            for w in (extra["dot"], extra.get("candy"), extra["name"], extra["nom"], extra["thumb"], extra["eff"], extra["hit"], extra["sr"], extra["ref"], extra.get("review")):
+            for w in (extra["exclude"], extra["dot"], extra.get("candy"), extra["name"], extra["nom"], extra["thumb"], extra["eff"], extra["hit"], extra["sr"], extra["ref"], extra.get("review")):
                 if w:
                     w.hide()
 

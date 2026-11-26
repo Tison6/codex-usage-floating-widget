@@ -51,7 +51,7 @@ Windows 桌面悬浮监控小组件，集中查看 Claude Code、ChatGPT / Codex
 
 ![AIHub 检测与糖果题历史](assets/aihub-history.png)
 
-实测缩略图按需从网络读取，使用有界内存缓存。历史指标在本地 SQLite 中压缩保存。
+供应商行内可直接勾选剔除，自动和手动模式均生效，可在勾选窗口恢复。实测图点击“查看”后在线加载，图片查看器使用有界内存缓存。历史指标在本地 SQLite 中压缩保存。
 
 ### Square
 
