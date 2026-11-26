@@ -14,8 +14,10 @@ The two-row capsule summarizes quotas, battery levels, GPU memory, and server CP
 | --- | --- |
 | Idle | Green |
 | Claude Code running | Orange |
-| Codex running | Bright blue |
+| Codex running | Blue |
 | Both running | Red |
+
+![Idle capsule with a green border](assets/capsule-idle.png)
 
 ![Codex activity](assets/capsule-view.png)
 

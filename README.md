@@ -14,10 +14,12 @@ Windows 桌面悬浮监控小组件，集中查看 Claude Code、ChatGPT / Codex
 | --- | --- |
 | 空闲 | 绿色 |
 | Claude Code 正在执行任务 | 橙色 |
-| Codex 正在执行任务 | 亮蓝色 |
+| Codex 正在执行任务 | 蓝色 |
 | 两者都在执行任务 | 红色 |
 
-![Codex 执行任务时的亮蓝色胶囊](assets/capsule-view.png)
+![空闲时的绿色胶囊](assets/capsule-idle.png)
+
+![Codex 执行任务时的蓝色胶囊](assets/capsule-view.png)
 
 ![Claude Code 与 Codex 同时执行任务时的红色胶囊](assets/capsule-both.png)
 
