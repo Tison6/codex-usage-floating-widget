@@ -19,6 +19,8 @@ Windows 桌面悬浮监控小组件，集中查看 Claude Code、ChatGPT / Codex
 
 ![空闲时的绿色胶囊](assets/capsule-idle.png)
 
+![Claude Code 执行任务时的橙色胶囊](assets/capsule-claude.png)
+
 ![Codex 执行任务时的蓝色胶囊](assets/capsule-view.png)
 
 ![Claude Code 与 Codex 同时执行任务时的红色胶囊](assets/capsule-both.png)
