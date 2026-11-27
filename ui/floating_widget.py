@@ -358,7 +358,6 @@ class FloatingWidget(QWidget):
         mid_layout.setSpacing(6)
         
         self.relay_view = RelayStationView(self.mid_col, scale=self.widget_scale)
-        self.relay_view.pelican_clicked.connect(self.open_pelican_viewer)
         self.relay_view.filter_dialog_requested.connect(self.open_square_filter_dialog)
         self.relay_view.aihub_filter_requested.connect(self.open_aihub_filter_dialog)
         self.relay_view.history_timeline_requested.connect(self.open_aihub_history_dialog)

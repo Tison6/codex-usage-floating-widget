@@ -508,6 +508,24 @@ class AIHubHistoryDialog(QDialog):
         self.cb_exclude.toggled.connect(self._on_exclusion_toggled)
         header.addWidget(self.cb_exclude)
 
+        self.btn_images = QPushButton("实测图")
+        self.btn_images.setCursor(Qt.PointingHandCursor)
+        self.btn_images.setToolTip("点击后在线加载当前供应商的实测图")
+        self.btn_images.setStyleSheet("""
+            QPushButton {
+                color: #34D399;
+                background: #1D252B;
+                border: 1px solid #31534B;
+                border-radius: 4px;
+                font-size: 10px;
+                padding: 3px 6px;
+            }
+            QPushButton:hover { background: #254438; }
+            QPushButton:disabled { color: #64748B; border-color: #303640; }
+        """)
+        self.btn_images.clicked.connect(self._open_provider_images)
+        header.addWidget(self.btn_images)
+
         # Close button
         btn_close = QPushButton("✕")
         btn_close.setFixedSize(24, 24)
@@ -728,6 +746,7 @@ class AIHubHistoryDialog(QDialog):
         root.addWidget(container)
 
     def load_data(self):
+        self.btn_images.setEnabled(bool(self.current_code))
         self.cb_exclude.blockSignals(True)
         self.cb_exclude.setChecked(self.current_code in self.aihub_client.get_excluded_providers())
         self.cb_exclude.setEnabled(bool(self.current_code))
@@ -778,6 +797,17 @@ class AIHubHistoryDialog(QDialog):
 
         # Update canvas
         self.canvas.set_data(tl_data, mode=self.current_dimension)
+
+    def _open_provider_images(self):
+        provider = next((p for p in self.all_providers if p.get("code") == self.current_code), None)
+        if not provider:
+            return
+        from ui.pelican_viewer import PelicanViewerDialog
+        dialog = PelicanViewerDialog(provider, aihub_client=self.aihub_client, parent=self)
+        try:
+            dialog.exec_()
+        finally:
+            dialog.deleteLater()
 
     def _on_exclusion_toggled(self, checked: bool):
         if not self.current_code:
