@@ -56,6 +56,7 @@ class PelicanDownloadManager(QObject):
     _lock = threading.Lock()
 
     image_loaded = pyqtSignal(str, QImage)       # url, scaled_image
+    image_failed = pyqtSignal(str)
     history_ready = pyqtSignal(int, list)         # group_id, items
     history_error = pyqtSignal(int, str)          # group_id, error_str
 
@@ -154,6 +155,7 @@ class PelicanDownloadManager(QObject):
 
     def _fetch_image_worker(self, url: str):
         resp = None
+        loaded = False
         try:
             session = self._get_session()
             headers = {}
@@ -175,6 +177,7 @@ class PelicanDownloadManager(QObject):
                 if qimg.loadFromData(bytes(content)):
                     scaled = qimg.scaled(224, 114, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     self._put_cached(url, scaled)
+                    loaded = True
                     self.image_loaded.emit(url, scaled)
         except Exception:
             pass
@@ -185,6 +188,8 @@ class PelicanDownloadManager(QObject):
                 pass
             with self._state_lock:
                 self.in_flight_urls.discard(url)
+            if not loaded:
+                self.image_failed.emit(url)
 
 
 class PelicanCard(QFrame):

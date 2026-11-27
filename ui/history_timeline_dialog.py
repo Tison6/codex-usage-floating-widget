@@ -13,10 +13,10 @@ import sys
 from typing import Dict, Any, List, Optional
 from PyQt5.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFrame, QComboBox, QScrollArea, QGraphicsDropShadowEffect, QSizePolicy, QApplication, QCheckBox
+    QFrame, QComboBox, QScrollArea, QGraphicsDropShadowEffect, QSizePolicy, QApplication, QCheckBox, QToolButton
 )
-from PyQt5.QtCore import Qt, QRectF, QPoint, QPointF, pyqtSignal, QEvent
-from PyQt5.QtGui import QColor, QPainter, QBrush, QPen, QFont, QCursor
+from PyQt5.QtCore import Qt, QRectF, QPoint, QPointF, pyqtSignal, QEvent, QSize
+from PyQt5.QtGui import QColor, QPainter, QBrush, QPen, QFont, QCursor, QIcon, QPixmap
 
 from core.aihub_client import AIHubClient, is_banned_provider
 
@@ -391,6 +391,9 @@ class AIHubHistoryDialog(QDialog):
         self.current_dimension = "dual"  # Always dual dimension
         self.current_granularity = 30    # 30 mins (48 blocks/day)
         self.current_days = 7            # 7 days
+        self._preview_code = None
+        self._preview_group = None
+        self._preview_urls = {}
 
         # Available provider codes (filter out any banned or offline providers)
         self.all_providers = []
@@ -410,6 +413,13 @@ class AIHubHistoryDialog(QDialog):
 
         self.init_window()
         self.init_ui()
+        from ui.pelican_viewer import PelicanDownloadManager
+        self._image_manager = PelicanDownloadManager.instance()
+        self._image_manager.history_ready.connect(self._on_preview_history)
+        self._image_manager.history_error.connect(self._on_preview_error)
+        self._image_manager.image_loaded.connect(self._on_preview_image)
+        self._image_manager.image_failed.connect(self._on_preview_image_failed)
+        self.finished.connect(self._disconnect_previews)
         self.load_data()
 
     def init_window(self):
@@ -507,24 +517,6 @@ class AIHubHistoryDialog(QDialog):
         self.cb_exclude.setToolTip("剔除当前供应商，自动和手动监控均生效；取消勾选可恢复")
         self.cb_exclude.toggled.connect(self._on_exclusion_toggled)
         header.addWidget(self.cb_exclude)
-
-        self.btn_images = QPushButton("实测图")
-        self.btn_images.setCursor(Qt.PointingHandCursor)
-        self.btn_images.setToolTip("点击后在线加载当前供应商的实测图")
-        self.btn_images.setStyleSheet("""
-            QPushButton {
-                color: #34D399;
-                background: #1D252B;
-                border: 1px solid #31534B;
-                border-radius: 4px;
-                font-size: 10px;
-                padding: 3px 6px;
-            }
-            QPushButton:hover { background: #254438; }
-            QPushButton:disabled { color: #64748B; border-color: #303640; }
-        """)
-        self.btn_images.clicked.connect(self._open_provider_images)
-        header.addWidget(self.btn_images)
 
         # Close button
         btn_close = QPushButton("✕")
@@ -700,6 +692,33 @@ class AIHubHistoryDialog(QDialog):
 
         layout.addWidget(self.inspect_frame)
 
+        previews = QHBoxLayout()
+        previews.setSpacing(4)
+        self.preview_buttons = []
+        for _ in range(4):
+            button = QToolButton()
+            button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+            button.setText("暂无实测图")
+            button.setIconSize(QSize(144, 64))
+            button.setFixedHeight(90)
+            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            button.setStyleSheet("""
+                QToolButton {
+                    color: #94A3B8;
+                    background: #171C25;
+                    border: 1px solid #303B48;
+                    border-radius: 4px;
+                    font-size: 9px;
+                    padding: 2px;
+                }
+                QToolButton:hover { border-color: #38BDF8; }
+            """)
+            button.setCursor(Qt.PointingHandCursor)
+            button.clicked.connect(self._open_provider_images)
+            previews.addWidget(button, 1)
+            self.preview_buttons.append(button)
+        layout.addLayout(previews)
+
         # -------------------------------------------------------------
         # 6. Legend & Footer Bar
         # -------------------------------------------------------------
@@ -746,7 +765,6 @@ class AIHubHistoryDialog(QDialog):
         root.addWidget(container)
 
     def load_data(self):
-        self.btn_images.setEnabled(bool(self.current_code))
         self.cb_exclude.blockSignals(True)
         self.cb_exclude.setChecked(self.current_code in self.aihub_client.get_excluded_providers())
         self.cb_exclude.setEnabled(bool(self.current_code))
@@ -767,6 +785,8 @@ class AIHubHistoryDialog(QDialog):
         cached_provider = next((p for p in self.all_providers if p.get("code") == self.current_code), {})
         detail = (prov.get("public_detail") or cached_provider.get("public_detail") or "").strip()
         self.lbl_provider_detail.setText(detail or "暂无供应商说明")
+        if self._preview_code != self.current_code:
+            self._load_previews({**cached_provider, **prov})
         det_dot = prov.get("detection_dot", "⚪")
         det_lbl = prov.get("detection_label", "未检")
         candy_dot = prov.get("candy_dot", "⚪")
@@ -797,6 +817,62 @@ class AIHubHistoryDialog(QDialog):
 
         # Update canvas
         self.canvas.set_data(tl_data, mode=self.current_dimension)
+
+    def _load_previews(self, provider):
+        self._preview_code = self.current_code
+        self._preview_group = provider.get("group_id")
+        self._preview_urls.clear()
+        for button in self.preview_buttons:
+            button.setIcon(QIcon())
+            button.setText("加载中…" if self._preview_group is not None else "暂无实测图")
+            button.setToolTip("点击查看全部实测图")
+        if self._preview_group is not None:
+            self._image_manager.request_history(self.aihub_client, self._preview_group)
+        else:
+            self._on_preview_history(None, provider.get("operator_images") or [])
+
+    def _on_preview_history(self, group_id, items):
+        if group_id != self._preview_group:
+            return
+        self._preview_urls.clear()
+        images = sorted(
+            (item for item in items if item.get("url")),
+            key=lambda item: str(item.get("published_at") or item.get("published_at_str") or ""),
+            reverse=True,
+        )[:4]
+        for index, button in enumerate(self.preview_buttons):
+            button.setIcon(QIcon())
+            if index >= len(images):
+                button.setText("暂无实测图")
+                continue
+            item = images[index]
+            url = item["url"]
+            timestamp = str(item.get("published_at_str") or item.get("published_at") or "")
+            button.setText(timestamp[:19].replace("T", " ") or "实测图")
+            button.setToolTip(f"{timestamp}\n点击查看全部实测图")
+            self._preview_urls.setdefault(url, []).append(button)
+            self._image_manager.request_image(url)
+
+    def _on_preview_image(self, url, image):
+        for button in self._preview_urls.get(url, []):
+            button.setIcon(QIcon(QPixmap.fromImage(image)))
+
+    def _on_preview_error(self, group_id, error):
+        if group_id == self._preview_group:
+            for button in self.preview_buttons:
+                button.setText("图片获取失败，点击重试")
+
+    def _on_preview_image_failed(self, url):
+        for button in self._preview_urls.get(url, []):
+            button.setText("图片加载失败，点击查看")
+
+    def _disconnect_previews(self, result):
+        self._preview_group = None
+        self._preview_urls.clear()
+        self._image_manager.history_ready.disconnect(self._on_preview_history)
+        self._image_manager.history_error.disconnect(self._on_preview_error)
+        self._image_manager.image_loaded.disconnect(self._on_preview_image)
+        self._image_manager.image_failed.disconnect(self._on_preview_image_failed)
 
     def _open_provider_images(self):
         provider = next((p for p in self.all_providers if p.get("code") == self.current_code), None)
