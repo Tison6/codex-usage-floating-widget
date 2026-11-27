@@ -377,6 +377,20 @@ class TimelineCanvas(QWidget):
         self.setToolTip("\n".join(lines))
 
 
+class HistoryPreviewButton(QToolButton):
+    def sizeHint(self):
+        return QSize(144, 150)
+
+    def minimumSizeHint(self):
+        return QSize(70, 90)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        height = max(100, min(180, self.width() + 20))
+        self.setFixedHeight(height)
+        self.setIconSize(QSize(max(1, self.width() - 8), height - 24))
+
+
 class AIHubHistoryDialog(QDialog):
     """
     Modern dark-themed popup dialog for inspecting 24-hour probe timeline history.
@@ -450,7 +464,7 @@ class AIHubHistoryDialog(QDialog):
 
         layout = QVBoxLayout(container)
         layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(10)
+        layout.setSpacing(6)
 
         # -------------------------------------------------------------
         # 1. Header Bar: Title + Provider Selector + Close Button
@@ -613,16 +627,16 @@ class AIHubHistoryDialog(QDialog):
         # 3. Provider Live Overview Banner
         # -------------------------------------------------------------
         self.banner_frame = QFrame()
+        self.banner_frame.setObjectName("ProviderOverview")
         self.banner_frame.setStyleSheet("""
-            QFrame {
-                background: rgba(255, 255, 255, 0.02);
-                border: 1px solid rgba(255, 255, 255, 0.05);
-                border-radius: 6px;
-                padding: 4px;
+            QFrame#ProviderOverview {
+                background: transparent;
+                border: none;
             }
+            QFrame#ProviderOverview QLabel { background: transparent; border: none; padding: 0px; }
         """)
         banner_lay = QVBoxLayout(self.banner_frame)
-        banner_lay.setContentsMargins(8, 4, 8, 4)
+        banner_lay.setContentsMargins(6, 0, 6, 0)
         banner_lay.setSpacing(2)
 
         self.lbl_provider_detail = QLabel()
@@ -669,14 +683,15 @@ class AIHubHistoryDialog(QDialog):
         # 5. Detail Inspector Panel (Shows details of hovered / clicked cell)
         # -------------------------------------------------------------
         self.inspect_frame = QFrame()
-        self.inspect_frame.setFixedHeight(68)
+        self.inspect_frame.setObjectName("TimelineInspector")
+        self.inspect_frame.setFixedHeight(48)
         self.inspect_frame.setStyleSheet("""
-            QFrame {
+            QFrame#TimelineInspector {
                 background: rgba(0, 0, 0, 0.4);
                 border: 1px solid rgba(56, 189, 248, 0.25);
                 border-radius: 6px;
-                padding: 4px;
             }
+            QFrame#TimelineInspector QLabel { background: transparent; border: none; padding: 0px; }
         """)
         inspect_lay = QVBoxLayout(self.inspect_frame)
         inspect_lay.setContentsMargins(8, 4, 8, 4)
@@ -696,11 +711,9 @@ class AIHubHistoryDialog(QDialog):
         previews.setSpacing(4)
         self.preview_buttons = []
         for _ in range(4):
-            button = QToolButton()
+            button = HistoryPreviewButton()
             button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
             button.setText("暂无实测图")
-            button.setIconSize(QSize(144, 64))
-            button.setFixedHeight(90)
             button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             button.setStyleSheet("""
                 QToolButton {

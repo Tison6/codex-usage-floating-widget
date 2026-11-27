@@ -7,6 +7,8 @@ import math
 import os
 import time
 import tempfile
+import shutil
+import subprocess
 from email.utils import parsedate_to_datetime
 from datetime import datetime
 
@@ -87,6 +89,7 @@ class ClaudeUsageClient:
             raise FileNotFoundError("Claude Code credentials unavailable")
         # Follow the most recently renewed subscription when several logins remain.
         _, source, auth = max(candidates, key=lambda candidate: candidate[0])
+        self.config_dir = Path(source).parent
         identity = auth.get("accountUuid", "") + ":" + auth.get("organizationUuid", "")
         account = hashlib.sha256((identity if identity != ":" else auth["accessToken"]).encode()).hexdigest()
         credential = hashlib.sha256((source + auth["accessToken"]).encode()).hexdigest()
@@ -98,6 +101,71 @@ class ClaudeUsageClient:
                 self.last_good = None
         self.account_key, self.credential_key = account, credential
         return auth
+
+    def _read_cli_cache(self, auth):
+        profile_path = self.config_dir / ".claude.json"
+        if self.config_dir == Path.home() / ".claude":
+            profile_path = Path.home() / ".claude.json"
+        try:
+            profile = json.loads(profile_path.read_text(encoding="utf-8"))
+            account = (profile.get("oauthAccount") or {}).get("accountUuid")
+            if not account or (auth.get("accountUuid") and auth["accountUuid"] != account):
+                return None
+            cached = profile.get("cachedUsageUtilization") or {}
+            if cached.get("accountUuid") != account:
+                return None
+            fetched_at = float(cached.get("fetchedAtMs", 0)) / 1000
+            if not 0 <= time.time() - fetched_at < 600:
+                return None
+            raw = cached["utilization"]
+            result = {
+                "success": True,
+                "plan_type": str(auth.get("subscriptionType") or "Claude").upper(),
+                "five_hour_window": self._window(raw.get("five_hour"), 18000, "5H"),
+                "weekly_window": self._window(raw.get("seven_day"), 604800, "周限额"),
+                "fetched_at": fetched_at,
+                "fetch_time": datetime.fromtimestamp(fetched_at).strftime("%H:%M:%S"),
+                "account_key": self.account_key,
+                "source": "claude_code_cache",
+            }
+            if not (result["five_hour_window"] or result["weekly_window"]):
+                return None
+            return result if self._refresh_countdowns(result)["success"] else None
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            return None
+
+    @staticmethod
+    def _cli_command():
+        executable = shutil.which("claude.exe")
+        if executable:
+            return [executable]
+        launcher = shutil.which("claude")
+        node = shutil.which("node")
+        if launcher:
+            package = Path(launcher).parent / "node_modules/@anthropic-ai/claude-code"
+            native = package / "bin/claude.exe"
+            if native.is_file():
+                return [str(native)]
+            script = package / "cli.js"
+            if node and script.is_file():
+                return [node, str(script)]
+        return None
+
+    def _refresh_via_cli(self, command):
+        env = dict(os.environ)
+        for key in tuple(env):
+            if key.startswith(("ANTHROPIC_", "CLAUDE_CODE_")) or key in ("CLAUDE_CONFIG_DIR", "CLAUDECODE"):
+                env.pop(key)
+        env.update(CLAUDE_CONFIG_DIR=str(self.config_dir), CLAUDE_CODE_DISABLE_AUTO_MEMORY="1",
+                   DISABLE_TELEMETRY="1", DISABLE_ERROR_REPORTING="1", DISABLE_AUTOUPDATER="1")
+        args = ["-p", "/usage", "--output-format", "json", "--tools", "",
+                "--strict-mcp-config", "--setting-sources", "", "--no-session-persistence"]
+        try:
+            subprocess.run(command + args, env=env, cwd=Path.home(), timeout=45,
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
 
     def _load_state(self):
         try:
@@ -173,11 +241,30 @@ class ClaudeUsageClient:
         result = None
         try:
             auth = self._read_auth()
-            # Re-read login first, so switching/renewing an account clears old backoff.
-            if time.monotonic() < self.next_fetch and self.cached_data is not None:
+            local = self._read_cli_cache(auth)
+            if local:
+                changed = self.cached_data != local
+                self.last_good = self.cached_data = local
+                self.failures = 0
+                if changed:
+                    self._save_state(time.time() + max(0, self.next_fetch - time.monotonic()))
+                return self._refresh_countdowns(local)
+            command = self._cli_command()
+            # Claude Code can renew an expired login itself.
+            renew_login = command and "登录已失效" in (self.cached_data or {}).get("error", "")
+            if time.monotonic() < self.next_fetch and self.cached_data is not None and not renew_login:
                 return self._refresh_countdowns(self.cached_data)
             token = auth.get("accessToken")
-            if not token:
+            if command:
+                retry_seconds = 600
+                self._refresh_via_cli(command)
+                result = self._read_cli_cache(self._read_auth())
+                if result:
+                    self.last_good = dict(result)
+                    self.failures = 0
+                else:
+                    result = self._failure("Claude Code 暂未更新额度，等待自动重试", time.time() + retry_seconds)
+            elif not token:
                 result = {"success": False, "error": "请先在 Claude Code 中登录订阅账户"}
             else:
                 with self.session.get(
