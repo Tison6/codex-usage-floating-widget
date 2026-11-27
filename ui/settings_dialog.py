@@ -22,7 +22,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.cfg = config_manager
         self.setWindowTitle("桌面悬浮插件 - 偏好设置")
-        self.setFixedSize(360, 490)
+        self.setFixedSize(360, 550)
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         self.setStyleSheet("""
             QDialog {
@@ -95,6 +95,7 @@ class SettingsDialog(QDialog):
         # Scale
         scale_lay = QHBoxLayout()
         scale_lbl = QLabel("界面尺寸缩放:", grp_app)
+        self.combo_scale = QComboBox(grp_app)
         self.combo_scale.addItem("80%", 0.80)
         self.combo_scale.addItem("100% (标准)", 1.00)
         self.combo_scale.addItem("120%", 1.20)
@@ -135,6 +136,13 @@ class SettingsDialog(QDialog):
         grp_int = QGroupBox("刷新频率", self)
         lay_int = QVBoxLayout(grp_int)
         lay_int.setSpacing(6)
+
+        quota_switches = QHBoxLayout()
+        self.chk_claude_quota = QCheckBox("Claude 额度检测", grp_int)
+        self.chk_codex_quota = QCheckBox("GPT 额度检测", grp_int)
+        quota_switches.addWidget(self.chk_claude_quota)
+        quota_switches.addWidget(self.chk_codex_quota)
+        lay_int.addLayout(quota_switches)
         
         bt_int_lay = QHBoxLayout()
         bt_int_lbl = QLabel("蓝牙检测间隔 (秒):", grp_int)
@@ -198,6 +206,8 @@ class SettingsDialog(QDialog):
         self.chk_snap.setChecked(self.cfg.get("auto_snap", True))
         self.chk_only_conn.setChecked(self.cfg.get("only_connected", True))
         self.chk_autostart.setChecked(self.cfg.check_autostart_active())
+        self.chk_claude_quota.setChecked(self.cfg.get("claude_quota_enabled", True))
+        self.chk_codex_quota.setChecked(self.cfg.get("codex_quota_enabled", True))
         self.spin_bt_interval.setValue(self.cfg.get("bt_interval_sec", 10))
         self.spin_cdx_interval.setValue(self.cfg.get("codex_interval_sec", 60))
         self.edit_auth_path.setText(self.cfg.get("auth_file_path", "~/.codex/auth.json"))
@@ -240,6 +250,8 @@ class SettingsDialog(QDialog):
             QMessageBox.warning(self, "凭证测试失败", f"❌ 无法连接: {res.get('error', '未知错误')}")
 
     def save_values(self):
+        self.cfg.set("claude_quota_enabled", self.chk_claude_quota.isChecked(), auto_save=False)
+        self.cfg.set("codex_quota_enabled", self.chk_codex_quota.isChecked(), auto_save=False)
         self.cfg.set("opacity", self.slider_opacity.value() / 100.0, auto_save=False)
         self.cfg.set("scale", self.combo_scale.currentData(), auto_save=False)
         self.cfg.set("always_on_top", self.chk_top.isChecked(), auto_save=False)

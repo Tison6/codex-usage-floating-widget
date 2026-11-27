@@ -984,11 +984,15 @@ class FloatingWidget(QWidget):
         self.codex_timer = QTimer(self)
         self.codex_timer.timeout.connect(lambda: self.fetch_codex_async(force=True))
         cdx_sec = max(20, int(self.cfg.get("codex_interval_sec", 60)))
-        self.codex_timer.start(cdx_sec * 1000)
+        self.codex_timer.setInterval(cdx_sec * 1000)
+        if self.cfg.get("codex_quota_enabled", True):
+            self.codex_timer.start()
         
         self.claude_timer = QTimer(self)
         self.claude_timer.timeout.connect(self.fetch_claude_async)
-        self.claude_timer.start(max(60, int(self.cfg.get("claude_interval_sec", 60))) * 1000)
+        self.claude_timer.setInterval(max(60, int(self.cfg.get("claude_interval_sec", 60))) * 1000)
+        if self.cfg.get("claude_quota_enabled", True):
+            self.claude_timer.start()
 
         # 3. Status Light & Activity timer. The file scan runs in a worker.
         self.activity_timer = QTimer(self)
@@ -1107,6 +1111,9 @@ class FloatingWidget(QWidget):
             self.mini_bt_lbl.setToolTip("在线设备未提供电量" if all_devices else "无在线蓝牙设备")
 
     def fetch_claude_async(self, force=False):
+        if not self.cfg.get("claude_quota_enabled", True):
+            self.on_claude_data_received({"success": False, "disabled": True, "error": "额度检测已关闭"})
+            return
         if self._claude_worker is not None:
             return
         self._claude_worker = CodexFetchWorker(self.claude_client, force=force)
@@ -1115,6 +1122,8 @@ class FloatingWidget(QWidget):
         self._claude_worker.start()
 
     def on_claude_data_received(self, data):
+        if not self.cfg.get("claude_quota_enabled", True):
+            data = {"success": False, "disabled": True, "error": "额度检测已关闭"}
         self._current_claude_data = data
         self.claude_view.update_data(data)
         self._schedule_content_resize()
@@ -1130,6 +1139,9 @@ class FloatingWidget(QWidget):
 
     def fetch_codex_async(self, force: bool = False):
         """Run async thread for ChatGPT/Codex quota lookup."""
+        if not self.cfg.get("codex_quota_enabled", True):
+            self.on_codex_data_received({"success": False, "disabled": True, "error": "额度检测已关闭"})
+            return
         if self._codex_worker is not None:
             return
             
@@ -1148,13 +1160,15 @@ class FloatingWidget(QWidget):
 
     def on_codex_data_received(self, data: Dict[str, Any]):
         """Callback when Codex data arrives."""
+        if not self.cfg.get("codex_quota_enabled", True):
+            data = {"success": False, "disabled": True, "error": "额度检测已关闭"}
         self._current_codex_data = data
         self.codex_view.update_data(data)
         self._schedule_content_resize()
         self.update_mini_quota_display()
         
         # If fetch failed (transient network or proxy hiccup), schedule a fast retry in 5s
-        if not data.get("success"):
+        if not data.get("success") and not data.get("disabled"):
             QTimer.singleShot(5000, lambda: self.fetch_codex_async(force=True))
             
         if not self.is_mini:
@@ -1295,8 +1309,9 @@ class FloatingWidget(QWidget):
         fs = self.get_mini_font_size(10)
         if not data or not data.get("success"):
             limited = provider == "Claude" and "请求受限" in data.get("error", "")
-            short_label.setText("限流" if limited else "--")
-            short_label.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: #EF4444;")
+            short_label.setText("已关" if data.get("disabled") else "限流" if limited else "--")
+            color = "#94A3B8" if data.get("disabled") else "#EF4444"
+            short_label.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: {color};")
             dot.hide()
             weekly_label.hide()
             error_tip = f"{provider} 状态: {data.get('error', '获取失败')}"
@@ -1643,6 +1658,12 @@ class FloatingWidget(QWidget):
         
         cdx_sec = max(20, int(self.cfg.get("codex_interval_sec", 60)))
         self.codex_timer.setInterval(cdx_sec * 1000)
+
+        for provider, timer in (("codex", self.codex_timer), ("claude", self.claude_timer)):
+            if self.cfg.get(provider + "_quota_enabled", True):
+                timer.start()
+            else:
+                timer.stop()
         
         self.codex_client = CodexUsageClient(self.cfg.get("auth_file_path"))
         self.refresh_all_data(force=True)

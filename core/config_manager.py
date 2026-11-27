@@ -21,6 +21,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "theme": "dark",
     "bt_interval_sec": 10,
     "codex_interval_sec": 60,
+    "codex_quota_enabled": True,
+    "claude_quota_enabled": True,
     "claude_interval_sec": 60,
     "claude_auth_file_path": "~/.claude/.credentials.json",
     "auth_file_path": "~/.codex/auth.json",
