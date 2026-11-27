@@ -6,6 +6,7 @@ click-to-expand, auto-collapse on focus loss, and health-based color transitions
 """
 
 from typing import List, Dict, Any, Optional
+from datetime import datetime
 import os
 import sys
 import time
@@ -1296,14 +1297,19 @@ class FloatingWidget(QWidget):
         )
 
     def _render_mini_quota(self, data, provider, short_label, dot, weekly_label, icon, tracker):
+        data = data or {}
         fs = self.get_mini_font_size(10)
         if not data or not data.get("success"):
-            short_label.setText("--")
+            limited = provider == "Claude" and "请求受限" in data.get("error", "")
+            short_label.setText("限流" if limited else "--")
             short_label.setStyleSheet(f"font-size: {fs}px; font-weight: 700; color: #EF4444;")
             dot.hide()
             weekly_label.hide()
-            short_label.setToolTip(f"{provider} 状态: {data.get('error', '获取失败')}")
-            icon.setToolTip(f"{provider} 状态: {data.get('error', '获取失败')}")
+            error_tip = f"{provider} 状态: {data.get('error', '获取失败')}"
+            if data.get("retry_at"):
+                error_tip += "\n下次重试: " + datetime.fromtimestamp(data["retry_at"]).strftime("%H:%M:%S")
+            short_label.setToolTip(error_tip)
+            icon.setToolTip(error_tip)
             self._resize_mini_to_contents()
             return
 
@@ -1346,7 +1352,15 @@ class FloatingWidget(QWidget):
             dot.hide()
             weekly_label.hide()
 
+        if data.get("stale"):
+            stale_label = weekly_label if weekly and five_h else short_label
+            stale_label.setText(stale_label.text() + "*")
+
         tip_lines = [f"{provider} {data.get('plan_type','PLUS')}"]
+        if data.get("stale"):
+            tip_lines.append("* 暂用旧数据。" + data.get("error", "等待刷新"))
+            if data.get("fetched_at"):
+                tip_lines.append("最近读取: " + datetime.fromtimestamp(data["fetched_at"]).strftime("%m-%d %H:%M:%S"))
         if five_h:
             fh_tip = f"• 5H 剩余: {fh_rem}% (倒计时: {five_h.get('reset_countdown','')})"
             if tracker:

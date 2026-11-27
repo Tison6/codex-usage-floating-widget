@@ -147,10 +147,23 @@ class ClaudeUsageClient:
     @staticmethod
     def _refresh_countdowns(result):
         result = dict(result)
+        now = time.time()
+        expired = bool(result.get("success")) and (
+            not result.get("fetched_at") or now - result["fetched_at"] > 600
+            or any(
+                result.get(field) and result[field]["reset_at"] <= now
+                for field in ("five_hour_window", "weekly_window")
+            )
+        )
+        if expired:
+            result.update(success=False, stale=True)
+            result["error"] = "Claude 额度缓存已过期。" + result.get("error", "等待重新读取")
+            result.pop("five_hour_window", None)
+            result.pop("weekly_window", None)
         for field in ("five_hour_window", "weekly_window"):
             if result.get(field):
                 window = dict(result[field])
-                remaining = max(0, int(window["reset_at"] - time.time()))
+                remaining = max(0, int(window["reset_at"] - now))
                 window.update(reset_after_seconds=remaining, reset_countdown=format_duration_compact(remaining))
                 result[field] = window
         return result
