@@ -378,17 +378,19 @@ class TimelineCanvas(QWidget):
 
 
 class HistoryPreviewButton(QToolButton):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(100)
+
     def sizeHint(self):
-        return QSize(144, 150)
+        return QSize(144, 100)
 
     def minimumSizeHint(self):
-        return QSize(70, 90)
+        return QSize(70, 100)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        height = max(100, min(180, self.width() + 20))
-        self.setFixedHeight(height)
-        self.setIconSize(QSize(max(1, self.width() - 8), height - 24))
+        self.setIconSize(QSize(max(1, self.width() - 8), self.height() - 24))
 
 
 class AIHubHistoryDialog(QDialog):
@@ -674,6 +676,11 @@ class AIHubHistoryDialog(QDialog):
         scroll.viewport().setStyleSheet("background: transparent; border: none;")
 
         self.canvas = TimelineCanvas(self)
+        scroll.setMinimumHeight(
+            self.canvas.header_height
+            + 4 * (self.canvas.cell_height_dual + self.canvas.row_padding)
+            + 4
+        )
         self.canvas.slot_hovered.connect(self._on_slot_hovered)
         self.canvas.slot_clicked.connect(self._on_slot_clicked)
         scroll.setWidget(self.canvas)
