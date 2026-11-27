@@ -1017,12 +1017,8 @@ class FloatingWidget(QWidget):
     # -------------------------------------------------------------
     def check_codex_activity_fast(self):
         """Schedule an activity check without blocking the UI event loop."""
-        if self._activity_worker:
-            try:
-                if self._activity_worker.isRunning():
-                    return
-            except RuntimeError:
-                self._activity_worker = None
+        if self._activity_worker is not None:
+            return
 
         self._activity_worker = CodexActivityWorker(self.activity_tracker, self.claude_activity_tracker)
         self._activity_worker.activity_ready.connect(self._set_status_light_running)
@@ -1031,6 +1027,8 @@ class FloatingWidget(QWidget):
 
     def _on_activity_worker_finished(self):
         worker = self.sender()
+        if worker is None:
+            return
         if worker is self._activity_worker:
             self._activity_worker = None
         worker.deleteLater()
@@ -1056,12 +1054,8 @@ class FloatingWidget(QWidget):
 
     def scan_bluetooth_async(self):
         """Asynchronously scan Bluetooth devices in background thread."""
-        if self._bt_worker:
-            try:
-                if self._bt_worker.isRunning():
-                    return
-            except RuntimeError:
-                self._bt_worker = None
+        if self._bt_worker is not None:
+            return
             
         only_conn = self.cfg.get("only_connected", True)
         self._bt_worker = BluetoothScanWorker(only_connected=only_conn)
@@ -1071,6 +1065,8 @@ class FloatingWidget(QWidget):
 
     def _on_bt_worker_finished(self):
         worker = self.sender()
+        if worker is None:
+            return
         if worker is self._bt_worker:
             self._bt_worker = None
         worker.deleteLater()
@@ -1126,18 +1122,16 @@ class FloatingWidget(QWidget):
 
     def _on_claude_worker_finished(self):
         worker = self.sender()
+        if worker is None:
+            return
         if worker is self._claude_worker:
             self._claude_worker = None
         worker.deleteLater()
 
     def fetch_codex_async(self, force: bool = False):
         """Run async thread for ChatGPT/Codex quota lookup."""
-        if self._codex_worker:
-            try:
-                if self._codex_worker.isRunning():
-                    return
-            except RuntimeError:
-                self._codex_worker = None
+        if self._codex_worker is not None:
+            return
             
         self._codex_worker = CodexFetchWorker(self.codex_client, force=force)
         self._codex_worker.data_ready.connect(self.on_codex_data_received)
@@ -1146,6 +1140,8 @@ class FloatingWidget(QWidget):
 
     def _on_codex_worker_finished(self):
         worker = self.sender()
+        if worker is None:
+            return
         if worker is self._codex_worker:
             self._codex_worker = None
         worker.deleteLater()
@@ -1166,12 +1162,8 @@ class FloatingWidget(QWidget):
 
     def fetch_relay_async(self, force: bool = False):
         """Asynchronously fetch Square API and AIHub data in background."""
-        if self._relay_worker:
-            try:
-                if self._relay_worker.isRunning():
-                    return
-            except RuntimeError:
-                self._relay_worker = None
+        if self._relay_worker is not None:
+            return
             
         self._relay_worker = RelayFetchWorker(self.square_client, self.aihub_client, force=force)
         self._relay_worker.square_ready.connect(self.on_square_data_received)
@@ -1181,6 +1173,8 @@ class FloatingWidget(QWidget):
 
     def _on_relay_worker_finished(self):
         worker = self.sender()
+        if worker is None:
+            return
         if worker is self._relay_worker:
             self._relay_worker = None
         worker.deleteLater()
