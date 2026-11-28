@@ -21,7 +21,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QPoint, QTimer, QThread, pyqtSignal, QEvent, QObject
 from PyQt5.QtGui import QColor, QCursor, QFont
 
-from core.config_manager import ConfigManager
+from core.config_manager import ConfigManager, SCALE_OPTIONS
 from core.bt_scanner import BluetoothScanner
 from core.codex_client import CodexUsageClient
 from core.claude_client import ClaudeUsageClient
@@ -1586,13 +1586,7 @@ class FloatingWidget(QWidget):
         
         # Size Scaling Submenu
         size_menu = menu.addMenu("📏 窗口缩放尺寸")
-        scale_options = [
-            ("80%", 0.80),
-            ("100% (标准)", 1.00),
-            ("120%", 1.20),
-            ("140%", 1.40),
-        ]
-        for label, scale_v in scale_options:
+        for label, scale_v in SCALE_OPTIONS:
             act_s = size_menu.addAction(label)
             act_s.setCheckable(True)
             act_s.setChecked(abs(self.requested_scale - scale_v) < 0.05)

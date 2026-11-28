@@ -10,6 +10,7 @@ from typing import Dict, Any
 
 APP_NAME = "DesktopBatteryCodexWidget"
 CONFIG_FILE_NAME = "config.json"
+SCALE_OPTIONS = (("80%", 0.96), ("100% (标准)", 1.20), ("120%", 1.44))
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "window_pos": [100, 100],
@@ -18,6 +19,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "lock_position": False,
     "auto_snap": True,
     "opacity": 0.95,
+    "scale": 1.20,
     "theme": "dark",
     "bt_interval_sec": 10,
     "codex_interval_sec": 60,

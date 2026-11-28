@@ -25,7 +25,8 @@ COLOR_PASSED = QColor("#10B981")     # Emerald Green
 COLOR_SUSPECTED = QColor("#F59E0B")  # Amber Orange
 COLOR_WRONG = QColor("#EF4444")      # Rose Red
 COLOR_EMPTY = QColor("#1E293B")      # Slate Dark
-COLOR_FUTURE = QColor(255, 255, 255, 8)
+COLOR_FUTURE = COLOR_EMPTY
+COLOR_NO_DATA = QColor("#94A3B8")
 COLOR_BORDER = QColor(255, 255, 255, 18)
 COLOR_HOVER = QColor("#38BDF8")      # Sky Blue
 
@@ -70,6 +71,7 @@ class TimelineCanvas(QWidget):
         self.brush_suspected = QBrush(COLOR_SUSPECTED)
         self.brush_wrong = QBrush(COLOR_WRONG)
         self.brush_empty = QBrush(COLOR_EMPTY)
+        self.brush_no_data = QBrush(COLOR_NO_DATA)
         self.brush_future = QBrush(COLOR_FUTURE)
 
         self.pen_hover = QPen(COLOR_HOVER, 1.5)
@@ -107,6 +109,8 @@ class TimelineCanvas(QWidget):
     def _get_status_brush(self, status: Optional[str], is_future: bool) -> QBrush:
         if is_future:
             return self.brush_future
+        if status == "no_data":
+            return self.brush_no_data
         if status == "passed":
             return self.brush_passed
         if status == "suspected":
@@ -118,6 +122,8 @@ class TimelineCanvas(QWidget):
     def _get_candy_brush(self, status: Optional[str], is_future: bool) -> QBrush:
         if is_future:
             return self.brush_future
+        if status == "no_data":
+            return self.brush_no_data
         if status == "correct":
             return self.brush_passed
         if status == "wrong":
@@ -242,6 +248,8 @@ class TimelineCanvas(QWidget):
             return COLOR_SUSPECTED
         elif status in ("wrong", "failed"):
             return COLOR_WRONG
+        elif status == "no_data":
+            return COLOR_NO_DATA
         else:
             return COLOR_EMPTY
 
@@ -252,6 +260,8 @@ class TimelineCanvas(QWidget):
             return COLOR_PASSED
         elif status == "wrong":
             return COLOR_WRONG
+        elif status == "no_data":
+            return COLOR_NO_DATA
         else:
             return COLOR_EMPTY
 
@@ -353,8 +363,9 @@ class TimelineCanvas(QWidget):
         model = slot.get("model", "")
         reason = slot.get("reason", "")
 
-        if slot.get("det_status") == "none" and slot.get("candy_status") == "none" and not slot.get("has_sample"):
-            self.setToolTip(f"📅 {date_lbl} [{time_range}]\n⚪ 该时段官方暂无检测采样 (官方探针测试间隔通常约35~40分钟)")
+        if not slot.get("has_sample"):
+            message = "已查询，未取得该时段的采样结果" if slot.get("was_queried") else "未采样 / 无历史记录，可能未运行或查询未成功"
+            self.setToolTip(f"📅 {date_lbl} [{time_range}]\n{message}")
             return
 
         candy_desc = f"{candy_lbl} (回答: {candy_ans})" if candy_ans else candy_lbl
@@ -750,8 +761,8 @@ class AIHubHistoryDialog(QDialog):
             ("🟢", "#10B981", "通过 / 答案正确 (21)"),
             ("🟠", "#F59E0B", "疑似 / 存疑"),
             ("🔴", "#EF4444", "未通过 / 答案错误"),
-            ("⚪", "#64748B", "无检测采样"),
-            ("⬛", "#334155", "未来时段"),
+            ("⚪", "#94A3B8", "已查询，无结果"),
+            ("⬛", "#1E293B", "未采样 / 未来"),
         ]
         for emo, col, desc in legend_items:
             lbl_leg = QLabel(f"<span style='color: {col}; font-weight: 700;'>{emo}</span> <span style='font-size: 9px; color: #94A3B8;'>{desc}</span>")
@@ -958,6 +969,14 @@ class AIHubHistoryDialog(QDialog):
         if slot.get("is_future"):
             self.lbl_inspect_title.setText(f"⏱ {slot.get('display_label')} {slot.get('time_range')} (未到时间)")
             self.lbl_inspect_desc.setText("该时段尚未发生，等待探针后续自动采样。")
+            return
+
+        if not slot.get("has_sample"):
+            self.lbl_inspect_title.setText(f"⏱ {slot.get('display_label', '')} [{slot.get('time_range', '')}]")
+            self.lbl_inspect_desc.setText(
+                "已查询供应商，但未取得该时段的检测结果。" if slot.get("was_queried")
+                else "该时段未采样或无历史记录，可能未运行或查询未成功。"
+            )
             return
 
         date_lbl = slot.get("display_label", "")

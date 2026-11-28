@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Set, Optional
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QWidget, QScrollArea, QCheckBox, QFrame,
-    QGraphicsDropShadowEffect, QComboBox, QLineEdit
+    QGraphicsDropShadowEffect, QComboBox, QLineEdit, QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QCursor
@@ -638,6 +638,24 @@ class AIHubFilterDialog(QDialog):
         act_row.addWidget(tip_lbl)
         act_row.addStretch()
 
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("搜索供应商名称，例如 064")
+        self.search_input.setClearButtonEnabled(True)
+        self.search_input.setFixedWidth(210)
+        self.search_input.setStyleSheet("""
+            QLineEdit {
+                color: #E2E8F0;
+                background: #10151E;
+                border: 1px solid #475569;
+                border-radius: 5px;
+                padding: 4px 7px;
+                font-size: 11px;
+            }
+            QLineEdit:focus { border-color: #38BDF8; }
+        """)
+        self.search_input.textChanged.connect(self._apply_row_visibility)
+        act_row.addWidget(self.search_input)
+
         curr_cnt = len(self.current_page_codes)
         cb_text = f"只看当前页面分组 ({curr_cnt})" if curr_cnt > 0 else "只看当前页面分组"
         self.cb_only_current = QCheckBox(cb_text)
@@ -853,17 +871,17 @@ class AIHubFilterDialog(QDialog):
 
         # 3. Table Column Header
         h_row = QHBoxLayout()
-        h_row.setContentsMargins(8, 2, 8, 2)
+        h_row.setContentsMargins(8, 2, 13, 2)
         h_row.setSpacing(6)
 
         h_sel = QLabel("监听")
-        h_sel.setFixedWidth(24)
+        h_sel.setFixedWidth(22)
         h_sel.setStyleSheet("font-size: 9px; font-weight: 700; color: #10B981;")
         h_sel.setToolTip("勾选监听")
         h_row.addWidget(h_sel)
 
         h_exc = QLabel("剔除")
-        h_exc.setFixedWidth(26)
+        h_exc.setFixedWidth(24)
         h_exc.setStyleSheet("font-size: 9px; font-weight: 700; color: #EF4444;")
         h_exc.setToolTip("勾选剔除后，无论在自动模式还是手动模式下，该供应商均被排除不会被监控")
         h_row.addWidget(h_exc)
@@ -871,8 +889,7 @@ class AIHubFilterDialog(QDialog):
         h_prov = QLabel("检测 / 糖果 / 供应商代码")
         h_prov.setStyleSheet("font-size: 9px; font-weight: 700; color: #64748B;")
         h_prov.setToolTip("AIHub 模型真实性检测:\n🟢 绿色: 模型检测通过\n🟠 橙色: 模型疑似非原生/掺水/存在异常\n⚪ 灰色: 待定/样本不足/未检测\n\nAIHub 糖果题实测:\n🟢 21: 正确 (袋子三种口味糖果问题)\n🔴 29/其他: 错误\n⚪ --: 暂无")
-        h_row.addWidget(h_prov)
-        h_row.addStretch()
+        h_row.addWidget(h_prov, 1)
 
         for title, w in [("倍率", 40), ("真实倍率", 46), ("缓存率", 44), ("TTFT", 40), ("成功率", 52), ("实测图", 36), ("审阅", 36)]:
             lbl = QLabel(title)
@@ -890,6 +907,7 @@ class AIHubFilterDialog(QDialog):
         scroll.setStyleSheet(SCROLL_STYLE)
         scroll.viewport().setStyleSheet("background: transparent; border: none;")
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
 
         content = QWidget()
         content.setStyleSheet("background: transparent;")
@@ -1006,8 +1024,10 @@ class AIHubFilterDialog(QDialog):
                 code_lbl = QLabel(f"{rank_badge}<span style='font-size: 10px; font-weight: 600; color: {'#64748B' if is_exc else '#E2E8F0'};'>{code}</span>{off_tag}")
             code_lbl.setCursor(Qt.PointingHandCursor)
             code_lbl.mousePressEvent = lambda e, m_cb=cb, exc=is_exc: m_cb.setChecked(not m_cb.isChecked()) if not exc else None
-            r_lay.addWidget(code_lbl)
-            r_lay.addStretch()
+            code_lbl.setMinimumWidth(0)
+            code_lbl.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+            code_lbl.setToolTip(f"{code}\n{detail}")
+            r_lay.addWidget(code_lbl, 1)
 
             # Multipliers: Standard/Nominal and Real/Effective
             nom_mult = p.get("multiplier_str", "--")
@@ -1163,11 +1183,10 @@ class AIHubFilterDialog(QDialog):
 
     def _apply_row_visibility(self):
         only_current = hasattr(self, "cb_only_current") and self.cb_only_current.isChecked()
+        search_text = self.search_input.text().strip().casefold()
         for code, row in self.provider_row_frames.items():
-            if only_current and code not in self.current_page_set:
-                row.hide()
-            else:
-                row.show()
+            matches_page = not only_current or code in self.current_page_set
+            row.setVisible(matches_page and search_text in code.casefold())
         self.update_count_label()
 
     def update_count_label(self):

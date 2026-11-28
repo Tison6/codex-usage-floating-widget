@@ -14,6 +14,7 @@ import time
 import bisect
 import threading
 import concurrent.futures
+from contextlib import closing
 from collections import OrderedDict
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
@@ -186,6 +187,8 @@ class AIHubClient:
         self._history_db_enabled = True
         self._history_db_enabled = self._init_history_db()
         self._metrics_history: Optional[Dict[str, List[Dict[str, Any]]]] = None
+        self._query_observations = {}
+        self._last_observation_prune = 0
 
     def _load_legacy_metrics_history(self) -> Dict[str, List[Dict[str, Any]]]:
         """Safely load local metrics history from file with backup fallback."""
@@ -267,6 +270,13 @@ class AIHubClient:
                 # The legacy table remains readable after a rolled-back migration.
                 pass
             conn.execute("DROP INDEX IF EXISTS idx_metrics_history_code_time")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS query_observations (
+                    code TEXT NOT NULL,
+                    timestamp INTEGER NOT NULL,
+                    PRIMARY KEY(code, timestamp)
+                ) WITHOUT ROWID
+            """)
             row = conn.execute("SELECT COUNT(*) FROM metrics_history").fetchone()
             is_empty = not row or row[0] == 0
             conn.commit()
@@ -279,6 +289,43 @@ class AIHubClient:
             return bool(self._history_db_enabled)
         except Exception:
             return False
+
+    def _record_query_observations(self, codes, timestamp):
+        bucket = int(timestamp) // 300 * 300
+        cutoff = int(timestamp) - 8 * 86400
+        if not self._history_db_enabled:
+            for code in codes:
+                observed = self._query_observations.setdefault(code, set())
+                observed.add(bucket)
+                observed.intersection_update(t for t in tuple(observed) if t >= cutoff)
+            return
+        try:
+            with closing(sqlite3.connect(self.metrics_history_db, timeout=5)) as conn:
+                conn.executemany(
+                    "INSERT OR IGNORE INTO query_observations VALUES (?, ?)",
+                    [(code, bucket) for code in codes],
+                )
+                if timestamp - self._last_observation_prune >= 3600:
+                    conn.execute("DELETE FROM query_observations WHERE timestamp < ?", (cutoff,))
+                    conn.commit()
+                    self._last_observation_prune = timestamp
+                conn.commit()
+        except sqlite3.Error:
+            pass
+
+    def _load_query_observations(self, code, since):
+        if not self._history_db_enabled:
+            return sorted(t for t in self._query_observations.get(code, ()) if t >= since)
+        try:
+            with closing(sqlite3.connect(self.metrics_history_db, timeout=5)) as conn:
+                rows = conn.execute(
+                    "SELECT timestamp FROM query_observations "
+                    "WHERE code = ? AND timestamp >= ? ORDER BY timestamp",
+                    (code, since),
+                )
+                return [row[0] for row in rows]
+        except sqlite3.Error:
+            return []
 
     def _history_load(self, code: str) -> List[Dict[str, Any]]:
         """Load one provider's history without materializing all providers."""
@@ -1005,6 +1052,7 @@ class AIHubClient:
             "updated_at": time.strftime("%H:%M:%S", time.localtime(now)),
         }
 
+        self._record_query_observations([p["code"] for p in all_parsed_providers], time.time())
         self.cached_data = result
         self.last_fetch_time = now
         return result
@@ -1060,51 +1108,6 @@ class AIHubClient:
             print("Error fetching provider history images:", e)
         return all_items
 
-    def backfill_provider_probe_history(self, code: str, group_id: Optional[int] = None):
-        """
-        Backfill historical probe records from official AIHub /images endpoint (last 24 hours).
-        Ensures the timeline has full 24-hour test points even right after starting the app.
-        """
-        if not group_id:
-            return
-        try:
-            images = self.get_provider_history_images(group_id, max_items=60)
-            if not images:
-                return
-
-            history = self._history_load(code)
-            existing_timestamps = {r.get("t") for r in history if r.get("t")}
-            added = 0
-            for it in images:
-                pub = it.get("published_at")
-                t = parse_iso_timestamp(pub)
-                if not t:
-                    continue
-                # Avoid duplicate if an entry exists within 300s
-                if any(abs(et - t) < 300 for et in existing_timestamps):
-                    continue
-
-                status = "passed"
-                title = it.get("title", "鹈鹕实测图")
-                history.append({
-                    "t": t,
-                    "det": status,
-                    "det_lbl": "通过",
-                    "det_m": "gpt-6.1-sol",
-                    "det_t": it.get("published_at_str") or format_iso_timestamp(pub),
-                    "det_r": f"鹈鹕测图: {title}",
-                    "candy": "correct",
-                    "candy_ans": "21",
-                })
-                existing_timestamps.add(t)
-                added += 1
-
-            if added > 0:
-                self._replace_history(code, history)
-                self._save_metrics_history()
-        except Exception as e:
-            print(f"Error backfilling probe history for {code}: {e}")
-
     def get_metrics_history(self) -> Dict[str, List[Dict[str, Any]]]:
         """Return a complete history snapshot for compatibility callers."""
         if self._metrics_history is not None:
@@ -1155,16 +1158,14 @@ class AIHubClient:
                     live_provider = p
                     break
 
-        # Automatically backfill 24h official probe history from /images endpoint if needed
-        if live_provider and live_provider.get("group_id"):
-            gid = live_provider.get("group_id")
-            cur_hist = self._history_load(code)
-            if len(cur_hist) < 25:
-                self.backfill_provider_probe_history(code, gid)
-
         # Load metrics history and prepare sorted timestamps for O(log N) binary search
-        history_list = self._history_load(code)
+        history_list = sorted(
+            (record for record in self._history_load(code)
+             if not str(record.get("det_r", "")).startswith("鹈鹕测图:")),
+            key=lambda record: record.get("t", 0),
+        )
         timestamps = [r.get("t", 0) for r in history_list]
+        observations = self._load_query_observations(code, today_start_ts - (days - 1) * 86400)
 
         slots_per_day = max(1, int(round(1440 / granularity_mins)))
         slot_duration = granularity_mins * 60
@@ -1218,60 +1219,32 @@ class AIHubClient:
                 i_start = bisect.bisect_left(timestamps, s_start_ts)
                 i_end = bisect.bisect_left(timestamps, s_end_ts)
 
+                sample = None
                 if i_start < i_end:
                     slot_center = (s_start_ts + s_end_ts) / 2
-                    best_sample = history_list[i_start]
-                    best_dist = abs(best_sample.get("t", 0) - slot_center)
-                    for idx in range(i_start + 1, i_end):
-                        dist = abs(history_list[idx].get("t", 0) - slot_center)
-                        if dist < best_dist:
-                            best_sample = history_list[idx]
-                            best_dist = dist
-
-                    sample = best_sample
-                    s_det = sample.get("det", "none")
-                    s_candy = sample.get("candy", "none")
-                    s_candy_ans = sample.get("candy_ans", "")
-                    s_model = sample.get("det_m", "")
-                    s_reason = sample.get("det_r", "")
-                    sample_t = sample.get("t", int(s_start_ts))
-                    sample_time_str = sample.get("det_t") or datetime.fromtimestamp(sample_t).strftime("%m-%d %H:%M:%S")
-                    eff_val = sample.get("eff")
-                    cache_val = sample.get("cache")
-                    sr_val = sample.get("sr")
-                else:
-                    # Check if there is an actual probe sample close to this slot center (within slot_duration)
-                    slot_center = (s_start_ts + s_end_ts) / 2
-                    idx = bisect.bisect_right(timestamps, slot_center) - 1
-                    if idx >= 0 and abs(timestamps[idx] - slot_center) <= max(slot_duration, 1500):
-                        sample = history_list[idx]
-                        s_det = sample.get("det", "none")
-                        s_candy = sample.get("candy", "none")
-                        s_candy_ans = sample.get("candy_ans", "")
-                        s_model = sample.get("det_m", "")
-                        s_reason = sample.get("det_r", "")
-                        sample_t = sample.get("t", int(s_start_ts))
-                        sample_time_str = sample.get("det_t") or datetime.fromtimestamp(sample_t).strftime("%m-%d %H:%M:%S")
-                        eff_val = sample.get("eff")
-                        cache_val = sample.get("cache")
-                        sr_val = sample.get("sr")
-                    else:
-                        sample = None
-                        s_det = "none"
-                        s_candy = "none"
-                        s_candy_ans = ""
-                        s_model = ""
-                        s_reason = ""
-                        sample_time_str = ""
-                        eff_val = None
-                        cache_val = None
-                        sr_val = None
+                    sample = min(history_list[i_start:i_end], key=lambda record: abs(record.get("t", 0) - slot_center))
+                observed = bisect.bisect_left(observations, s_start_ts) < bisect.bisect_left(observations, s_end_ts)
+                missing_status = "no_data" if observed or sample else "unobserved"
+                record = sample or {}
+                s_det = record.get("det", "none")
+                s_candy = record.get("candy", "none")
+                if s_det in ("none", "other"):
+                    s_det = missing_status
+                if s_candy == "none":
+                    s_candy = missing_status
+                s_candy_ans = record.get("candy_ans", "")
+                s_model = record.get("det_m", "")
+                s_reason = record.get("det_r", "")
+                sample_time_str = record.get("det_t") or (datetime.fromtimestamp(record["t"]).strftime("%m-%d %H:%M:%S") if sample else "")
+                eff_val = record.get("eff")
+                cache_val = record.get("cache")
+                sr_val = record.get("sr")
 
                 # Tally statistics
                 if s_det == "passed":
                     det_passed_slots += 1
                     det_tested_slots += 1
-                elif s_det in ("suspected", "other", "wrong"):
+                elif s_det in ("suspected", "wrong", "failed"):
                     det_tested_slots += 1
 
                 if s_candy == "correct":
@@ -1280,8 +1253,9 @@ class AIHubClient:
                 elif s_candy == "wrong":
                     candy_tested_slots += 1
 
-                det_lbl = "通过" if s_det == "passed" else ("疑似" if s_det == "suspected" else ("未通过" if s_det == "wrong" else "无数据"))
-                candy_lbl = "通过 (21)" if s_candy == "correct" else ("未通过" if s_candy == "wrong" else "无数据")
+                missing_label = "已查询，无采样结果" if missing_status == "no_data" else "未采样 / 无历史记录"
+                det_lbl = "通过" if s_det == "passed" else ("疑似" if s_det == "suspected" else ("未通过" if s_det in ("wrong", "failed") else missing_label))
+                candy_lbl = "通过 (21)" if s_candy == "correct" else ("未通过" if s_candy == "wrong" else missing_label)
 
                 slots.append({
                     "slot_index": s,
@@ -1299,6 +1273,7 @@ class AIHubClient:
                     "cache": cache_val,
                     "sr": sr_val,
                     "has_sample": bool(sample),
+                    "was_queried": observed,
                 })
 
             det_rate_str = f"{(det_passed_slots / det_tested_slots * 100):.1f}%" if det_tested_slots > 0 else "--"

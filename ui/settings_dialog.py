@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
     QCheckBox, QLineEdit, QPushButton, QFileDialog, QMessageBox, QGroupBox, QComboBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal
-from core.config_manager import ConfigManager
+from core.config_manager import ConfigManager, SCALE_OPTIONS
 from core.codex_client import CodexUsageClient
 
 
@@ -96,10 +96,8 @@ class SettingsDialog(QDialog):
         scale_lay = QHBoxLayout()
         scale_lbl = QLabel("界面尺寸缩放:", grp_app)
         self.combo_scale = QComboBox(grp_app)
-        self.combo_scale.addItem("80%", 0.80)
-        self.combo_scale.addItem("100% (标准)", 1.00)
-        self.combo_scale.addItem("120%", 1.20)
-        self.combo_scale.addItem("140%", 1.40)
+        for label, scale in SCALE_OPTIONS:
+            self.combo_scale.addItem(label, scale)
         scale_lay.addWidget(scale_lbl)
         scale_lay.addStretch()
         scale_lay.addWidget(self.combo_scale)
