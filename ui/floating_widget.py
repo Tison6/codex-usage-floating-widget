@@ -1306,6 +1306,17 @@ class FloatingWidget(QWidget):
 
     def _render_mini_quota(self, data, provider, short_label, dot, weekly_label, icon, tracker):
         data = data or {}
+        setting = "claude_quota_enabled" if provider == "Claude" else "codex_quota_enabled"
+        enabled = self.cfg.get(setting, True) and not data.get("disabled", False)
+        separator = self.mini_claude_sep if provider == "Claude" else self.mini_sep1
+        separator.setVisible(enabled)
+        icon.setVisible(enabled)
+        short_label.setVisible(enabled)
+        if not enabled:
+            dot.hide()
+            weekly_label.hide()
+            self._resize_mini_to_contents()
+            return
         fs = self.get_mini_font_size(10)
         if not data or not data.get("success"):
             limited = provider == "Claude" and "请求受限" in data.get("error", "")
